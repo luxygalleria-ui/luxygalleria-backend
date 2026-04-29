@@ -13,11 +13,21 @@ const app: Application = express();
 
 // Security Middlewares
 app.use(helmet());
+const allowedOrigins = ENV.CORS_ORIGIN.split(',');
+
 app.use(cors({
-  origin: true,
+  origin: (origin, callback) => {
+    // allow requests with no origin (like Postman, mobile apps)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    } else {
+      return callback(new Error('CORS not allowed'));
+    }
+  },
   credentials: true,
 }));
-
 // Parsers
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
