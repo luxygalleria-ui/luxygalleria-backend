@@ -5,8 +5,16 @@ export interface IUser extends Document {
   name: string;
   email: string;
   password?: string;
-  role: 'admin' | 'superadmin';
+  phone?: string;
+  role: 'admin' | 'superadmin' | 'customer';
   isActive: boolean;
+  address?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    zipCode?: string;
+    country?: string;
+  };
   matchPassword(enteredPassword: string): Promise<boolean>;
 }
 
@@ -14,8 +22,16 @@ const userSchema = new Schema<IUser>({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true, select: false },
-  role: { type: String, enum: ['admin', 'superadmin'], default: 'admin' },
-  isActive: { type: Boolean, default: true }
+  phone: { type: String },
+  role: { type: String, enum: ['admin', 'superadmin', 'customer'], default: 'customer' },
+  isActive: { type: Boolean, default: true },
+  address: {
+    street: { type: String },
+    city: { type: String },
+    state: { type: String },
+    zipCode: { type: String },
+    country: { type: String }
+  }
 }, {
   timestamps: true
 });

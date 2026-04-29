@@ -73,3 +73,82 @@ export const createTestAdmin = asyncHandler(async (req: Request, res: Response) 
     password: 'password123'
   });
 });
+
+export const registerCustomer = asyncHandler(async (req: Request, res: Response) => {
+  const { name, email, password, phone, address } = req.body;
+
+  if (!name || !email || !password) {
+    return errorResponse(res, 400, 'Please provide name, email and password');
+  }
+
+  const userExists = await User.findOne({ email });
+  if (userExists) {
+    return errorResponse(res, 400, 'Email is already registered');
+  }
+
+  const user = await User.create({
+    name,
+    email,
+    password,
+    phone,
+    role: 'customer',
+    address
+  });
+
+  const token = generateToken(user._id.toString(), user.role);
+
+  res.cookie('jwt', token, {
+    httpOnly: true,
+    secure: ENV.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  });
+
+  successResponse(res, 201, 'Registration successful', {
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    token
+  });
+});
+
+export const loginCustomer = asyncHandler(async (req: Request, res: Response) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return errorResponse(res, 400, 'Please provide email and password');
+  }
+
+  const user = await User.findOne({ email }).select('+password');
+
+  if (!user || !(await user.matchPassword(password))) {
+    return errorResponse(res, 401, 'Invalid email or password');
+  }
+
+  if (!user.isActive) {
+    return errorResponse(res, 403, 'Your account has been deactivated');
+  }
+
+  // Only allow customers to use this endpoint
+  if (user.role !== 'customer') {
+    return errorResponse(res, 403, 'Please use the admin portal to login');
+  }
+
+  const token = generateToken(user._id.toString(), user.role);
+
+  res.cookie('jwt', token, {
+    httpOnly: true,
+    secure: ENV.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  });
+
+  successResponse(res, 200, 'Login successful', {
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    token
+  });
+});
