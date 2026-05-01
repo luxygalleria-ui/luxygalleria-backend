@@ -35,11 +35,11 @@ app.use(helmet());
 
 const corsConfig = {
   origin: [
-    "heedy-frontend.vercel.app",
-    "heedy-admin.vercel.app"
+    "https://heedy-frontend.vercel.app",
+    "https://heedy-admin.vercel.app"
   ],
-  credential: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "UPDATE"]
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
 }
 app.use(cors(corsConfig));
 
