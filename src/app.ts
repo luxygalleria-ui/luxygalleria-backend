@@ -13,7 +13,7 @@ const app: Application = express();
 
 // Security Middlewares
 app.use(helmet());
-// const allowedOrigins = ENV.CORS_ORIGIN.split(',');
+const allowedOrigins = ENV.CORS_ORIGIN.split(',');
 
 // const corsOptions = {
 //   origin: (origin: string | undefined, callback: any) => {
@@ -34,10 +34,7 @@ app.use(helmet());
 // app.options('*', cors(corsOptions));
 
 const corsConfig = {
-  origin: [
-    "https://heedy-frontend.vercel.app",
-    "https://heedy-admin.vercel.app"
-  ],
+  origin: allowedOrigins,
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
 }
