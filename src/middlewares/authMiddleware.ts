@@ -49,7 +49,10 @@ export const protect = asyncHandler(async (req: Request, res: Response, next: Ne
 export const authorize = (...roles: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user || !roles.includes(req.user.role)) {
-      return errorResponse(res, 403, `User role is not authorized to access this route`);
+      // Log unauthorized access attempt
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      console.warn(`⚠️  Unauthorized access attempt to ${req.path} by user ${req.user?._id} with role ${req.user?.role}`);
+      return errorResponse(res, 403, `User role '${req.user?.role}' is not authorized to access this route`);
     }
     next();
   };

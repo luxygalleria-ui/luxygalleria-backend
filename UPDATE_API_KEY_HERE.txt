@@ -1,0 +1,86 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║                    🔑 UPDATE YOUR RESEND API KEY HERE                        ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+📍 FILE TO EDIT: d:\SDEC\heedi\Heedy-backend\.env
+
+📝 FIND THIS LINE (Line 18):
+   ┌────────────────────────────────────────────────────────────────┐
+   │ RESEND_API_KEY=re_3Pgagz27_B6VksR7k68xb8xgRyF2d5EUS            │
+   └────────────────────────────────────────────────────────────────┘
+
+✏️  REPLACE WITH YOUR NEW KEY:
+   ┌────────────────────────────────────────────────────────────────┐
+   │ RESEND_API_KEY=re_xxxxxxxxx                                    │
+   │                    ↑                                            │
+   │                    └─ Paste your real API key here             │
+   └────────────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🌐 GET YOUR API KEY FROM:
+   https://resend.com/login
+   
+   Steps:
+   1. Log in to Resend
+   2. Click "API Keys" in sidebar
+   3. Click "Create API Key"
+   4. Copy the key (starts with re_)
+   5. Paste it in .env file above
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ AFTER UPDATING, TEST IT:
+   
+   Open terminal and run:
+   
+   cd d:\SDEC\heedi\Heedy-backend
+   node test-resend.js
+   
+   You should see:
+   ✅ Test email sent successfully via Resend!
+   
+   Check your email: muhammedminhaj798@gmail.com
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🚀 FOR PRODUCTION (VERCEL):
+   
+   1. Go to Vercel Dashboard
+   2. Select your backend project
+   3. Settings → Environment Variables
+   4. Update RESEND_API_KEY
+   5. Redeploy
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📧 WHAT WILL WORK AFTER THIS:
+   
+   ✉️  Order confirmation emails (when customer places order)
+   ✉️  Order status update emails (when admin updates status)
+   
+   All automatic! No code changes needed.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 CURRENT STATUS:
+   
+   ❌ Your current API key is INVALID or EXPIRED
+   ✅ Code is already integrated and ready
+   ⏳ Just need to update the API key!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📚 NEED MORE HELP?
+   
+   Read: QUICK_START.md (3-step guide)
+   Read: GET_RESEND_API_KEY.md (detailed instructions)
+   Read: EMAIL_FIX_SUMMARY.md (complete overview)
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║  🎯 ACTION REQUIRED: Replace re_xxxxxxxxx with your real Resend API key     ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
