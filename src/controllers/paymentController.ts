@@ -40,8 +40,8 @@ export const createOrder = async (req: Request, res: Response) => {
     // No DB save here — order saved only after payment verified
     res.status(200).json({
       success: true,
-      data: { 
-        razorpayOrder, 
+      data: {
+        razorpayOrder,
         isMock,
         key_id: process.env.RAZORPAY_KEY_ID // Return the key used to generate the order to prevent mismatch
       }
@@ -82,7 +82,7 @@ export const verifyPayment = async (req: Request, res: Response) => {
     }
 
     if (paymentVerified) {
-      // Payment confirmed — NOW save order to DB
+      // Payment confirmed — 
       const newOrder = new Order({
         user: req.user?._id,
         items,
@@ -110,7 +110,7 @@ export const verifyPayment = async (req: Request, res: Response) => {
 
         if (req.user && req.user.email) {
           console.log('Preparing to send order confirmation email to:', req.user.email);
-          
+
           const itemsHtml = newOrder.items.map((item: any) => {
             const product = item.product;
             return `
