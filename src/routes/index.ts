@@ -11,6 +11,7 @@ import paymentRoutes from './paymentRoutes';
 import cartRoutes from './cartRoutes';
 import dashboardRoutes from './dashboardRoutes';
 import contactRoutes from './contactRoutes';
+import faqRoutes from './faqRoutes';
 
 const router = Router();
 
@@ -29,5 +30,6 @@ router.use('/payments', paymentRoutes);
 router.use('/cart', cartRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/contacts', contactRoutes);
+router.use('/faqs', faqRoutes);
 
 export default router;
