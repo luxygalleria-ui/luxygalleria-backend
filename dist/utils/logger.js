@@ -12,7 +12,7 @@ const logFormat = winston_1.default.format.combine(winston_1.default.format.time
 const logger = winston_1.default.createLogger({
     level: env_1.ENV.NODE_ENV === 'production' ? 'info' : 'debug',
     format: logFormat,
-    defaultMeta: { service: 'heedy-backend' },
+    defaultMeta: { service: 'luxygalleria-backend' },
     transports: [
         // Write all logs with level 'error' and below to error.log
         new winston_1.default.transports.File({
