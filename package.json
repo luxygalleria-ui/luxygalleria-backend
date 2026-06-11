@@ -6,7 +6,11 @@
   "scripts": {
     "start": "node dist/server.js",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "update-categories": "ts-node-dev src/scripts/updateCategories.ts",
+    "setup-categories": "ts-node-dev src/scripts/setupCategories.ts",
+    "seed-data": "ts-node-dev src/scripts/seedOriginalData.ts",
+    "seed-banners": "ts-node-dev src/scripts/seedBanners.ts"
   },
   "dependencies": {
     "@sendgrid/mail": "^8.1.6",

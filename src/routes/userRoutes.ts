@@ -1,5 +1,5 @@
 import express from 'express';
-import { getAddresses, addAddress, deleteAddress, editAddress, getAllCustomers, toggleCustomerStatus, updateProfile, getProfile } from '../controllers/userController';
+import { getAddresses, addAddress, deleteAddress, editAddress, getAllCustomers, toggleCustomerStatus, updateProfile, getProfile, deleteCustomer } from '../controllers/userController';
 import { protect, authorize } from '../middlewares/authMiddleware';
 
 const router = express.Router();
@@ -19,5 +19,6 @@ router.route('/addresses/:addressId')
 // Admin routes
 router.get('/admin/customers', protect, authorize('admin', 'superadmin'), getAllCustomers);
 router.put('/admin/customers/:id/toggle-status', protect, authorize('admin', 'superadmin'), toggleCustomerStatus);
+router.delete('/admin/customers/:id', protect, authorize('admin', 'superadmin'), deleteCustomer);
 
 export default router;

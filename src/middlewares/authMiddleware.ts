@@ -41,7 +41,8 @@ export const protect = asyncHandler(async (req: Request, res: Response, next: Ne
 
     req.user = user;
     next();
-  } catch (error) {
+  } catch (error: any) {
+    console.error('Token verification failed:', error.message);
     return errorResponse(res, 401, 'Not authorized, token failed');
   }
 });

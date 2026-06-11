@@ -85,6 +85,24 @@ export const deleteAddress = asyncHandler(async (req: Request, res: Response) =>
   successResponse(res, 200, 'Address removed successfully', user.addresses);
 });
 
+// Delete Customer (Admin only)
+export const deleteCustomer = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  
+  const customer = await User.findById(id);
+  if (!customer) {
+    return errorResponse(res, 404, 'Customer not found');
+  }
+
+  // Prevent deleting admin users
+  if (customer.role === 'admin' || customer.role === 'superadmin') {
+    return errorResponse(res, 403, 'Cannot delete admin users');
+  }
+
+  await User.findByIdAndDelete(id);
+  successResponse(res, 200, 'Customer deleted successfully', null);
+});
+
 // Edit Address
 export const editAddress = asyncHandler(async (req: Request, res: Response) => {
   const user = await User.findById(req.user?._id);
