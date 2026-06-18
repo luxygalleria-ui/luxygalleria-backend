@@ -8,6 +8,7 @@ const razorpay_1 = __importDefault(require("razorpay"));
 const crypto_1 = __importDefault(require("crypto"));
 const Order_1 = __importDefault(require("../models/Order"));
 const Product_1 = require("../models/Product");
+const Settings_1 = require("../models/Settings");
 const sendEmail_1 = require("../utils/sendEmail");
 const dotenv_1 = __importDefault(require("dotenv"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
@@ -19,9 +20,67 @@ const razorpayInstance = new razorpay_1.default({
 // Create Order — Only creates a Razorpay order, does NOT save to DB yet
 const createOrder = async (req, res) => {
     try {
-        const { total } = req.body;
+        const { total, items } = req.body;
         if (typeof total !== 'number' || Number.isNaN(total) || total <= 0) {
             return res.status(400).json({ success: false, message: 'Invalid order total. Please refresh and try again.' });
+        }
+        if (!items || !Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ success: false, message: 'No items in order to validate.' });
+        }
+        // Server-side amount validation
+        let calculatedSubtotal = 0;
+        let calculatedWeight = 0;
+        for (const item of items) {
+            if (!item.product || !item.quantity || item.quantity <= 0) {
+                return res.status(400).json({ success: false, message: 'Invalid item details' });
+            }
+            const product = await Product_1.Product.findById(item.product);
+            if (!product) {
+                return res.status(404).json({ success: false, message: `Product not found: ${item.product}` });
+            }
+            let itemPrice = 0;
+            if (item.size && product.variants && product.variants.length > 0) {
+                const variant = product.variants.find((v) => v.volume === item.size);
+                if (variant) {
+                    itemPrice = variant.price;
+                }
+                else {
+                    itemPrice = product.variants[0].price;
+                }
+            }
+            else if (product.variants && product.variants.length > 0) {
+                itemPrice = product.variants[0].price;
+            }
+            else {
+                return res.status(400).json({ success: false, message: `Product ${product.name} variants missing` });
+            }
+            calculatedSubtotal += itemPrice * item.quantity;
+            calculatedWeight += (product.weight || 0) * item.quantity;
+        }
+        const settings = await Settings_1.Settings.findOne() || {
+            shippingBelow500g: 40,
+            shippingAbove500g: 80,
+            shippingWeightThreshold: 500
+        };
+        const threshold = settings.shippingWeightThreshold ?? 500;
+        const belowCharge = settings.shippingBelow500g ?? 40;
+        const aboveCharge = settings.shippingAbove500g ?? 80;
+        let calculatedShipping = 0;
+        if (calculatedSubtotal > 0) {
+            for (const item of items) {
+                const product = await Product_1.Product.findById(item.product);
+                const weight = product?.weight || 0;
+                const itemShipping = weight >= threshold ? aboveCharge : belowCharge;
+                calculatedShipping += itemShipping * item.quantity;
+            }
+        }
+        const calculatedTotal = calculatedSubtotal + calculatedShipping;
+        // Allow a small margin of error (e.g. 1 INR) for rounding differences
+        if (Math.abs(calculatedTotal - total) > 1) {
+            return res.status(400).json({
+                success: false,
+                message: `Order total validation failed. Server calculated total of ${calculatedTotal} differs from client total of ${total}. Please refresh and try again.`
+            });
         }
         let razorpayOrder;
         let isMock = false;
@@ -80,17 +139,83 @@ const verifyPayment = async (req, res) => {
         if (!req.user || !req.user._id) {
             return res.status(401).json({ success: false, message: 'User not authenticated' });
         }
+        // Server-side amount validation before saving order
+        let calculatedSubtotal = 0;
+        let calculatedWeight = 0;
+        for (const item of items) {
+            if (!item.product || !item.quantity || item.quantity <= 0) {
+                return res.status(400).json({ success: false, message: 'Invalid item details' });
+            }
+            const product = await Product_1.Product.findById(item.product);
+            if (!product) {
+                return res.status(404).json({ success: false, message: `Product not found: ${item.product}` });
+            }
+            let itemPrice = 0;
+            if (item.size && product.variants && product.variants.length > 0) {
+                const variant = product.variants.find((v) => v.volume === item.size);
+                if (variant) {
+                    itemPrice = variant.price;
+                }
+                else {
+                    itemPrice = product.variants[0].price;
+                }
+            }
+            else if (product.variants && product.variants.length > 0) {
+                itemPrice = product.variants[0].price;
+            }
+            else {
+                return res.status(400).json({ success: false, message: `Product ${product.name} variants missing` });
+            }
+            calculatedSubtotal += itemPrice * item.quantity;
+            calculatedWeight += (product.weight || 0) * item.quantity;
+        }
+        const settings = await Settings_1.Settings.findOne() || {
+            shippingBelow500g: 40,
+            shippingAbove500g: 80,
+            shippingWeightThreshold: 500
+        };
+        const threshold = settings.shippingWeightThreshold ?? 500;
+        const belowCharge = settings.shippingBelow500g ?? 40;
+        const aboveCharge = settings.shippingAbove500g ?? 80;
+        let calculatedShipping = 0;
+        if (calculatedSubtotal > 0) {
+            for (const item of items) {
+                const product = await Product_1.Product.findById(item.product);
+                const weight = product?.weight || 0;
+                const itemShipping = weight >= threshold ? aboveCharge : belowCharge;
+                calculatedShipping += itemShipping * item.quantity;
+            }
+        }
+        const calculatedTotal = calculatedSubtotal + calculatedShipping;
+        if (Math.abs(calculatedTotal - total) > 1) {
+            return res.status(400).json({ success: false, message: 'Order totals verification failed. Server calculation mismatch.' });
+        }
         let paymentVerified = false;
         if (razorpay_payment_id === 'mock_payment') {
             paymentVerified = true;
         }
         else {
+            if (!razorpay_signature) {
+                return res.status(400).json({ success: false, message: 'Missing payment signature' });
+            }
             const sign = razorpay_order_id + "|" + razorpay_payment_id;
             const expectedSign = crypto_1.default
                 .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || 'dummy_key_secret')
                 .update(sign.toString())
                 .digest("hex");
-            paymentVerified = razorpay_signature === expectedSign;
+            try {
+                const signatureBuffer = Buffer.from(razorpay_signature, 'hex');
+                const expectedBuffer = Buffer.from(expectedSign, 'hex');
+                if (signatureBuffer.length === expectedBuffer.length) {
+                    paymentVerified = crypto_1.default.timingSafeEqual(signatureBuffer, expectedBuffer);
+                }
+                else {
+                    paymentVerified = false;
+                }
+            }
+            catch (err) {
+                paymentVerified = false;
+            }
         }
         if (paymentVerified) {
             // Payment confirmed — 
@@ -98,10 +223,10 @@ const verifyPayment = async (req, res) => {
                 user: req.user._id,
                 items,
                 shippingAddress,
-                subtotal,
+                subtotal: calculatedSubtotal,
                 discount: discount || 0,
-                shippingFee: shippingFee || 0,
-                total,
+                shippingFee: calculatedShipping,
+                total: calculatedTotal,
                 paymentMethod: 'razorpay',
                 paymentStatus: 'completed',
                 orderStatus: 'processing',

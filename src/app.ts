@@ -35,19 +35,38 @@ app.use(helmet({
 // CORS configuration
 const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(",").map(o => o.trim())
-  : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'];
+  : [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:3002',
+      'http://localhost:3000/',
+      'http://localhost:3001/',
+      'http://localhost:3002/',
+      'https://luxygalleria-frontend.vercel.app',
+      'https://luxygalleria-admin.vercel.app',
+      'https://*.vercel.app', // Allow all Vercel preview deployments
+    ];
 
 const corsConfig = {
   origin: function (origin: string | undefined, callback: any) {
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
 
+    // Check exact match
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
-    } else {
-      logger.warn(`CORS blocked request from origin: ${origin}`);
-      callback(new Error("Not allowed by CORS"));
+      return;
     }
+
+    // Check wildcard match for Vercel preview deployments
+    const isVercelPreview = origin.includes('.vercel.app');
+    if (isVercelPreview) {
+      callback(null, true);
+      return;
+    }
+
+    logger.warn(`CORS blocked request from origin: ${origin}`);
+    callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
   optionsSuccessStatus: 200,

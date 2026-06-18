@@ -33,18 +33,36 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Settings = void 0;
+exports.VideoTestimonial = exports.extractYoutubeId = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const settingsSchema = new mongoose_1.Schema({
-    bannerText: { type: String, default: '' },
-    isBannerActive: { type: Boolean, default: false },
-    footerText: { type: String, default: '© 2026 Luxy Galleria. All rights reserved.' },
-    whatsappNumber: { type: String, default: '7012552969' },
-    primaryColor: { type: String, default: '#8B5E34' },
-    secondaryColor: { type: String, default: '#F5F1E8' },
-    shippingBelow500g: { type: Number, default: 40 },
-    shippingAbove500g: { type: Number, default: 80 },
-    shippingWeightThreshold: { type: Number, default: 500 },
+const extractYoutubeId = (url) => {
+    if (!url)
+        return null;
+    // Regex to match various YouTube URL formats (standard, short, share, live, embed)
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|shorts\/|live\/)([^#\&\?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+};
+exports.extractYoutubeId = extractYoutubeId;
+const videoTestimonialSchema = new mongoose_1.Schema({
+    clientName: { type: String, required: true, trim: true },
+    role: { type: String, required: true, trim: true },
+    youtubeUrl: { type: String, required: true, trim: true },
+    youtubeId: { type: String, required: true },
+    thumbnailUrl: { type: String, required: true },
+    displayOrder: { type: Number, default: 0 },
+    isActive: { type: Boolean, default: true }
 }, { timestamps: true });
-exports.Settings = mongoose_1.default.model('Settings', settingsSchema);
-//# sourceMappingURL=Settings.js.map
+videoTestimonialSchema.pre('validate', function (next) {
+    if (this.isModified('youtubeUrl')) {
+        const id = (0, exports.extractYoutubeId)(this.youtubeUrl);
+        if (!id) {
+            return next(new Error('Invalid YouTube URL provided. Please provide a valid YouTube video URL.'));
+        }
+        this.youtubeId = id;
+        this.thumbnailUrl = `https://img.youtube.com/vi/${id}/hqdefault.jpg`;
+    }
+    next();
+});
+exports.VideoTestimonial = mongoose_1.default.model('VideoTestimonial', videoTestimonialSchema);
+//# sourceMappingURL=VideoTestimonial.js.map
