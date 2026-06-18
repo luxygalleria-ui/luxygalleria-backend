@@ -3,6 +3,7 @@ import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import Order from '../models/Order';
 import { Product } from '../models/Product';
+import { Settings } from '../models/Settings';
 import { sendEmail } from '../utils/sendEmail';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
@@ -58,7 +59,24 @@ export const createOrder = async (req: Request, res: Response) => {
       calculatedWeight += (product.weight || 0) * item.quantity;
     }
 
-    const calculatedShipping = calculatedSubtotal > 0 ? (calculatedWeight > 0 ? Math.round(calculatedWeight * 40) : 80) : 0;
+    const settings = await Settings.findOne() || {
+      shippingBelow500g: 40,
+      shippingAbove500g: 80,
+      shippingWeightThreshold: 500
+    };
+    const threshold = settings.shippingWeightThreshold ?? 500;
+    const belowCharge = settings.shippingBelow500g ?? 40;
+    const aboveCharge = settings.shippingAbove500g ?? 80;
+
+    let calculatedShipping = 0;
+    if (calculatedSubtotal > 0) {
+      for (const item of items) {
+        const product = await Product.findById(item.product);
+        const weight = product?.weight || 0;
+        const itemShipping = weight >= threshold ? aboveCharge : belowCharge;
+        calculatedShipping += itemShipping * item.quantity;
+      }
+    }
     const calculatedTotal = calculatedSubtotal + calculatedShipping;
 
     // Allow a small margin of error (e.g. 1 INR) for rounding differences
@@ -175,7 +193,24 @@ export const verifyPayment = async (req: Request, res: Response) => {
       calculatedWeight += (product.weight || 0) * item.quantity;
     }
 
-    const calculatedShipping = calculatedSubtotal > 0 ? (calculatedWeight > 0 ? Math.round(calculatedWeight * 40) : 80) : 0;
+    const settings = await Settings.findOne() || {
+      shippingBelow500g: 40,
+      shippingAbove500g: 80,
+      shippingWeightThreshold: 500
+    };
+    const threshold = settings.shippingWeightThreshold ?? 500;
+    const belowCharge = settings.shippingBelow500g ?? 40;
+    const aboveCharge = settings.shippingAbove500g ?? 80;
+
+    let calculatedShipping = 0;
+    if (calculatedSubtotal > 0) {
+      for (const item of items) {
+        const product = await Product.findById(item.product);
+        const weight = product?.weight || 0;
+        const itemShipping = weight >= threshold ? aboveCharge : belowCharge;
+        calculatedShipping += itemShipping * item.quantity;
+      }
+    }
     const calculatedTotal = calculatedSubtotal + calculatedShipping;
 
     if (Math.abs(calculatedTotal - total) > 1) {

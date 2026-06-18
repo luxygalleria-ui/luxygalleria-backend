@@ -7,6 +7,9 @@ export interface ISettings extends Document {
   whatsappNumber: string;
   primaryColor: string;
   secondaryColor: string;
+  shippingBelow500g: number;
+  shippingAbove500g: number;
+  shippingWeightThreshold: number;
 }
 
 const settingsSchema = new Schema<ISettings>(
@@ -17,6 +20,9 @@ const settingsSchema = new Schema<ISettings>(
     whatsappNumber: { type: String, default: '7012552969' },
     primaryColor: { type: String, default: '#8B5E34' },
     secondaryColor: { type: String, default: '#F5F1E8' },
+    shippingBelow500g: { type: Number, default: 40 },
+    shippingAbove500g: { type: Number, default: 80 },
+    shippingWeightThreshold: { type: Number, default: 500 },
   },
   { timestamps: true }
 );
