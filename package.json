@@ -10,7 +10,8 @@
     "update-categories": "ts-node-dev src/scripts/updateCategories.ts",
     "setup-categories": "ts-node-dev src/scripts/setupCategories.ts",
     "seed-data": "ts-node-dev src/scripts/seedOriginalData.ts",
-    "seed-banners": "ts-node-dev src/scripts/seedBanners.ts"
+    "seed-banners": "ts-node-dev src/scripts/seedBanners.ts",
+    "test": "ts-node-dev src/tests/shipping.test.ts"
   },
   "dependencies": {
     "@sendgrid/mail": "^8.1.6",

@@ -7,6 +7,7 @@ import { Settings } from '../models/Settings';
 import { sendEmail } from '../utils/sendEmail';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
+import { calculateShippingForItems } from '../utils/shippingCalculator';
 dotenv.config();
 
 const razorpayInstance = new Razorpay({
@@ -28,62 +29,18 @@ export const createOrder = async (req: Request, res: Response) => {
     }
 
     // Server-side amount validation
-    let calculatedSubtotal = 0;
-    let calculatedWeight = 0;
-
-    for (const item of items) {
-      if (!item.product || !item.quantity || item.quantity <= 0) {
-        return res.status(400).json({ success: false, message: 'Invalid item details' });
-      }
-
-      const product = await Product.findById(item.product);
-      if (!product) {
-        return res.status(404).json({ success: false, message: `Product not found: ${item.product}` });
-      }
-
-      let itemPrice = 0;
-      if (item.size && product.variants && product.variants.length > 0) {
-        const variant = product.variants.find((v: any) => v.volume === item.size);
-        if (variant) {
-          itemPrice = variant.price;
-        } else {
-          itemPrice = product.variants[0].price;
-        }
-      } else if (product.variants && product.variants.length > 0) {
-        itemPrice = product.variants[0].price;
-      } else {
-        return res.status(400).json({ success: false, message: `Product ${product.name} variants missing` });
-      }
-
-      calculatedSubtotal += itemPrice * item.quantity;
-      calculatedWeight += (product.weight || 0) * item.quantity;
+    let totals;
+    try {
+      totals = await calculateShippingForItems(items);
+    } catch (err: any) {
+      return res.status(400).json({ success: false, message: err.message || 'Validation failed' });
     }
-
-    const settings = await Settings.findOne() || {
-      shippingBelow500g: 40,
-      shippingAbove500g: 80,
-      shippingWeightThreshold: 500
-    };
-    const threshold = settings.shippingWeightThreshold ?? 500;
-    const belowCharge = settings.shippingBelow500g ?? 40;
-    const aboveCharge = settings.shippingAbove500g ?? 80;
-
-    let calculatedShipping = 0;
-    if (calculatedSubtotal > 0) {
-      for (const item of items) {
-        const product = await Product.findById(item.product);
-        const weight = product?.weight || 0;
-        const itemShipping = weight >= threshold ? aboveCharge : belowCharge;
-        calculatedShipping += itemShipping * item.quantity;
-      }
-    }
-    const calculatedTotal = calculatedSubtotal + calculatedShipping;
 
     // Allow a small margin of error (e.g. 1 INR) for rounding differences
-    if (Math.abs(calculatedTotal - total) > 1) {
+    if (Math.abs(totals.grandTotal - total) > 1) {
       return res.status(400).json({ 
         success: false, 
-        message: `Order total validation failed. Server calculated total of ${calculatedTotal} differs from client total of ${total}. Please refresh and try again.` 
+        message: `Order total validation failed. Server calculated total of ${totals.grandTotal} differs from client total of ${total}. Please refresh and try again.` 
       });
     }
 
@@ -162,58 +119,14 @@ export const verifyPayment = async (req: Request, res: Response) => {
     }
 
     // Server-side amount validation before saving order
-    let calculatedSubtotal = 0;
-    let calculatedWeight = 0;
-
-    for (const item of items) {
-      if (!item.product || !item.quantity || item.quantity <= 0) {
-        return res.status(400).json({ success: false, message: 'Invalid item details' });
-      }
-
-      const product = await Product.findById(item.product);
-      if (!product) {
-        return res.status(404).json({ success: false, message: `Product not found: ${item.product}` });
-      }
-
-      let itemPrice = 0;
-      if (item.size && product.variants && product.variants.length > 0) {
-        const variant = product.variants.find((v: any) => v.volume === item.size);
-        if (variant) {
-          itemPrice = variant.price;
-        } else {
-          itemPrice = product.variants[0].price;
-        }
-      } else if (product.variants && product.variants.length > 0) {
-        itemPrice = product.variants[0].price;
-      } else {
-        return res.status(400).json({ success: false, message: `Product ${product.name} variants missing` });
-      }
-
-      calculatedSubtotal += itemPrice * item.quantity;
-      calculatedWeight += (product.weight || 0) * item.quantity;
+    let totals;
+    try {
+      totals = await calculateShippingForItems(items);
+    } catch (err: any) {
+      return res.status(400).json({ success: false, message: err.message || 'Validation failed' });
     }
 
-    const settings = await Settings.findOne() || {
-      shippingBelow500g: 40,
-      shippingAbove500g: 80,
-      shippingWeightThreshold: 500
-    };
-    const threshold = settings.shippingWeightThreshold ?? 500;
-    const belowCharge = settings.shippingBelow500g ?? 40;
-    const aboveCharge = settings.shippingAbove500g ?? 80;
-
-    let calculatedShipping = 0;
-    if (calculatedSubtotal > 0) {
-      for (const item of items) {
-        const product = await Product.findById(item.product);
-        const weight = product?.weight || 0;
-        const itemShipping = weight >= threshold ? aboveCharge : belowCharge;
-        calculatedShipping += itemShipping * item.quantity;
-      }
-    }
-    const calculatedTotal = calculatedSubtotal + calculatedShipping;
-
-    if (Math.abs(calculatedTotal - total) > 1) {
+    if (Math.abs(totals.grandTotal - total) > 1) {
       return res.status(400).json({ success: false, message: 'Order totals verification failed. Server calculation mismatch.' });
     }
 
@@ -250,10 +163,10 @@ export const verifyPayment = async (req: Request, res: Response) => {
         user: req.user._id,
         items,
         shippingAddress,
-        subtotal: calculatedSubtotal,
+        subtotal: totals.subtotal,
         discount: discount || 0,
-        shippingFee: calculatedShipping,
-        total: calculatedTotal,
+        shippingFee: totals.shipping,
+        total: totals.grandTotal,
         paymentMethod: 'razorpay',
         paymentStatus: 'completed',
         orderStatus: 'processing',
@@ -378,6 +291,40 @@ export const verifyPayment = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Error verifying payment:', error);
     res.status(500).json({ success: false, message: error.message || 'Error verifying payment' });
+  }
+};
+
+// Calculate Shipping (Public Endpoint)
+export const calculateShipping = async (req: Request, res: Response) => {
+  try {
+    const { items } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          subtotal: 0,
+          totalWeight: 0,
+          baseShipping: 0,
+          extraWeightCharge: 0,
+          shipping: 0,
+          grandTotal: 0
+        }
+      });
+    }
+
+    const result = await calculateShippingForItems(items);
+
+    return res.status(200).json({
+      success: true,
+      data: result
+    });
+  } catch (error: any) {
+    console.error('Error calculating shipping:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Error calculating shipping'
+    });
   }
 };
 

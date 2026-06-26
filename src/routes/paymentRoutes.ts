@@ -1,9 +1,10 @@
 import express from 'express';
-import { createOrder, verifyPayment, getMyOrders, getAllOrders, updateOrderStatus, deleteOrder } from '../controllers/paymentController';
+import { createOrder, verifyPayment, getMyOrders, getAllOrders, updateOrderStatus, deleteOrder, calculateShipping } from '../controllers/paymentController';
 import { protect, authorize } from '../middlewares/authMiddleware';
 
 const router = express.Router();
 
+router.post('/calculate-shipping', calculateShipping);
 router.post('/create-order', protect, createOrder);
 router.post('/verify', protect, verifyPayment);
 router.get('/myorders', protect, getMyOrders);
