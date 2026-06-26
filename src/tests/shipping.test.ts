@@ -9,19 +9,25 @@ interface TestCase {
 
 const testCases: TestCase[] = [
   {
-    description: 'Scenario 1: ₹450 subtotal, 400g weight (Weight < 500g -> Base shipping ₹40, no extra weight)',
+    description: 'Scenario 1: ₹450 subtotal, 400g weight (Weight <= 500g -> Base shipping ₹40, no extra weight)',
     items: [{ price: 450, weight: 0.4, quantity: 1 }],
     expectedShipping: 40,
     expectedGrandTotal: 490,
   },
   {
-    description: 'Scenario 2: ₹450 subtotal, 500g weight (Weight >= 500g -> Base shipping ₹80, no extra weight)',
+    description: 'Scenario 2: ₹450 subtotal, 500g weight (Weight <= 500g -> Base shipping ₹40, no extra weight)',
     items: [{ price: 450, weight: 0.5, quantity: 1 }],
+    expectedShipping: 40,
+    expectedGrandTotal: 490,
+  },
+  {
+    description: 'Scenario 2b: ₹450 subtotal, 510g weight (Weight > 500g -> Base shipping ₹80, no extra weight)',
+    items: [{ price: 450, weight: 0.51, quantity: 1 }],
     expectedShipping: 80,
     expectedGrandTotal: 530,
   },
   {
-    description: 'Scenario 3: ₹800 subtotal, 1kg weight (Weight >= 500g -> Base shipping ₹80, no extra weight)',
+    description: 'Scenario 3: ₹800 subtotal, 1kg weight (Weight > 500g -> Base shipping ₹80, no extra weight)',
     items: [{ price: 800, weight: 1.0, quantity: 1 }],
     expectedShipping: 80,
     expectedGrandTotal: 880,

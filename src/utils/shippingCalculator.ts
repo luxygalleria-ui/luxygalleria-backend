@@ -92,15 +92,16 @@ export const calculateShippingForItems = async (items: InputItem[]): Promise<Shi
   let shipping = 0;
   let grandTotal = 0;
 
+  const roundedWeight = Math.round(totalWeight * 1000) / 1000;
   if (subtotal > 0) {
-    if (totalWeight < WEIGHT_THRESHOLD_KG) {
+    if (roundedWeight <= WEIGHT_THRESHOLD_KG) {
       baseShipping = SHIPPING_BELOW_THRESHOLD;
     } else {
       baseShipping = SHIPPING_ABOVE_THRESHOLD;
     }
 
     // Weight exceeding BASE_WEIGHT_KG
-    const extraWeight = Math.max(totalWeight - BASE_WEIGHT_KG, 0);
+    const extraWeight = Math.max(roundedWeight - BASE_WEIGHT_KG, 0);
     extraWeightCharge = Math.ceil(extraWeight) * EXTRA_SHIPPING_PER_KG;
     shipping = baseShipping + extraWeightCharge;
     grandTotal = subtotal + shipping;
@@ -142,14 +143,15 @@ export const calculateShippingPure = (
   let shipping = 0;
   let grandTotal = 0;
 
+  const roundedWeight = Math.round(totalWeight * 1000) / 1000;
   if (subtotal > 0) {
-    if (totalWeight < config.WEIGHT_THRESHOLD_KG) {
+    if (roundedWeight <= config.WEIGHT_THRESHOLD_KG) {
       baseShipping = config.SHIPPING_BELOW_THRESHOLD;
     } else {
       baseShipping = config.SHIPPING_ABOVE_THRESHOLD;
     }
 
-    const extraWeight = Math.max(totalWeight - config.BASE_WEIGHT_KG, 0);
+    const extraWeight = Math.max(roundedWeight - config.BASE_WEIGHT_KG, 0);
     extraWeightCharge = Math.ceil(extraWeight) * config.EXTRA_SHIPPING_PER_KG;
     shipping = baseShipping + extraWeightCharge;
     grandTotal = subtotal + shipping;
