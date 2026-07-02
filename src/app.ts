@@ -14,6 +14,9 @@ import logger from './utils/logger';
 
 const app: Application = express();
 
+// Trust proxy - required when hosting behind a reverse proxy (like Render)
+app.set('trust proxy', 1);
+
 // Security Middlewares
 // Helmet - sets various HTTP headers for security
 app.use(helmet({
