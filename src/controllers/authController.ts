@@ -402,10 +402,16 @@ export const googleAuth = asyncHandler(async (req: Request, res: Response) => {
       if (!user.isActive) {
         return errorResponse(res, 403, 'Your account has been deactivated');
       }
-      // Update Google ID if not set
-      if (!user.googleId) {
-        user.googleId = googleId;
-        await user.save();
+      // Update Google ID if not set, and make sure user is marked verified
+      if (!user.googleId || !user.isVerified) {
+        const updateFields: any = {};
+        if (!user.googleId) updateFields.googleId = googleId;
+        if (!user.isVerified) updateFields.isVerified = true;
+        
+        await User.findByIdAndUpdate(user._id, { $set: updateFields });
+        
+        if (!user.googleId) user.googleId = googleId;
+        user.isVerified = true;
       }
     } else {
       // Create new user with Google info (no password needed)
