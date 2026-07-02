@@ -436,6 +436,7 @@ export const googleAuth = asyncHandler(async (req: Request, res: Response) => {
       email: user.email,
       phone: user.phone,
       role: user.role,
+      avatar: user.avatar,
       token
     });
   } catch (error: any) {

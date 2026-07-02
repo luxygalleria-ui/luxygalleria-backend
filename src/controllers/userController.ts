@@ -12,7 +12,8 @@ export const getProfile = asyncHandler(async (req: Request, res: Response) => {
     name: user.name,
     email: user.email,
     phone: user.phone,
-    role: user.role
+    role: user.role,
+    avatar: user.avatar
   };
   
   successResponse(res, 200, 'Profile fetched successfully', userData);
@@ -45,7 +46,8 @@ export const updateProfile = asyncHandler(async (req: Request, res: Response) =>
     name: user.name,
     email: user.email,
     phone: user.phone,
-    role: user.role
+    role: user.role,
+    avatar: user.avatar
   };
 
   successResponse(res, 200, 'Profile updated successfully', updatedUser);
