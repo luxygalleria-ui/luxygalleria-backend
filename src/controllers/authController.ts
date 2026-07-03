@@ -295,48 +295,73 @@ export const resendOtp = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const loginCustomer = asyncHandler(async (req: Request, res: Response) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-  if (!email || !password) {
-    return errorResponse(res, 400, 'Please provide email and password');
+    console.log("[DEBUG LOGIN] 1. Received Email:", email);
+
+    if (!email || !password) {
+      console.log("[DEBUG LOGIN] Validation failed: email or password missing");
+      return errorResponse(res, 400, 'Please provide email and password');
+    }
+
+    const user = await User.findOne({ email }).select('+password');
+    console.log("[DEBUG LOGIN] 2. User found in DB?:", !!user);
+
+    if (!user) {
+      console.log("[DEBUG LOGIN] 7. Returning 'Invalid email or password' because user was not found in DB");
+      return errorResponse(res, 401, 'Invalid email or password');
+    }
+
+    console.log("[DEBUG LOGIN] 3. DB User Email:", user.email);
+    console.log("[DEBUG LOGIN] 4. DB User Role:", user.role);
+    console.log("[DEBUG LOGIN] 5. Password field exists in DB user?:", !!user.password);
+
+    const isMatch = await user.matchPassword(password);
+    console.log("[DEBUG LOGIN] 6. Password match result:", isMatch);
+
+    if (!isMatch) {
+      console.log("[DEBUG LOGIN] 7. Returning 'Invalid email or password' because password does not match");
+      return errorResponse(res, 401, 'Invalid email or password');
+    }
+
+    if (!user.isVerified) {
+      console.log("[DEBUG LOGIN] Verification check failed: User not verified");
+      return errorResponse(res, 403, 'Please verify your email to continue. We have sent an OTP to your email during registration.');
+    }
+
+    if (!user.isActive) {
+      console.log("[DEBUG LOGIN] Active check failed: User deactivated");
+      return errorResponse(res, 403, 'Your account has been deactivated');
+    }
+
+    // Only allow customers to use this endpoint
+    if (user.role !== 'customer') {
+      console.log("[DEBUG LOGIN] Role check failed: User is not a customer");
+      return errorResponse(res, 403, 'Please use the admin portal to login');
+    }
+
+    const token = generateToken(user._id.toString(), user.role);
+
+    res.cookie('jwt', token, {
+      httpOnly: true,
+      secure: ENV.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
+    successResponse(res, 200, 'Login successful', {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      token
+    });
+  } catch (error: any) {
+    console.error("[DEBUG LOGIN] 8. Unexpected error in loginCustomer:", error);
+    return errorResponse(res, 500, error.message || 'Internal Server Error');
   }
-
-  const user = await User.findOne({ email }).select('+password');
-
-  if (!user || !(await user.matchPassword(password))) {
-    return errorResponse(res, 401, 'Invalid email or password');
-  }
-
-  if (!user.isVerified) {
-    return errorResponse(res, 403, 'Please verify your email to continue. We have sent an OTP to your email during registration.');
-  }
-
-  if (!user.isActive) {
-    return errorResponse(res, 403, 'Your account has been deactivated');
-  }
-
-  // Only allow customers to use this endpoint
-  if (user.role !== 'customer') {
-    return errorResponse(res, 403, 'Please use the admin portal to login');
-  }
-
-  const token = generateToken(user._id.toString(), user.role);
-
-  res.cookie('jwt', token, {
-    httpOnly: true,
-    secure: ENV.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-  });
-
-  successResponse(res, 200, 'Login successful', {
-    _id: user._id,
-    name: user.name,
-    email: user.email,
-    phone: user.phone,
-    role: user.role,
-    token
-  });
 });
 
 // Google OAuth Sign-In (supports both ID token and access token flows)
