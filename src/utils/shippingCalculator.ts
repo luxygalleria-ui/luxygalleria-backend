@@ -21,13 +21,13 @@ export interface InputItem {
  */
 export const parseWeightFromVolume = (volume: string): number | null => {
   if (!volume) return null;
-  const match = volume.match(/(\d+(?:\.\d+)?)\s*(kg|g|l|ml)/i);
+  const match = volume.match(/(\d+(?:\.\d+)?)\s*(kg|g|gm|gms|l|ltr|liter|liters|litre|litres|ml)/i);
   if (match) {
     const value = parseFloat(match[1]);
     const unit = match[2].toLowerCase();
-    if (unit === 'kg' || unit === 'l') {
+    if (unit === 'kg' || unit === 'l' || unit === 'ltr' || unit === 'liter' || unit === 'liters' || unit === 'litre' || unit === 'litres') {
       return value;
-    } else if (unit === 'g' || unit === 'ml') {
+    } else if (unit === 'g' || unit === 'gm' || unit === 'gms' || unit === 'ml') {
       return value / 1000;
     }
   }
@@ -67,18 +67,18 @@ export const calculateShippingForItems = async (items: InputItem[]): Promise<Shi
       const variant = product.variants.find((v: any) => v.volume.toLowerCase() === item.size?.toLowerCase());
       if (variant) {
         itemPrice = variant.price;
-        itemWeight = variant.weight || parsedVariantWeight || product.weight || 0;
+        itemWeight = parsedVariantWeight || variant.weight || product.weight || 0;
       } else {
         const defaultVariant = product.variants[0];
         itemPrice = defaultVariant.price;
         const parsedDefaultWeight = parseWeightFromVolume(defaultVariant.volume || '');
-        itemWeight = defaultVariant.weight || parsedDefaultWeight || product.weight || 0;
+        itemWeight = parsedDefaultWeight || defaultVariant.weight || product.weight || 0;
       }
     } else if (product.variants && product.variants.length > 0) {
       const defaultVariant = product.variants[0];
       itemPrice = defaultVariant.price;
       const parsedDefaultWeight = parseWeightFromVolume(defaultVariant.volume || '');
-      itemWeight = defaultVariant.weight || parsedDefaultWeight || product.weight || 0;
+      itemWeight = parsedDefaultWeight || defaultVariant.weight || product.weight || 0;
     } else {
       throw new Error(`Product ${product.name} has no variants configured`);
     }

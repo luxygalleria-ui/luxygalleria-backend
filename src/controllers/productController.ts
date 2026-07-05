@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Product } from '../models/Product';
 import { asyncHandler } from '../utils/asyncHandler';
 import { successResponse, errorResponse } from '../utils/responseHandler';
+import { parseWeightFromVolume } from '../utils/shippingCalculator';
 
 export const createProduct = asyncHandler(async (req: Request, res: Response) => {
   if (req.files && Array.isArray(req.files)) {
@@ -21,6 +22,19 @@ export const createProduct = asyncHandler(async (req: Request, res: Response) =>
       req.body.variants = JSON.parse(req.body.variants);
     } catch (e) {
       // do nothing, let validator catch it
+    }
+  }
+
+  if (req.body.variants && Array.isArray(req.body.variants)) {
+    req.body.variants = req.body.variants.map((v: any) => {
+      const parsedWeight = parseWeightFromVolume(v.volume || '');
+      return {
+        ...v,
+        weight: parsedWeight !== null ? parsedWeight : (v.weight || 0)
+      };
+    });
+    if (req.body.variants.length > 0) {
+      req.body.weight = req.body.variants[0].weight;
     }
   }
 
@@ -52,6 +66,19 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
       req.body.variants = JSON.parse(req.body.variants);
     } catch (e) {
       // do nothing
+    }
+  }
+
+  if (req.body.variants && Array.isArray(req.body.variants)) {
+    req.body.variants = req.body.variants.map((v: any) => {
+      const parsedWeight = parseWeightFromVolume(v.volume || '');
+      return {
+        ...v,
+        weight: parsedWeight !== null ? parsedWeight : (v.weight || 0)
+      };
+    });
+    if (req.body.variants.length > 0) {
+      req.body.weight = req.body.variants[0].weight;
     }
   }
   

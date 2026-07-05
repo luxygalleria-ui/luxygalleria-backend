@@ -15,32 +15,38 @@ export const getCart = asyncHandler(async (req: Request, res: Response) => {
 
 // Add Item to Cart
 export const addToCart = asyncHandler(async (req: Request, res: Response) => {
-  const { productId, quantity, size } = req.body;
-  
-  const product = await Product.findById(productId);
-  if (!product) {
-    return errorResponse(res, 404, 'Product not found');
+  try {
+    const { productId, quantity, size } = req.body;
+    
+    const product = await Product.findById(productId);
+    if (!product) {
+      return errorResponse(res, 404, 'Product not found');
+    }
+
+    let cart = await Cart.findOne({ user: req.user?._id });
+    if (!cart) {
+      cart = await Cart.create({ user: req.user?._id, items: [] });
+    }
+
+    const existingItemIndex = cart.items.findIndex(
+      (item) => item.product && item.product.toString() === productId && item.size === size
+    );
+
+    if (existingItemIndex > -1) {
+      cart.items[existingItemIndex].quantity += quantity;
+    } else {
+      cart.items.push({ product: productId, quantity, size });
+    }
+
+    await cart.save();
+    await cart.populate('items.product');
+
+    return successResponse(res, 200, 'Item added to cart', cart);
+  } catch (err: any) {
+    const fs = require('fs');
+    fs.writeFileSync('/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/cart_error_debug.log', err.stack || err.message);
+    throw err;
   }
-
-  let cart = await Cart.findOne({ user: req.user?._id });
-  if (!cart) {
-    cart = await Cart.create({ user: req.user?._id, items: [] });
-  }
-
-  const existingItemIndex = cart.items.findIndex(
-    (item) => item.product.toString() === productId && item.size === size
-  );
-
-  if (existingItemIndex > -1) {
-    cart.items[existingItemIndex].quantity += quantity;
-  } else {
-    cart.items.push({ product: productId, quantity, size });
-  }
-
-  await cart.save();
-  await cart.populate('items.product');
-
-  return successResponse(res, 200, 'Item added to cart', cart);
 });
 
 // Update Cart Item Quantity

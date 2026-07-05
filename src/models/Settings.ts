@@ -17,7 +17,7 @@ const settingsSchema = new Schema<ISettings>(
     bannerText: { type: String, default: '' },
     isBannerActive: { type: Boolean, default: false },
     footerText: { type: String, default: '© 2026 Luxy Galleria. All rights reserved.' },
-    whatsappNumber: { type: String, default: '7012552969' },
+    whatsappNumber: { type: String, default: '917736989068' },
     primaryColor: { type: String, default: '#8B5E34' },
     secondaryColor: { type: String, default: '#F5F1E8' },
     shippingBelow500g: { type: Number, default: 40 },
