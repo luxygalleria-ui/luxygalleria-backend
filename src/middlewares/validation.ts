@@ -96,8 +96,12 @@ export const schemas = {
       razorpay_signature: z.string().min(1),
       items: z.array(z.object({
         product: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid product ID'),
+        variantId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid variant ID'),
         quantity: z.number().int().positive(),
         price: z.number().positive(),
+        size: z.string().optional(),
+        image: z.string().optional(),
+        subtotal: z.number().optional(),
       })).min(1, 'At least one item is required'),
       shippingAddress: z.object({
         street: z.string().optional(),

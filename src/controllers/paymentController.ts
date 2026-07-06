@@ -178,11 +178,17 @@ export const verifyPayment = async (req: Request, res: Response) => {
       await newOrder.save();
       await newOrder.populate('items.product', 'name images variants');
 
-      // Reduce stock for each product
+      // Reduce stock for each product and variant
       try {
         for (const item of items) {
           const product = await Product.findById(item.product);
           if (product) {
+            if (item.variantId && product.variants && product.variants.length > 0) {
+              const variant = product.variants.find((v: any) => v._id && v._id.toString() === item.variantId.toString());
+              if (variant) {
+                variant.stock = Math.max(0, (variant.stock || 0) - item.quantity);
+              }
+            }
             product.stock = Math.max(0, (product.stock || 0) - item.quantity);
             await product.save();
           }

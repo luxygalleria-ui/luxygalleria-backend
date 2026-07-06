@@ -15,7 +15,7 @@ export const getCart = asyncHandler(async (req: Request, res: Response) => {
 
 // Add Item to Cart
 export const addToCart = asyncHandler(async (req: Request, res: Response) => {
-  const { productId, quantity, size } = req.body;
+  const { productId, quantity, size, variantId } = req.body;
   
   const product = await Product.findById(productId);
   if (!product) {
@@ -28,13 +28,22 @@ export const addToCart = asyncHandler(async (req: Request, res: Response) => {
   }
 
   const existingItemIndex = cart.items.findIndex(
-    (item) => item.product && item.product.toString() === productId && item.size === size
+    (item) =>
+      item.product &&
+      item.product.toString() === productId &&
+      (variantId ? (item.variantId && item.variantId.toString() === variantId) : (item.size === size))
   );
 
   if (existingItemIndex > -1) {
     cart.items[existingItemIndex].quantity += quantity;
   } else {
-    cart.items.push({ product: productId, quantity, size });
+    // If variantId is not provided, try to find the first variant's _id
+    let actualVariantId = variantId;
+    if (!actualVariantId && product.variants && product.variants.length > 0) {
+      const match = product.variants.find((v: any) => v.volume.toLowerCase() === size?.toLowerCase());
+      actualVariantId = match ? match._id : product.variants[0]._id;
+    }
+    cart.items.push({ product: productId, variantId: actualVariantId, quantity, size });
   }
 
   await cart.save();
@@ -45,7 +54,7 @@ export const addToCart = asyncHandler(async (req: Request, res: Response) => {
 
 // Update Cart Item Quantity
 export const updateCartItem = asyncHandler(async (req: Request, res: Response) => {
-  const { productId, quantity, size } = req.body;
+  const { productId, quantity, size, variantId } = req.body;
 
   let cart = await Cart.findOne({ user: req.user?._id });
   if (!cart) {
@@ -53,7 +62,10 @@ export const updateCartItem = asyncHandler(async (req: Request, res: Response) =
   }
 
   const existingItemIndex = cart.items.findIndex(
-    (item) => item.product && item.product.toString() === productId && item.size === size
+    (item) =>
+      item.product &&
+      item.product.toString() === productId &&
+      (variantId ? (item.variantId && item.variantId.toString() === variantId) : (item.size === size))
   );
 
   if (existingItemIndex > -1) {
@@ -72,7 +84,7 @@ export const updateCartItem = asyncHandler(async (req: Request, res: Response) =
 
 // Remove Item from Cart
 export const removeFromCart = asyncHandler(async (req: Request, res: Response) => {
-  const { productId, size } = req.body; // or params, but using body is easier for optional size
+  const { productId, size, variantId } = req.body; // or params, but using body is easier for optional size
 
   let cart = await Cart.findOne({ user: req.user?._id });
   if (!cart) {
@@ -80,7 +92,12 @@ export const removeFromCart = asyncHandler(async (req: Request, res: Response) =
   }
 
   cart.items = cart.items.filter(
-    (item) => !(item.product && item.product.toString() === productId && item.size === size)
+    (item) =>
+      !(
+        item.product &&
+        item.product.toString() === productId &&
+        (variantId ? (item.variantId && item.variantId.toString() === variantId) : (item.size === size))
+      )
   );
 
   await cart.save();

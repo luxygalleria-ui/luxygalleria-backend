@@ -28,13 +28,29 @@ export const createProduct = asyncHandler(async (req: Request, res: Response) =>
   if (req.body.variants && Array.isArray(req.body.variants)) {
     req.body.variants = req.body.variants.map((v: any) => {
       const parsedWeight = parseWeightFromVolume(v.volume || '');
+      const offerPrice = Number(v.offerPrice !== undefined ? v.offerPrice : (v.price || 0));
+      const actualPrice = Number(v.actualPrice !== undefined ? v.actualPrice : (v.oldPrice || v.price || 0));
+      const weight = Number(v.weight !== undefined ? v.weight : (parsedWeight !== null ? parsedWeight : 0));
+      const stock = Number(v.stock !== undefined ? v.stock : 0);
+      const sku = v.sku || '';
+      const image = v.image || '';
+      const images = Array.isArray(v.images) ? v.images : (v.image ? [v.image] : []);
       return {
         ...v,
-        weight: parsedWeight !== null ? parsedWeight : (v.weight || 0)
+        offerPrice,
+        actualPrice,
+        price: offerPrice,
+        oldPrice: actualPrice,
+        weight,
+        stock,
+        image,
+        images,
+        sku
       };
     });
     if (req.body.variants.length > 0) {
       req.body.weight = req.body.variants[0].weight;
+      req.body.stock = req.body.variants.reduce((acc: number, curr: any) => acc + curr.stock, 0);
     }
   }
 
@@ -72,13 +88,29 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
   if (req.body.variants && Array.isArray(req.body.variants)) {
     req.body.variants = req.body.variants.map((v: any) => {
       const parsedWeight = parseWeightFromVolume(v.volume || '');
+      const offerPrice = Number(v.offerPrice !== undefined ? v.offerPrice : (v.price || 0));
+      const actualPrice = Number(v.actualPrice !== undefined ? v.actualPrice : (v.oldPrice || v.price || 0));
+      const weight = Number(v.weight !== undefined ? v.weight : (parsedWeight !== null ? parsedWeight : 0));
+      const stock = Number(v.stock !== undefined ? v.stock : 0);
+      const sku = v.sku || '';
+      const image = v.image || '';
+      const images = Array.isArray(v.images) ? v.images : (v.image ? [v.image] : []);
       return {
         ...v,
-        weight: parsedWeight !== null ? parsedWeight : (v.weight || 0)
+        offerPrice,
+        actualPrice,
+        price: offerPrice,
+        oldPrice: actualPrice,
+        weight,
+        stock,
+        image,
+        images,
+        sku
       };
     });
     if (req.body.variants.length > 0) {
       req.body.weight = req.body.variants[0].weight;
+      req.body.stock = req.body.variants.reduce((acc: number, curr: any) => acc + curr.stock, 0);
     }
   }
   

@@ -13,6 +13,7 @@ export interface InputItem {
   product: string;
   quantity: number;
   size?: string;
+  variantId?: string;
 }
 
 /**
@@ -63,22 +64,22 @@ export const calculateShippingForItems = async (items: InputItem[]): Promise<Shi
 
     const parsedVariantWeight = parseWeightFromVolume(item.size || '');
 
-    if (item.size && product.variants && product.variants.length > 0) {
-      const variant = product.variants.find((v: any) => v.volume.toLowerCase() === item.size?.toLowerCase());
-      if (variant) {
-        itemPrice = variant.price;
-        itemWeight = parsedVariantWeight || variant.weight || product.weight || 0;
-      } else {
-        const defaultVariant = product.variants[0];
-        itemPrice = defaultVariant.price;
-        const parsedDefaultWeight = parseWeightFromVolume(defaultVariant.volume || '');
-        itemWeight = parsedDefaultWeight || defaultVariant.weight || product.weight || 0;
-      }
+    let variant = null;
+    if (item.variantId && product.variants && product.variants.length > 0) {
+      variant = product.variants.find((v: any) => v._id && v._id.toString() === item.variantId?.toString());
+    }
+    if (!variant && item.size && product.variants && product.variants.length > 0) {
+      variant = product.variants.find((v: any) => v.volume.toLowerCase() === item.size?.toLowerCase());
+    }
+
+    if (variant) {
+      itemPrice = variant.offerPrice || variant.price || 0;
+      itemWeight = (variant.weight && variant.weight > 0) ? variant.weight : (parsedVariantWeight || product.weight || 0);
     } else if (product.variants && product.variants.length > 0) {
       const defaultVariant = product.variants[0];
-      itemPrice = defaultVariant.price;
+      itemPrice = defaultVariant.offerPrice || defaultVariant.price || 0;
       const parsedDefaultWeight = parseWeightFromVolume(defaultVariant.volume || '');
-      itemWeight = parsedDefaultWeight || defaultVariant.weight || product.weight || 0;
+      itemWeight = (defaultVariant.weight && defaultVariant.weight > 0) ? defaultVariant.weight : (parsedDefaultWeight || product.weight || 0);
     } else {
       throw new Error(`Product ${product.name} has no variants configured`);
     }

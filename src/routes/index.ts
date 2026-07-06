@@ -20,6 +20,16 @@ const router = Router();
 // Health Check
 router.get('/health', checkHealth);
 
+// Generic Image Upload (Cloudinary/Local)
+import { upload } from '../middlewares/uploadMiddleware';
+import { protect } from '../middlewares/authMiddleware';
+router.post('/upload', protect, upload.single('imageFile'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: 'No file uploaded' });
+  }
+  res.status(200).json({ success: true, url: req.file.path });
+});
+
 // Mount other routes here
 router.use('/auth', authRoutes);
 router.use('/products', productRoutes);

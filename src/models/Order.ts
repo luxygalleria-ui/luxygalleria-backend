@@ -4,9 +4,12 @@ export interface IOrder extends Document {
   user: mongoose.Types.ObjectId;
   items: {
     product: mongoose.Types.ObjectId;
+    variantId?: mongoose.Types.ObjectId | string;
     quantity: number;
     price: number;
     size?: string;
+    image?: string;
+    subtotal?: number;
   }[];
   shippingAddress: {
     street: string;
@@ -35,9 +38,12 @@ const OrderSchema: Schema = new Schema(
     items: [
       {
         product: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
+        variantId: { type: Schema.Types.ObjectId, required: true },
         quantity: { type: Number, required: true },
         price: { type: Number, required: true },
         size: { type: String },
+        image: { type: String },
+        subtotal: { type: Number },
       },
     ],
     shippingAddress: {
