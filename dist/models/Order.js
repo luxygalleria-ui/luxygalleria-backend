@@ -39,9 +39,12 @@ const OrderSchema = new mongoose_1.Schema({
     items: [
         {
             product: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Product', required: true },
+            variantId: { type: mongoose_1.Schema.Types.ObjectId, required: true },
             quantity: { type: Number, required: true },
             price: { type: Number, required: true },
             size: { type: String },
+            image: { type: String },
+            subtotal: { type: Number },
         },
     ],
     shippingAddress: {

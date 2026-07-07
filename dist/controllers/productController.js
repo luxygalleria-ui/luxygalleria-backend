@@ -4,6 +4,7 @@ exports.deleteProduct = exports.updateProduct = exports.getProducts = exports.cr
 const Product_1 = require("../models/Product");
 const asyncHandler_1 = require("../utils/asyncHandler");
 const responseHandler_1 = require("../utils/responseHandler");
+const shippingCalculator_1 = require("../utils/shippingCalculator");
 exports.createProduct = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     if (req.files && Array.isArray(req.files)) {
         const fileUrls = req.files.map(file => file.path);
@@ -20,6 +21,34 @@ exports.createProduct = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         }
         catch (e) {
             // do nothing, let validator catch it
+        }
+    }
+    if (req.body.variants && Array.isArray(req.body.variants)) {
+        req.body.variants = req.body.variants.map((v) => {
+            const parsedWeight = (0, shippingCalculator_1.parseWeightFromVolume)(v.volume || '');
+            const offerPrice = Number(v.offerPrice !== undefined ? v.offerPrice : (v.price || 0));
+            const actualPrice = Number(v.actualPrice !== undefined ? v.actualPrice : (v.oldPrice || v.price || 0));
+            const weight = Number(v.weight !== undefined ? v.weight : (parsedWeight !== null ? parsedWeight : 0));
+            const stock = Number(v.stock !== undefined ? v.stock : 0);
+            const sku = v.sku || '';
+            const image = v.image || '';
+            const images = Array.isArray(v.images) ? v.images : (v.image ? [v.image] : []);
+            return {
+                ...v,
+                offerPrice,
+                actualPrice,
+                price: offerPrice,
+                oldPrice: actualPrice,
+                weight,
+                stock,
+                image,
+                images,
+                sku
+            };
+        });
+        if (req.body.variants.length > 0) {
+            req.body.weight = req.body.variants[0].weight;
+            req.body.stock = req.body.variants.reduce((acc, curr) => acc + curr.stock, 0);
         }
     }
     const product = await Product_1.Product.create(req.body);
@@ -47,6 +76,34 @@ exports.updateProduct = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         }
         catch (e) {
             // do nothing
+        }
+    }
+    if (req.body.variants && Array.isArray(req.body.variants)) {
+        req.body.variants = req.body.variants.map((v) => {
+            const parsedWeight = (0, shippingCalculator_1.parseWeightFromVolume)(v.volume || '');
+            const offerPrice = Number(v.offerPrice !== undefined ? v.offerPrice : (v.price || 0));
+            const actualPrice = Number(v.actualPrice !== undefined ? v.actualPrice : (v.oldPrice || v.price || 0));
+            const weight = Number(v.weight !== undefined ? v.weight : (parsedWeight !== null ? parsedWeight : 0));
+            const stock = Number(v.stock !== undefined ? v.stock : 0);
+            const sku = v.sku || '';
+            const image = v.image || '';
+            const images = Array.isArray(v.images) ? v.images : (v.image ? [v.image] : []);
+            return {
+                ...v,
+                offerPrice,
+                actualPrice,
+                price: offerPrice,
+                oldPrice: actualPrice,
+                weight,
+                stock,
+                image,
+                images,
+                sku
+            };
+        });
+        if (req.body.variants.length > 0) {
+            req.body.weight = req.body.variants[0].weight;
+            req.body.stock = req.body.variants.reduce((acc, curr) => acc + curr.stock, 0);
         }
     }
     product = await Product_1.Product.findByIdAndUpdate(req.params.id, req.body, {

@@ -22,6 +22,15 @@ const settingsRoutes_1 = __importDefault(require("./settingsRoutes"));
 const router = (0, express_1.Router)();
 // Health Check
 router.get('/health', healthController_1.checkHealth);
+// Generic Image Upload (Cloudinary/Local)
+const uploadMiddleware_1 = require("../middlewares/uploadMiddleware");
+const authMiddleware_1 = require("../middlewares/authMiddleware");
+router.post('/upload', authMiddleware_1.protect, uploadMiddleware_1.upload.single('imageFile'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ success: false, message: 'No file uploaded' });
+    }
+    res.status(200).json({ success: true, url: req.file.path });
+});
 // Mount other routes here
 router.use('/auth', authRoutes_1.default);
 router.use('/products', productRoutes_1.default);

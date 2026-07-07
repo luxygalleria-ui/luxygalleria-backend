@@ -15,7 +15,7 @@ exports.getCart = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
 });
 // Add Item to Cart
 exports.addToCart = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
-    const { productId, quantity, size } = req.body;
+    const { productId, quantity, size, variantId } = req.body;
     const product = await Product_1.Product.findById(productId);
     if (!product) {
         return (0, responseHandler_1.errorResponse)(res, 404, 'Product not found');
@@ -24,12 +24,20 @@ exports.addToCart = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     if (!cart) {
         cart = await Cart_1.Cart.create({ user: req.user?._id, items: [] });
     }
-    const existingItemIndex = cart.items.findIndex((item) => item.product.toString() === productId && item.size === size);
+    const existingItemIndex = cart.items.findIndex((item) => item.product &&
+        item.product.toString() === productId &&
+        (variantId ? (item.variantId && item.variantId.toString() === variantId) : (item.size === size)));
     if (existingItemIndex > -1) {
         cart.items[existingItemIndex].quantity += quantity;
     }
     else {
-        cart.items.push({ product: productId, quantity, size });
+        // If variantId is not provided, try to find the first variant's _id
+        let actualVariantId = variantId;
+        if (!actualVariantId && product.variants && product.variants.length > 0) {
+            const match = product.variants.find((v) => v.volume.toLowerCase() === size?.toLowerCase());
+            actualVariantId = match ? match._id : product.variants[0]._id;
+        }
+        cart.items.push({ product: productId, variantId: actualVariantId, quantity, size });
     }
     await cart.save();
     await cart.populate('items.product');
@@ -37,12 +45,14 @@ exports.addToCart = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
 });
 // Update Cart Item Quantity
 exports.updateCartItem = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
-    const { productId, quantity, size } = req.body;
+    const { productId, quantity, size, variantId } = req.body;
     let cart = await Cart_1.Cart.findOne({ user: req.user?._id });
     if (!cart) {
         return (0, responseHandler_1.errorResponse)(res, 404, 'Cart not found');
     }
-    const existingItemIndex = cart.items.findIndex((item) => item.product.toString() === productId && item.size === size);
+    const existingItemIndex = cart.items.findIndex((item) => item.product &&
+        item.product.toString() === productId &&
+        (variantId ? (item.variantId && item.variantId.toString() === variantId) : (item.size === size)));
     if (existingItemIndex > -1) {
         if (quantity > 0) {
             cart.items[existingItemIndex].quantity = quantity;
@@ -60,12 +70,14 @@ exports.updateCartItem = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
 });
 // Remove Item from Cart
 exports.removeFromCart = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
-    const { productId, size } = req.body; // or params, but using body is easier for optional size
+    const { productId, size, variantId } = req.body; // or params, but using body is easier for optional size
     let cart = await Cart_1.Cart.findOne({ user: req.user?._id });
     if (!cart) {
         return (0, responseHandler_1.errorResponse)(res, 404, 'Cart not found');
     }
-    cart.items = cart.items.filter((item) => !(item.product.toString() === productId && item.size === size));
+    cart.items = cart.items.filter((item) => !(item.product &&
+        item.product.toString() === productId &&
+        (variantId ? (item.variantId && item.variantId.toString() === variantId) : (item.size === size))));
     await cart.save();
     await cart.populate('items.product');
     return (0, responseHandler_1.successResponse)(res, 200, 'Item removed from cart', cart);

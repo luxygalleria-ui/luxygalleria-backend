@@ -13,7 +13,8 @@ exports.getProfile = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         name: user.name,
         email: user.email,
         phone: user.phone,
-        role: user.role
+        role: user.role,
+        avatar: user.avatar
     };
     (0, responseHandler_1.successResponse)(res, 200, 'Profile fetched successfully', userData);
 });
@@ -38,7 +39,8 @@ exports.updateProfile = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         name: user.name,
         email: user.email,
         phone: user.phone,
-        role: user.role
+        role: user.role,
+        avatar: user.avatar
     };
     (0, responseHandler_1.successResponse)(res, 200, 'Profile updated successfully', updatedUser);
 });

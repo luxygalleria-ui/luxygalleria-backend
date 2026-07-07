@@ -92,8 +92,12 @@ exports.schemas = {
             razorpay_signature: zod_1.z.string().min(1),
             items: zod_1.z.array(zod_1.z.object({
                 product: zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid product ID'),
+                variantId: zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid variant ID'),
                 quantity: zod_1.z.number().int().positive(),
                 price: zod_1.z.number().positive(),
+                size: zod_1.z.string().optional(),
+                image: zod_1.z.string().optional(),
+                subtotal: zod_1.z.number().optional(),
             })).min(1, 'At least one item is required'),
             shippingAddress: zod_1.z.object({
                 street: zod_1.z.string().optional(),

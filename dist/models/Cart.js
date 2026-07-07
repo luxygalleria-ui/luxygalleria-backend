@@ -37,6 +37,7 @@ exports.Cart = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const CartItemSchema = new mongoose_1.Schema({
     product: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Product', required: true },
+    variantId: { type: mongoose_1.Schema.Types.ObjectId, required: true },
     quantity: { type: Number, required: true, min: 1, default: 1 },
     size: { type: String }
 });
