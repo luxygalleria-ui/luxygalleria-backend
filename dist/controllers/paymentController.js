@@ -96,6 +96,16 @@ const verifyPayment = async (req, res) => {
         if (!items || items.length === 0) {
             return res.status(400).json({ success: false, message: 'No items in order' });
         }
+        // Ensure all items have a valid variantId
+        for (const item of items) {
+            if (!item.variantId) {
+                const product = await Product_1.Product.findById(item.product);
+                if (product && product.variants && product.variants.length > 0) {
+                    const match = product.variants.find((v) => v.volume?.toLowerCase() === item.size?.toLowerCase());
+                    item.variantId = match ? match._id?.toString() : product.variants[0]._id?.toString();
+                }
+            }
+        }
         if (!req.user || !req.user._id) {
             return res.status(401).json({ success: false, message: 'User not authenticated' });
         }
