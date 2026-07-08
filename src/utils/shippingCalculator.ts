@@ -69,7 +69,7 @@ export const calculateShippingForItems = async (items: InputItem[]): Promise<Shi
       variant = product.variants.find((v: any) => v._id && v._id.toString() === item.variantId?.toString());
     }
     if (!variant && item.size && product.variants && product.variants.length > 0) {
-      variant = product.variants.find((v: any) => v.volume.toLowerCase() === item.size?.toLowerCase());
+      variant = product.variants.find((v: any) => v.volume?.toLowerCase() === item.size?.toLowerCase());
     }
 
     if (variant) {
