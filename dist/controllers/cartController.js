@@ -34,7 +34,7 @@ exports.addToCart = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         // If variantId is not provided, try to find the first variant's _id
         let actualVariantId = variantId;
         if (!actualVariantId && product.variants && product.variants.length > 0) {
-            const match = product.variants.find((v) => v.volume.toLowerCase() === size?.toLowerCase());
+            const match = product.variants.find((v) => v.volume?.toLowerCase() === size?.toLowerCase());
             actualVariantId = match ? match._id : product.variants[0]._id;
         }
         cart.items.push({ product: productId, variantId: actualVariantId, quantity, size });

@@ -37,6 +37,8 @@ exports.Product = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const variantSchema = new mongoose_1.Schema({
     volume: { type: String, required: true },
+    size: { type: String },
+    flavor: { type: String, default: 'Default' },
     price: { type: Number, required: true }, // backward compatibility
     oldPrice: { type: Number }, // backward compatibility
     offerPrice: { type: Number, required: true },
@@ -45,6 +47,8 @@ const variantSchema = new mongoose_1.Schema({
     weight: { type: Number, required: true, default: 0 },
     image: { type: String },
     sku: { type: String },
+    description: { type: String },
+    name: { type: String },
 });
 const productSchema = new mongoose_1.Schema({
     name: { type: String, required: true, trim: true },

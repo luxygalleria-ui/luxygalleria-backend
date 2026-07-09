@@ -51,7 +51,7 @@ const calculateShippingForItems = async (items) => {
             variant = product.variants.find((v) => v._id && v._id.toString() === item.variantId?.toString());
         }
         if (!variant && item.size && product.variants && product.variants.length > 0) {
-            variant = product.variants.find((v) => v.volume.toLowerCase() === item.size?.toLowerCase());
+            variant = product.variants.find((v) => v.volume?.toLowerCase() === item.size?.toLowerCase());
         }
         if (variant) {
             itemPrice = variant.offerPrice || variant.price || 0;

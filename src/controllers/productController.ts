@@ -27,16 +27,22 @@ export const createProduct = asyncHandler(async (req: Request, res: Response) =>
 
   if (req.body.variants && Array.isArray(req.body.variants)) {
     req.body.variants = req.body.variants.map((v: any) => {
-      const parsedWeight = parseWeightFromVolume(v.volume || '');
+      const size = v.size || v.volume || 'Standard';
+      const flavor = v.flavor || 'Default';
+      const volume = size;
+      const parsedWeight = parseWeightFromVolume(size);
       const offerPrice = Number(v.offerPrice !== undefined ? v.offerPrice : (v.price || 0));
       const actualPrice = Number(v.actualPrice !== undefined ? v.actualPrice : (v.oldPrice || v.price || 0));
-      const weight = Number(v.weight !== undefined ? v.weight : (parsedWeight !== null ? parsedWeight : 0));
+      const weight = Number(v.weight !== undefined && v.weight > 0 ? v.weight : (parsedWeight !== null ? parsedWeight : 0));
       const stock = Number(v.stock !== undefined ? v.stock : 0);
       const sku = v.sku || '';
       const image = v.image || '';
       const images = Array.isArray(v.images) ? v.images : (v.image ? [v.image] : []);
       return {
         ...v,
+        size,
+        flavor,
+        volume,
         offerPrice,
         actualPrice,
         price: offerPrice,
@@ -87,16 +93,22 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
 
   if (req.body.variants && Array.isArray(req.body.variants)) {
     req.body.variants = req.body.variants.map((v: any) => {
-      const parsedWeight = parseWeightFromVolume(v.volume || '');
+      const size = v.size || v.volume || 'Standard';
+      const flavor = v.flavor || 'Default';
+      const volume = size;
+      const parsedWeight = parseWeightFromVolume(size);
       const offerPrice = Number(v.offerPrice !== undefined ? v.offerPrice : (v.price || 0));
       const actualPrice = Number(v.actualPrice !== undefined ? v.actualPrice : (v.oldPrice || v.price || 0));
-      const weight = Number(v.weight !== undefined ? v.weight : (parsedWeight !== null ? parsedWeight : 0));
+      const weight = Number(v.weight !== undefined && v.weight > 0 ? v.weight : (parsedWeight !== null ? parsedWeight : 0));
       const stock = Number(v.stock !== undefined ? v.stock : 0);
       const sku = v.sku || '';
       const image = v.image || '';
       const images = Array.isArray(v.images) ? v.images : (v.image ? [v.image] : []);
       return {
         ...v,
+        size,
+        flavor,
+        volume,
         offerPrice,
         actualPrice,
         price: offerPrice,

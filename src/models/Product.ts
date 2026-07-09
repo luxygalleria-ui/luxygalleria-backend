@@ -2,7 +2,9 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 interface IVariant {
   _id?: mongoose.Types.ObjectId | string;
-  volume: string;
+  volume: string; // backward compatibility
+  size?: string;
+  flavor?: string;
   price: number; // backward compatibility
   oldPrice?: number; // backward compatibility
   offerPrice: number;
@@ -11,6 +13,8 @@ interface IVariant {
   weight: number;
   image: string;
   sku?: string;
+  description?: string;
+  name?: string;
 }
 
 export interface IProduct extends Document {
@@ -31,6 +35,8 @@ export interface IProduct extends Document {
 
 const variantSchema = new Schema<IVariant>({
   volume: { type: String, required: true },
+  size: { type: String },
+  flavor: { type: String, default: 'Default' },
   price: { type: Number, required: true }, // backward compatibility
   oldPrice: { type: Number }, // backward compatibility
   offerPrice: { type: Number, required: true },
@@ -39,6 +45,8 @@ const variantSchema = new Schema<IVariant>({
   weight: { type: Number, required: true, default: 0 },
   image: { type: String },
   sku: { type: String },
+  description: { type: String },
+  name: { type: String },
 });
 
 const productSchema = new Schema<IProduct>(
