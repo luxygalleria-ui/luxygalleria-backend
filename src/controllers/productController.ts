@@ -5,16 +5,22 @@ import { successResponse, errorResponse } from '../utils/responseHandler';
 import { parseWeightFromVolume } from '../utils/shippingCalculator';
 
 export const createProduct = asyncHandler(async (req: Request, res: Response) => {
-  if (req.files && Array.isArray(req.files)) {
-    const fileUrls = req.files.map(file => file.path);
-    
-    // Parse the stringified arrays/objects from formData if necessary
-    if (typeof req.body.images === 'string') {
-      req.body.images = [req.body.images];
+  let existingImages: string[] = [];
+  if (req.body.images) {
+    if (Array.isArray(req.body.images)) {
+      existingImages = req.body.images;
+    } else if (typeof req.body.images === 'string') {
+      existingImages = [req.body.images];
     }
-    
-    req.body.images = [...(req.body.images || []), ...fileUrls];
   }
+
+  const fileUrls = (req.files && Array.isArray(req.files)) ? req.files.map(file => file.path) : [];
+  const finalImages = [...existingImages, ...fileUrls];
+
+  if (finalImages.length === 0) {
+    return errorResponse(res, 400, 'Product must have at least one image.');
+  }
+  req.body.images = finalImages;
 
   // Handle variants parsing if sent as a string (from FormData)
   if (typeof req.body.variants === 'string') {
@@ -75,13 +81,22 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
     return errorResponse(res, 404, 'Product not found');
   }
   
-  if (req.files && Array.isArray(req.files)) {
-    const fileUrls = req.files.map(file => file.path);
-    if (typeof req.body.images === 'string') {
-      req.body.images = [req.body.images];
+  let existingImages: string[] = [];
+  if (req.body.images) {
+    if (Array.isArray(req.body.images)) {
+      existingImages = req.body.images;
+    } else if (typeof req.body.images === 'string') {
+      existingImages = [req.body.images];
     }
-    req.body.images = [...(req.body.images || []), ...fileUrls];
   }
+
+  const fileUrls = (req.files && Array.isArray(req.files)) ? req.files.map(file => file.path) : [];
+  const finalImages = [...existingImages, ...fileUrls];
+
+  if (finalImages.length === 0) {
+    return errorResponse(res, 400, 'Product must have at least one image.');
+  }
+  req.body.images = finalImages;
 
   if (typeof req.body.variants === 'string') {
     try {

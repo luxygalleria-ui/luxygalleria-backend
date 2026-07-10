@@ -11,8 +11,8 @@ import { calculateShippingForItems } from '../utils/shippingCalculator';
 dotenv.config();
 
 const razorpayInstance = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID || 'dummy_key_id',
-  key_secret: process.env.RAZORPAY_KEY_SECRET || 'dummy_key_secret',
+  key_id: (process.env.RAZORPAY_KEY_ID || 'dummy_key_id').trim(),
+  key_secret: (process.env.RAZORPAY_KEY_SECRET || 'dummy_key_secret').trim(),
 });
 
 // Create Order — Only creates a Razorpay order, does NOT save to DB yet
@@ -150,22 +150,13 @@ export const verifyPayment = async (req: Request, res: Response) => {
         return res.status(400).json({ success: false, message: 'Missing payment signature' });
       }
       const sign = razorpay_order_id + "|" + razorpay_payment_id;
+      const keySecret = (process.env.RAZORPAY_KEY_SECRET || 'dummy_key_secret').trim();
       const expectedSign = crypto
-        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || 'dummy_key_secret')
+        .createHmac("sha256", keySecret)
         .update(sign.toString())
         .digest("hex");
 
-      try {
-        const signatureBuffer = Buffer.from(razorpay_signature, 'hex');
-        const expectedBuffer = Buffer.from(expectedSign, 'hex');
-        if (signatureBuffer.length === expectedBuffer.length) {
-          paymentVerified = crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
-        } else {
-          paymentVerified = false;
-        }
-      } catch (err) {
-        paymentVerified = false;
-      }
+      paymentVerified = (razorpay_signature === expectedSign);
     }
 
     if (paymentVerified) {

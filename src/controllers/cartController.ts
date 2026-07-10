@@ -4,11 +4,38 @@ import { Product } from '../models/Product';
 import { asyncHandler } from '../utils/asyncHandler';
 import { successResponse, errorResponse } from '../utils/responseHandler';
 
+const repairCart = async (cart: any) => {
+  if (!cart || !cart.items || cart.items.length === 0) return;
+  let modified = false;
+  const cleanedItems = [];
+  for (let item of cart.items) {
+    if (!item.variantId) {
+      const prod = await Product.findById(item.product);
+      if (prod && prod.variants && prod.variants.length > 0) {
+        const match = prod.variants.find((v: any) => (v.volume || v.size || '').toLowerCase() === (item.size || '').toLowerCase());
+        item.variantId = match ? match._id : prod.variants[0]._id;
+        cleanedItems.push(item);
+        modified = true;
+      }
+      // If product has no variants or doesn't exist, omit it
+    } else {
+      cleanedItems.push(item);
+    }
+  }
+  if (modified) {
+    cart.items = cleanedItems;
+    await cart.save();
+  }
+};
+
 // Get Cart
 export const getCart = asyncHandler(async (req: Request, res: Response) => {
-  let cart = await Cart.findOne({ user: req.user?._id }).populate('items.product');
+  let cart = await Cart.findOne({ user: req.user?._id });
   if (!cart) {
     cart = await Cart.create({ user: req.user?._id, items: [] });
+  } else {
+    await repairCart(cart);
+    await cart.populate('items.product');
   }
   return successResponse(res, 200, 'Cart fetched successfully', cart);
 });
@@ -25,6 +52,8 @@ export const addToCart = asyncHandler(async (req: Request, res: Response) => {
   let cart = await Cart.findOne({ user: req.user?._id });
   if (!cart) {
     cart = await Cart.create({ user: req.user?._id, items: [] });
+  } else {
+    await repairCart(cart);
   }
 
   const existingItemIndex = cart.items.findIndex(
@@ -60,6 +89,7 @@ export const updateCartItem = asyncHandler(async (req: Request, res: Response) =
   if (!cart) {
     return errorResponse(res, 404, 'Cart not found');
   }
+  await repairCart(cart);
 
   const existingItemIndex = cart.items.findIndex(
     (item) =>
@@ -90,6 +120,7 @@ export const removeFromCart = asyncHandler(async (req: Request, res: Response) =
   if (!cart) {
     return errorResponse(res, 404, 'Cart not found');
   }
+  await repairCart(cart);
 
   cart.items = cart.items.filter(
     (item) =>
