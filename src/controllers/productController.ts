@@ -17,9 +17,6 @@ export const createProduct = asyncHandler(async (req: Request, res: Response) =>
   const fileUrls = (req.files && Array.isArray(req.files)) ? req.files.map(file => file.path) : [];
   const finalImages = [...existingImages, ...fileUrls];
 
-  if (finalImages.length === 0) {
-    return errorResponse(res, 400, 'Product must have at least one image.');
-  }
   req.body.images = finalImages;
 
   // Handle variants parsing if sent as a string (from FormData)
@@ -93,9 +90,6 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
   const fileUrls = (req.files && Array.isArray(req.files)) ? req.files.map(file => file.path) : [];
   const finalImages = [...existingImages, ...fileUrls];
 
-  if (finalImages.length === 0) {
-    return errorResponse(res, 400, 'Product must have at least one image.');
-  }
   req.body.images = finalImages;
 
   if (typeof req.body.variants === 'string') {
