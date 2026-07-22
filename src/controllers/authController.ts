@@ -107,77 +107,39 @@ export const registerCustomer = asyncHandler(async (req: Request, res: Response)
     return errorResponse(res, 400, 'Please provide name, email and password');
   }
 
-  let user = await User.findOne({ email });
-
-  if (user) {
-    if (user.isVerified) {
-      return errorResponse(res, 400, 'Email is already registered');
-    }
-    // If not verified, we can overwrite the existing unverified account or just generate a new OTP
-    user.name = name;
-    user.password = password;
-    user.phone = phone;
-    user.addresses = addresses;
+  const existing = await User.findOne({ email });
+  if (existing) {
+    return errorResponse(res, 400, 'Email is already registered');
   }
 
-  // Generate 6-digit OTP
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+  // Direct signup — account is active and usable immediately (no email OTP step)
+  const user = await User.create({
+    name,
+    email,
+    password,
+    phone,
+    role: 'customer',
+    addresses,
+    isVerified: true,
+    isActive: true,
+  });
 
-  if (!user) {
-    user = await User.create({
-      name,
-      email,
-      password,
-      phone,
-      role: 'customer',
-      addresses,
-      isVerified: false,
-      otp,
-      otpExpires
-    });
-  } else {
-    user.otp = otp;
-    user.otpExpires = otpExpires;
-    await user.save();
-  }
+  const token = generateToken(user._id.toString(), user.role);
 
-  // Send OTP via email
-  try {
-    const emailSubject = 'Your Luxy Galleria Verification Code';
-    const emailMessage = `Your verification code is: ${otp}\n\nThis code will expire in 10 minutes.`;
-    const emailHTML = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #0A192F; margin-bottom: 20px;">Welcome to Luxy Galleria!</h2>
-        <p style="color: #333; font-size: 16px; margin-bottom: 20px;">Hi <strong>${name}</strong>,</p>
-        <p style="color: #333; font-size: 16px; margin-bottom: 20px;">Your email verification code is:</p>
-        <div style="background-color: #FEF3C7; border: 2px solid #FCD34D; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 20px;">
-          <p style="font-size: 32px; font-weight: bold; color: #0A192F; letter-spacing: 4px; margin: 0;">${otp}</p>
-        </div>
-        <p style="color: #666; font-size: 14px; margin-bottom: 20px;">This code will expire in <strong>10 minutes</strong>.</p>
-        <p style="color: #999; font-size: 12px; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
-          If you didn't request this code, please ignore this email.
-        </p>
-      </div>
-    `;
-    
-    await sendEmail({
-      email,
-      subject: emailSubject,
-      message: emailMessage,
-      html: emailHTML
-    });
-    
-    console.log('\n✅ OTP Email sent to:', email, 'OTP:', otp, '\n');
-  } catch (emailError: any) {
-    console.error('⚠️ Failed to send OTP email:', emailError.message);
-    // Don't fail registration if email sending fails - continue anyway
-    console.log('\n✅ OTP:', otp, 'for', user.email, '(Email sending failed but OTP generated)\n');
-  }
+  res.cookie('jwt', token, {
+    httpOnly: true,
+    secure: ENV.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  });
 
-  successResponse(res, 201, 'Verification code generated. Please verify to complete registration.', {
+  successResponse(res, 201, 'Registration successful', {
+    _id: user._id,
+    name: user.name,
     email: user.email,
-    otp
+    phone: user.phone,
+    role: user.role,
+    token
   });
 });
 
