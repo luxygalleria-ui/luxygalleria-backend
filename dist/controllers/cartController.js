@@ -5,11 +5,40 @@ const Cart_1 = require("../models/Cart");
 const Product_1 = require("../models/Product");
 const asyncHandler_1 = require("../utils/asyncHandler");
 const responseHandler_1 = require("../utils/responseHandler");
+const repairCart = async (cart) => {
+    if (!cart || !cart.items || cart.items.length === 0)
+        return;
+    let modified = false;
+    const cleanedItems = [];
+    for (let item of cart.items) {
+        if (!item.variantId) {
+            const prod = await Product_1.Product.findById(item.product);
+            if (prod && prod.variants && prod.variants.length > 0) {
+                const match = prod.variants.find((v) => (v.volume || v.size || '').toLowerCase() === (item.size || '').toLowerCase());
+                item.variantId = match ? match._id : prod.variants[0]._id;
+                cleanedItems.push(item);
+                modified = true;
+            }
+            // If product has no variants or doesn't exist, omit it
+        }
+        else {
+            cleanedItems.push(item);
+        }
+    }
+    if (modified) {
+        cart.items = cleanedItems;
+        await cart.save();
+    }
+};
 // Get Cart
 exports.getCart = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
-    let cart = await Cart_1.Cart.findOne({ user: req.user?._id }).populate('items.product');
+    let cart = await Cart_1.Cart.findOne({ user: req.user?._id });
     if (!cart) {
         cart = await Cart_1.Cart.create({ user: req.user?._id, items: [] });
+    }
+    else {
+        await repairCart(cart);
+        await cart.populate('items.product');
     }
     return (0, responseHandler_1.successResponse)(res, 200, 'Cart fetched successfully', cart);
 });
@@ -23,6 +52,9 @@ exports.addToCart = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     let cart = await Cart_1.Cart.findOne({ user: req.user?._id });
     if (!cart) {
         cart = await Cart_1.Cart.create({ user: req.user?._id, items: [] });
+    }
+    else {
+        await repairCart(cart);
     }
     const existingItemIndex = cart.items.findIndex((item) => item.product &&
         item.product.toString() === productId &&
@@ -50,6 +82,7 @@ exports.updateCartItem = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     if (!cart) {
         return (0, responseHandler_1.errorResponse)(res, 404, 'Cart not found');
     }
+    await repairCart(cart);
     const existingItemIndex = cart.items.findIndex((item) => item.product &&
         item.product.toString() === productId &&
         (variantId ? (item.variantId && item.variantId.toString() === variantId) : (item.size === size)));
@@ -75,6 +108,7 @@ exports.removeFromCart = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     if (!cart) {
         return (0, responseHandler_1.errorResponse)(res, 404, 'Cart not found');
     }
+    await repairCart(cart);
     cart.items = cart.items.filter((item) => !(item.product &&
         item.product.toString() === productId &&
         (variantId ? (item.variantId && item.variantId.toString() === variantId) : (item.size === size))));

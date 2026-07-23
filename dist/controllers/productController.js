@@ -6,14 +6,18 @@ const asyncHandler_1 = require("../utils/asyncHandler");
 const responseHandler_1 = require("../utils/responseHandler");
 const shippingCalculator_1 = require("../utils/shippingCalculator");
 exports.createProduct = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
-    if (req.files && Array.isArray(req.files)) {
-        const fileUrls = req.files.map(file => file.path);
-        // Parse the stringified arrays/objects from formData if necessary
-        if (typeof req.body.images === 'string') {
-            req.body.images = [req.body.images];
+    let existingImages = [];
+    if (req.body.images) {
+        if (Array.isArray(req.body.images)) {
+            existingImages = req.body.images;
         }
-        req.body.images = [...(req.body.images || []), ...fileUrls];
+        else if (typeof req.body.images === 'string') {
+            existingImages = [req.body.images];
+        }
     }
+    const fileUrls = (req.files && Array.isArray(req.files)) ? req.files.map(file => file.path) : [];
+    const finalImages = [...existingImages, ...fileUrls];
+    req.body.images = finalImages;
     // Handle variants parsing if sent as a string (from FormData)
     if (typeof req.body.variants === 'string') {
         try {
@@ -69,13 +73,18 @@ exports.updateProduct = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     if (!product) {
         return (0, responseHandler_1.errorResponse)(res, 404, 'Product not found');
     }
-    if (req.files && Array.isArray(req.files)) {
-        const fileUrls = req.files.map(file => file.path);
-        if (typeof req.body.images === 'string') {
-            req.body.images = [req.body.images];
+    let existingImages = [];
+    if (req.body.images) {
+        if (Array.isArray(req.body.images)) {
+            existingImages = req.body.images;
         }
-        req.body.images = [...(req.body.images || []), ...fileUrls];
+        else if (typeof req.body.images === 'string') {
+            existingImages = [req.body.images];
+        }
     }
+    const fileUrls = (req.files && Array.isArray(req.files)) ? req.files.map(file => file.path) : [];
+    const finalImages = [...existingImages, ...fileUrls];
+    req.body.images = finalImages;
     if (typeof req.body.variants === 'string') {
         try {
             req.body.variants = JSON.parse(req.body.variants);
