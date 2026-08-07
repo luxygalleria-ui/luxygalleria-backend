@@ -33,39 +33,13 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Product = void 0;
+exports.Brand = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const variantSchema = new mongoose_1.Schema({
-    volume: { type: String, required: true },
-    size: { type: String },
-    flavor: { type: String, default: 'Default' },
-    price: { type: Number, required: true }, // backward compatibility
-    oldPrice: { type: Number }, // backward compatibility
-    offerPrice: { type: Number, required: true },
-    actualPrice: { type: Number, required: true },
-    stock: { type: Number, required: true, default: 0 },
-    weight: { type: Number, required: true, default: 0 },
-    image: { type: String },
-    sku: { type: String },
-    description: { type: String },
-    name: { type: String },
-});
-const productSchema = new mongoose_1.Schema({
+const brandSchema = new mongoose_1.Schema({
     name: { type: String, required: true, trim: true },
-    category: { type: String, required: true },
-    categoryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Category', required: false },
-    brandId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Brand', required: false },
-    description: { type: String, required: true },
-    variants: [variantSchema],
-    starRating: { type: Number, default: 0, min: 0, max: 5 },
-    reviewsCount: { type: Number, default: 0 },
-    offerText: { type: String },
-    keyFeatures: { type: String },
-    images: [{ type: String }],
-    status: { type: String, default: 'In Stock' },
-    showOnLandingPage: { type: Boolean, default: false },
-    stock: { type: Number, default: 0 },
-    weight: { type: Number, default: 0 },
+    logo: { type: String, required: true },
+    status: { type: String, default: 'ACTIVE' },
+    displayOrder: { type: Number, default: 0 },
 }, { timestamps: true });
-exports.Product = mongoose_1.default.model('Product', productSchema);
-//# sourceMappingURL=Product.js.map
+exports.Brand = mongoose_1.default.model('Brand', brandSchema);
+//# sourceMappingURL=Brand.js.map

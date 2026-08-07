@@ -39,6 +39,7 @@ const categorySchema = new mongoose_1.Schema({
     name: { type: String, required: true, trim: true },
     image: { type: String, required: true },
     status: { type: String, default: 'ACTIVE' },
+    displayOrder: { type: Number, default: 0 },
 }, { timestamps: true });
 exports.Category = mongoose_1.default.model('Category', categorySchema);
 //# sourceMappingURL=Category.js.map

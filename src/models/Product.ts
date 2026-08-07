@@ -20,6 +20,8 @@ interface IVariant {
 export interface IProduct extends Document {
   name: string;
   category: string;
+  categoryId?: mongoose.Types.ObjectId | string;
+  brandId?: mongoose.Types.ObjectId | string;
   description: string;
   variants: IVariant[];
   starRating: number;
@@ -53,6 +55,8 @@ const productSchema = new Schema<IProduct>(
   {
     name: { type: String, required: true, trim: true },
     category: { type: String, required: true },
+    categoryId: { type: Schema.Types.ObjectId, ref: 'Category', required: false },
+    brandId: { type: Schema.Types.ObjectId, ref: 'Brand', required: false },
     description: { type: String, required: true },
     variants: [variantSchema],
     starRating: { type: Number, default: 0, min: 0, max: 5 },

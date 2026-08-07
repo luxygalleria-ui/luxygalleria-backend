@@ -1,20 +1,20 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export interface ICategory extends Document {
+export interface IBrand extends Document {
   name: string;
-  image: string;
+  logo: string;
   status: string;
   displayOrder: number;
 }
 
-const categorySchema = new Schema<ICategory>(
+const brandSchema = new Schema<IBrand>(
   {
     name: { type: String, required: true, trim: true },
-    image: { type: String, required: true },
+    logo: { type: String, default: '' },
     status: { type: String, default: 'ACTIVE' },
     displayOrder: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
 
-export const Category = mongoose.model<ICategory>('Category', categorySchema);
+export const Brand = mongoose.model<IBrand>('Brand', brandSchema);

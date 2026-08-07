@@ -12,7 +12,7 @@ exports.createCategory = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     (0, responseHandler_1.successResponse)(res, 201, 'Category created successfully', category);
 });
 exports.getCategories = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
-    const categories = await Category_1.Category.find().sort({ createdAt: -1 });
+    const categories = await Category_1.Category.find().sort({ displayOrder: 1, createdAt: -1 });
     (0, responseHandler_1.successResponse)(res, 200, 'Categories fetched successfully', categories);
 });
 exports.updateCategory = (0, asyncHandler_1.asyncHandler)(async (req, res) => {

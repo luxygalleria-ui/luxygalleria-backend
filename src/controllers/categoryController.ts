@@ -12,7 +12,7 @@ export const createCategory = asyncHandler(async (req: Request, res: Response) =
 });
 
 export const getCategories = asyncHandler(async (req: Request, res: Response) => {
-  const categories = await Category.find().sort({ createdAt: -1 });
+  const categories = await Category.find().sort({ displayOrder: 1, createdAt: -1 });
   successResponse(res, 200, 'Categories fetched successfully', categories);
 });
 

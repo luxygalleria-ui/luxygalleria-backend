@@ -8,6 +8,7 @@ const healthController_1 = require("../controllers/healthController");
 const authRoutes_1 = __importDefault(require("./authRoutes"));
 const productRoutes_1 = __importDefault(require("./productRoutes"));
 const categoryRoutes_1 = __importDefault(require("./categoryRoutes"));
+const brandRoutes_1 = __importDefault(require("./brandRoutes"));
 const bannerRoutes_1 = __importDefault(require("./bannerRoutes"));
 const couponRoutes_1 = __importDefault(require("./couponRoutes"));
 const testimonialRoutes_1 = __importDefault(require("./testimonialRoutes"));
@@ -35,6 +36,7 @@ router.post('/upload', authMiddleware_1.protect, uploadMiddleware_1.upload.singl
 router.use('/auth', authRoutes_1.default);
 router.use('/products', productRoutes_1.default);
 router.use('/categories', categoryRoutes_1.default);
+router.use('/brands', brandRoutes_1.default);
 router.use('/banners', bannerRoutes_1.default);
 router.use('/coupons', couponRoutes_1.default);
 router.use('/testimonials', testimonialRoutes_1.default);

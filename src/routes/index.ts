@@ -3,6 +3,7 @@ import { checkHealth } from '../controllers/healthController';
 import authRoutes from './authRoutes';
 import productRoutes from './productRoutes';
 import categoryRoutes from './categoryRoutes';
+import brandRoutes from './brandRoutes';
 import bannerRoutes from './bannerRoutes';
 import couponRoutes from './couponRoutes';
 import testimonialRoutes from './testimonialRoutes';
@@ -34,6 +35,7 @@ router.post('/upload', protect, upload.single('imageFile'), (req, res) => {
 router.use('/auth', authRoutes);
 router.use('/products', productRoutes);
 router.use('/categories', categoryRoutes);
+router.use('/brands', brandRoutes);
 router.use('/banners', bannerRoutes);
 router.use('/coupons', couponRoutes);
 router.use('/testimonials', testimonialRoutes);
