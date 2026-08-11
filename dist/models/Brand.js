@@ -37,7 +37,7 @@ exports.Brand = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const brandSchema = new mongoose_1.Schema({
     name: { type: String, required: true, trim: true },
-    logo: { type: String, required: true },
+    logo: { type: String, default: '' },
     status: { type: String, default: 'ACTIVE' },
     displayOrder: { type: Number, default: 0 },
 }, { timestamps: true });

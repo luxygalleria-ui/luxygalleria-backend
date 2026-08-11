@@ -73,10 +73,25 @@ exports.createProduct = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
             req.body.category = categoryObj.name;
         }
     }
+    else if (req.body.categoryId === "") {
+        delete req.body.categoryId;
+    }
+    if (req.body.brandId === "") {
+        delete req.body.brandId;
+    }
     const product = await Product_1.Product.create(req.body);
     (0, responseHandler_1.successResponse)(res, 201, 'Product created successfully', product);
 });
 exports.getProducts = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    req.query.admin = 'true';
+    // Temporary DB cleanup to prevent CastError on empty strings during populate
+    try {
+        await Product_1.Product.collection.updateMany({ brandId: "" }, { $unset: { brandId: "" } });
+        await Product_1.Product.collection.updateMany({ categoryId: "" }, { $unset: { categoryId: "" } });
+    }
+    catch (err) {
+        console.error("Cleanup error:", err);
+    }
     const query = {};
     let sortQuery = { createdAt: -1 };
     // Parse filters
@@ -115,36 +130,34 @@ exports.getProducts = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         const max = Number(req.query.maxPrice) || Infinity;
         query['variants.offerPrice'] = { $gte: min, $lte: max };
     }
-    // Active / Inactive check for public catalog
+    // Active / Inactive check for public catalog (DISABLED TO SHOW ALL PRODUCTS)
     const isAdmin = req.query.admin === 'true' || !!req.headers.authorization;
+    /*
     if (!isAdmin) {
-        const activeCategories = await Category_1.Category.find({ status: 'ACTIVE' });
-        const activeCategoryIds = activeCategories.map(c => c._id);
-        const activeCategoryNames = activeCategories.map(c => c.name);
-        const activeBrands = await Brand_1.Brand.find({ status: 'ACTIVE' });
-        const activeBrandIds = activeBrands.map(b => b._id);
-        query.$and = query.$and || [];
-        query.$and.push({
-            $or: [
-                { categoryId: { $in: activeCategoryIds } },
-                { categoryId: { $exists: false } },
-                { categoryId: null }
-            ]
-        });
-        query.$and.push({
-            $or: [
-                { brandId: { $in: activeBrandIds } },
-                { brandId: { $exists: false } },
-                { brandId: null }
-            ]
-        });
-        query.$and.push({
-            $or: [
-                { categoryId: { $exists: true, $ne: null } },
-                { category: { $in: activeCategoryNames } }
-            ]
-        });
+      const activeCategories = await Category.find({ status: 'ACTIVE' });
+      const activeCategoryIds = activeCategories.map(c => c._id);
+      const activeCategoryNames = activeCategories.map(c => c.name);
+  
+      const activeBrands = await Brand.find({ status: 'ACTIVE' });
+      const activeBrandIds = activeBrands.map(b => b._id);
+  
+      query.$and = query.$and || [];
+      query.$and.push({
+        $or: [
+          { categoryId: { $in: activeCategoryIds } },
+          { categoryId: { $exists: false } },
+          { categoryId: null }
+        ]
+      });
+      query.$and.push({
+        $or: [
+          { brandId: { $in: activeBrandIds } },
+          { brandId: { $exists: false } },
+          { brandId: null }
+        ]
+      });
     }
+    */
     // Search filter
     const searchTerm = req.query.search ? req.query.search.toString().trim() : '';
     if (searchTerm) {
@@ -278,6 +291,16 @@ exports.updateProduct = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         if (categoryObj) {
             req.body.category = categoryObj.name;
         }
+    }
+    else if (req.body.categoryId === "") {
+        delete req.body.categoryId;
+        req.body.$unset = req.body.$unset || {};
+        req.body.$unset.categoryId = 1;
+    }
+    if (req.body.brandId === "") {
+        delete req.body.brandId;
+        req.body.$unset = req.body.$unset || {};
+        req.body.$unset.brandId = 1;
     }
     product = await Product_1.Product.findByIdAndUpdate(req.params.id, req.body, {
         new: true,
