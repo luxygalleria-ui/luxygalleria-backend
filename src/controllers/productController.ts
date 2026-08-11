@@ -131,8 +131,9 @@ export const getProducts = asyncHandler(async (req: Request, res: Response) => {
     query['variants.offerPrice'] = { $gte: min, $lte: max };
   }
 
-  // Active / Inactive check for public catalog
+  // Active / Inactive check for public catalog (DISABLED TO SHOW ALL PRODUCTS)
   const isAdmin = req.query.admin === 'true' || !!req.headers.authorization;
+  /* 
   if (!isAdmin) {
     const activeCategories = await Category.find({ status: 'ACTIVE' });
     const activeCategoryIds = activeCategories.map(c => c._id);
@@ -156,8 +157,8 @@ export const getProducts = asyncHandler(async (req: Request, res: Response) => {
         { brandId: null }
       ]
     });
-
   }
+  */
 
   // Search filter
   const searchTerm = req.query.search ? req.query.search.toString().trim() : '';
