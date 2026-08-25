@@ -111,6 +111,40 @@ exports.getProducts = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
             query.category = { $regex: new RegExp(`^${categorySlug}$`, 'i') };
         }
     }
+    // Collection flags (Gifting / New Arrivals)
+    const collectionScope = {};
+    if (req.query.gifting === 'true') {
+        collectionScope.isGifting = true;
+    }
+    if (req.query.newArrival === 'true') {
+        collectionScope.isNewArrival = true;
+    }
+    Object.assign(query, collectionScope);
+    // Filter facets: the categories/brands that actually occur inside this
+    // collection. Scoped to the collection flags only (not the current
+    // category/brand selection) so the sidebar never offers a dead option.
+    if (req.query.facets === 'true') {
+        const [legacyNames, categoryIds, brandIds] = await Promise.all([
+            Product_1.Product.distinct('category', collectionScope),
+            Product_1.Product.distinct('categoryId', collectionScope),
+            Product_1.Product.distinct('brandId', collectionScope)
+        ]);
+        const [cats, brands] = await Promise.all([
+            Category_1.Category.find({ _id: { $in: categoryIds.filter(Boolean) }, status: 'ACTIVE' }),
+            Brand_1.Brand.find({ _id: { $in: brandIds.filter(Boolean) }, status: 'ACTIVE' })
+        ]);
+        const categories = [...new Set([...legacyNames, ...cats.map(c => c.name)])]
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b));
+        return res.status(200).json({
+            success: true,
+            message: 'Product facets fetched successfully',
+            data: {
+                categories,
+                brands: brands.map(b => b.name).sort((a, b) => a.localeCompare(b))
+            }
+        });
+    }
     if (req.query.brandId) {
         query.brandId = req.query.brandId;
     }
@@ -128,7 +162,8 @@ exports.getProducts = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     if (req.query.minPrice !== undefined || req.query.maxPrice !== undefined) {
         const min = Number(req.query.minPrice) || 0;
         const max = Number(req.query.maxPrice) || Infinity;
-        query['variants.offerPrice'] = { $gte: min, $lte: max };
+        // $elemMatch so a single variant must satisfy both bounds, not two different ones
+        query.variants = { $elemMatch: { offerPrice: { $gte: min, $lte: max } } };
     }
     // Active / Inactive check for public catalog (DISABLED TO SHOW ALL PRODUCTS)
     const isAdmin = req.query.admin === 'true' || !!req.headers.authorization;
