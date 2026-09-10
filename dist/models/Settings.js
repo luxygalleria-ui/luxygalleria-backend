@@ -45,6 +45,7 @@ const settingsSchema = new mongoose_1.Schema({
     shippingBelow500g: { type: Number, default: 40 },
     shippingAbove500g: { type: Number, default: 80 },
     shippingWeightThreshold: { type: Number, default: 500 },
+    freeShippingThreshold: { type: Number, default: 0 },
 }, { timestamps: true });
 exports.Settings = mongoose_1.default.model('Settings', settingsSchema);
 //# sourceMappingURL=Settings.js.map

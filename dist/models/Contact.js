@@ -33,8 +33,9 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Contact = void 0;
+exports.Contact = exports.CONTACT_STATUSES = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
+exports.CONTACT_STATUSES = ['NEW', 'READ', 'RESOLVED'];
 const ContactSchema = new mongoose_1.Schema({
     name: {
         type: String,
@@ -63,9 +64,11 @@ const ContactSchema = new mongoose_1.Schema({
         required: [true, 'Please add a message'],
         maxlength: [2000, 'Message can not be more than 2000 characters']
     },
-    isRead: {
-        type: Boolean,
-        default: false
+    status: {
+        type: String,
+        enum: exports.CONTACT_STATUSES,
+        default: 'NEW',
+        index: true
     }
 }, {
     timestamps: true

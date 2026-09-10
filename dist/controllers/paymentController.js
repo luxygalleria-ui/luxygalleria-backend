@@ -282,16 +282,10 @@ const calculateShipping = async (req, res) => {
     try {
         const { items } = req.body;
         if (!items || !Array.isArray(items) || items.length === 0) {
+            // Delegate so the empty-cart shape can never drift from the real one.
             return res.status(200).json({
                 success: true,
-                data: {
-                    subtotal: 0,
-                    totalWeight: 0,
-                    baseShipping: 0,
-                    extraWeightCharge: 0,
-                    shipping: 0,
-                    grandTotal: 0
-                }
+                data: (0, shippingCalculator_1.calculateShippingPure)([])
             });
         }
         const result = await (0, shippingCalculator_1.calculateShippingForItems)(items);
