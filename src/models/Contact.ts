@@ -1,12 +1,15 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
+export const CONTACT_STATUSES = ['NEW', 'READ', 'RESOLVED'] as const;
+export type ContactStatus = (typeof CONTACT_STATUSES)[number];
+
 export interface IContact extends Document {
   name: string;
   email: string;
   phone?: string;
   subject?: string;
   message: string;
-  isRead: boolean;
+  status: ContactStatus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -40,9 +43,11 @@ const ContactSchema: Schema = new Schema(
       required: [true, 'Please add a message'],
       maxlength: [2000, 'Message can not be more than 2000 characters']
     },
-    isRead: {
-      type: Boolean,
-      default: false
+    status: {
+      type: String,
+      enum: CONTACT_STATUSES,
+      default: 'NEW',
+      index: true
     }
   },
   {

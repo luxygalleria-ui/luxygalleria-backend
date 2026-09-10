@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { submitContactForm, getContacts, markContactAsRead, deleteContact } from '../controllers/contactController';
+import { submitContactForm, getContacts, markContactAsRead, updateContactStatus, deleteContact } from '../controllers/contactController';
 import { protect, authorize } from '../middlewares/authMiddleware';
 
 const router = Router();
@@ -10,6 +10,7 @@ router.post('/', submitContactForm);
 // Admin routes
 router.get('/', protect, authorize('admin', 'superadmin'), getContacts);
 router.put('/:id/read', protect, authorize('admin', 'superadmin'), markContactAsRead);
+router.put('/:id/status', protect, authorize('admin', 'superadmin'), updateContactStatus);
 router.delete('/:id', protect, authorize('admin', 'superadmin'), deleteContact);
 
 export default router;

@@ -10,6 +10,8 @@ export interface ISettings extends Document {
   shippingBelow500g: number;
   shippingAbove500g: number;
   shippingWeightThreshold: number;
+  /** Subtotal at or above which shipping is free. 0 disables the tier. */
+  freeShippingThreshold: number;
 }
 
 const settingsSchema = new Schema<ISettings>(
@@ -23,6 +25,7 @@ const settingsSchema = new Schema<ISettings>(
     shippingBelow500g: { type: Number, default: 40 },
     shippingAbove500g: { type: Number, default: 80 },
     shippingWeightThreshold: { type: Number, default: 500 },
+    freeShippingThreshold: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

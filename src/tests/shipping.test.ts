@@ -1,11 +1,26 @@
-import { calculateShippingPure, parseWeightFromVolume } from '../utils/shippingCalculator';
+import {
+  calculateShippingPure,
+  parseWeightFromVolume,
+  DEFAULT_SHIPPING_CONFIG,
+  ShippingConfig,
+} from '../utils/shippingCalculator';
 
 interface TestCase {
   description: string;
   items: Array<{ price: number; weight: number; quantity: number }>;
   expectedShipping: number;
   expectedGrandTotal: number;
+  config?: ShippingConfig;
+  expectedWeight?: number;
+  expectedFreeShipping?: boolean;
 }
+
+/** 200g threshold / free over ₹1000 — the worked example from the spec. */
+const SPEC_CONFIG: ShippingConfig = {
+  ...DEFAULT_SHIPPING_CONFIG,
+  WEIGHT_THRESHOLD_KG: 0.2,
+  FREE_SHIPPING_THRESHOLD: 1000,
+};
 
 const testCases: TestCase[] = [
   {
@@ -15,10 +30,16 @@ const testCases: TestCase[] = [
     expectedGrandTotal: 490,
   },
   {
-    description: 'Scenario 2: ₹450 subtotal, 500g weight (Weight <= 500g -> Base shipping ₹40, no extra weight)',
-    items: [{ price: 450, weight: 0.5, quantity: 1 }],
+    description: 'Scenario 2: ₹450 subtotal, 499g weight (strictly BELOW 500g -> ₹40)',
+    items: [{ price: 450, weight: 0.499, quantity: 1 }],
     expectedShipping: 40,
     expectedGrandTotal: 490,
+  },
+  {
+    description: 'Scenario 2a: ₹450 subtotal, EXACTLY 500g (at threshold -> ₹80, not ₹40)',
+    items: [{ price: 450, weight: 0.5, quantity: 1 }],
+    expectedShipping: 80,
+    expectedGrandTotal: 530,
   },
   {
     description: 'Scenario 2b: ₹450 subtotal, 510g weight (Weight > 500g -> Base shipping ₹80, no extra weight)',
@@ -61,7 +82,98 @@ const testCases: TestCase[] = [
     items: [{ price: 1200, weight: 2.3, quantity: 1 }],
     expectedShipping: 120,
     expectedGrandTotal: 1320,
-  }
+  },
+  // ── Cart aggregate: the threshold tests the SUM, never a single line ──────
+  {
+    description: 'Aggregate: 3 x 80g (=240g) crosses the 200g threshold -> ₹80',
+    items: [{ price: 100, weight: 0.08, quantity: 3 }],
+    expectedShipping: 80,
+    expectedGrandTotal: 380,
+    config: SPEC_CONFIG,
+    expectedWeight: 0.24,
+  },
+  {
+    description: 'Aggregate: two different lines 150g + 90g (=240g) -> ₹80',
+    items: [
+      { price: 100, weight: 0.15, quantity: 1 },
+      { price: 100, weight: 0.09, quantity: 1 },
+    ],
+    expectedShipping: 80,
+    expectedGrandTotal: 280,
+    config: SPEC_CONFIG,
+    expectedWeight: 0.24,
+  },
+  {
+    description: 'Aggregate: 2 x 80g (=160g) stays under 200g -> ₹40',
+    items: [{ price: 100, weight: 0.08, quantity: 2 }],
+    expectedShipping: 40,
+    expectedGrandTotal: 240,
+    config: SPEC_CONFIG,
+    expectedWeight: 0.16,
+  },
+
+  // ── Missing / malformed weights must not produce NaN ──────────────────────
+  {
+    description: 'Missing weight (undefined) defaults to 0g -> below threshold -> ₹40',
+    items: [{ price: 300, weight: undefined as unknown as number, quantity: 2 }],
+    expectedShipping: 40,
+    expectedGrandTotal: 640,
+    config: SPEC_CONFIG,
+    expectedWeight: 0,
+  },
+  {
+    description: 'Mixed: one weighed 150g item + one weightless item -> 150g -> ₹40',
+    items: [
+      { price: 100, weight: 0.15, quantity: 1 },
+      { price: 100, weight: undefined as unknown as number, quantity: 1 },
+    ],
+    expectedShipping: 40,
+    expectedGrandTotal: 240,
+    config: SPEC_CONFIG,
+    expectedWeight: 0.15,
+  },
+  {
+    description: 'Configured fallback weight (100g) is used when weight is missing',
+    items: [{ price: 100, weight: undefined as unknown as number, quantity: 3 }],
+    expectedShipping: 80,
+    expectedGrandTotal: 380,
+    config: { ...SPEC_CONFIG, FALLBACK_ITEM_WEIGHT_KG: 0.1 },
+    expectedWeight: 0.3,
+  },
+
+  // ── Free shipping tier ────────────────────────────────────────────────────
+  {
+    description: 'Free shipping: ₹1000 subtotal at the ₹1000 threshold -> shipping ₹0',
+    items: [{ price: 1000, weight: 2.0, quantity: 1 }],
+    expectedShipping: 0,
+    expectedGrandTotal: 1000,
+    config: SPEC_CONFIG,
+    expectedFreeShipping: true,
+  },
+  {
+    description: 'Free shipping: ₹999 subtotal is just below -> still charged',
+    items: [{ price: 999, weight: 0.1, quantity: 1 }],
+    expectedShipping: 40,
+    expectedGrandTotal: 1039,
+    config: SPEC_CONFIG,
+    expectedFreeShipping: false,
+  },
+  {
+    description: 'Free shipping disabled (threshold 0) -> never free, however large',
+    items: [{ price: 99999, weight: 0.1, quantity: 1 }],
+    expectedShipping: 40,
+    expectedGrandTotal: 100039,
+    config: { ...SPEC_CONFIG, FREE_SHIPPING_THRESHOLD: 0 },
+    expectedFreeShipping: false,
+  },
+
+  // ── Empty cart ────────────────────────────────────────────────────────────
+  {
+    description: 'Empty cart -> no shipping charged',
+    items: [],
+    expectedShipping: 0,
+    expectedGrandTotal: 0,
+  },
 ];
 
 const runVolumeParserTests = (): boolean => {
@@ -105,15 +217,17 @@ const runTests = () => {
 
   for (let i = 0; i < testCases.length; i++) {
     const tc = testCases[i];
-    const result = calculateShippingPure(tc.items);
+    const result = calculateShippingPure(tc.items, tc.config);
     
     console.log(`Test ${i + 1}: ${tc.description}`);
     console.log(`Calculated: Subtotal: ₹${result.subtotal}, Weight: ${result.totalWeight}kg, Base: ₹${result.baseShipping}, Extra: ₹${result.extraWeightCharge}, Shipping: ₹${result.shipping}, Total: ₹${result.grandTotal}`);
     
     const shippingMatched = result.shipping === tc.expectedShipping;
     const totalMatched = result.grandTotal === tc.expectedGrandTotal;
+    const weightMatched = tc.expectedWeight === undefined || result.totalWeight === tc.expectedWeight;
+    const freeMatched = tc.expectedFreeShipping === undefined || result.freeShippingApplied === tc.expectedFreeShipping;
 
-    if (shippingMatched && totalMatched) {
+    if (shippingMatched && totalMatched && weightMatched && freeMatched) {
       console.log('✅ PASSED\n');
       passedCount++;
     } else {
@@ -123,6 +237,12 @@ const runTests = () => {
       }
       if (!totalMatched) {
         console.log(`  Expected Grand Total: ₹${tc.expectedGrandTotal}, Got: ₹${result.grandTotal}`);
+      }
+      if (!weightMatched) {
+        console.log(`  Expected Weight: ${tc.expectedWeight}kg, Got: ${result.totalWeight}kg`);
+      }
+      if (!freeMatched) {
+        console.log(`  Expected freeShippingApplied: ${tc.expectedFreeShipping}, Got: ${result.freeShippingApplied}`);
       }
       console.log();
       failedCount++;

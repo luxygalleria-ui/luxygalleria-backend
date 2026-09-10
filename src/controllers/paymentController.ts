@@ -7,7 +7,7 @@ import { Settings } from '../models/Settings';
 import { sendEmail } from '../utils/sendEmail';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
-import { calculateShippingForItems } from '../utils/shippingCalculator';
+import { calculateShippingForItems, calculateShippingPure } from '../utils/shippingCalculator';
 dotenv.config();
 
 const razorpayInstance = new Razorpay({
@@ -308,16 +308,10 @@ export const calculateShipping = async (req: Request, res: Response) => {
     const { items } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
+      // Delegate so the empty-cart shape can never drift from the real one.
       return res.status(200).json({
         success: true,
-        data: {
-          subtotal: 0,
-          totalWeight: 0,
-          baseShipping: 0,
-          extraWeightCharge: 0,
-          shipping: 0,
-          grandTotal: 0
-        }
+        data: calculateShippingPure([])
       });
     }
 
