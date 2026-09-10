@@ -112,6 +112,42 @@ export const getProducts = asyncHandler(async (req: Request, res: Response) => {
     }
   }
 
+  // Collection flags (Gifting / New Arrivals)
+  const collectionScope: any = {};
+  if (req.query.gifting === 'true') {
+    collectionScope.isGifting = true;
+  }
+  if (req.query.newArrival === 'true') {
+    collectionScope.isNewArrival = true;
+  }
+  Object.assign(query, collectionScope);
+
+  // Filter facets: the categories/brands that actually occur inside this
+  // collection. Scoped to the collection flags only (not the current
+  // category/brand selection) so the sidebar never offers a dead option.
+  if (req.query.facets === 'true') {
+    const [legacyNames, categoryIds, brandIds] = await Promise.all([
+      Product.distinct('category', collectionScope),
+      Product.distinct('categoryId', collectionScope),
+      Product.distinct('brandId', collectionScope)
+    ]);
+    const [cats, brands] = await Promise.all([
+      Category.find({ _id: { $in: categoryIds.filter(Boolean) }, status: 'ACTIVE' }),
+      Brand.find({ _id: { $in: brandIds.filter(Boolean) }, status: 'ACTIVE' })
+    ]);
+    const categories = [...new Set([...legacyNames, ...cats.map(c => c.name)])]
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+    return res.status(200).json({
+      success: true,
+      message: 'Product facets fetched successfully',
+      data: {
+        categories,
+        brands: brands.map(b => b.name).sort((a, b) => a.localeCompare(b))
+      }
+    });
+  }
+
   if (req.query.brandId) {
     query.brandId = req.query.brandId;
   } else if (req.query.brand && req.query.brand !== 'all') {
@@ -128,7 +164,8 @@ export const getProducts = asyncHandler(async (req: Request, res: Response) => {
   if (req.query.minPrice !== undefined || req.query.maxPrice !== undefined) {
     const min = Number(req.query.minPrice) || 0;
     const max = Number(req.query.maxPrice) || Infinity;
-    query['variants.offerPrice'] = { $gte: min, $lte: max };
+    // $elemMatch so a single variant must satisfy both bounds, not two different ones
+    query.variants = { $elemMatch: { offerPrice: { $gte: min, $lte: max } } };
   }
 
   // Active / Inactive check for public catalog (DISABLED TO SHOW ALL PRODUCTS)

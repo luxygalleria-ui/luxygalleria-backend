@@ -31,6 +31,8 @@ export interface IProduct extends Document {
   images: string[];
   status: string;
   showOnLandingPage: boolean;
+  isGifting: boolean;
+  isNewArrival: boolean;
   stock: number;
   weight: number;
 }
@@ -66,6 +68,8 @@ const productSchema = new Schema<IProduct>(
     images: [{ type: String }],
     status: { type: String, default: 'In Stock' },
     showOnLandingPage: { type: Boolean, default: false },
+    isGifting: { type: Boolean, default: false, index: true },
+    isNewArrival: { type: Boolean, default: false, index: true },
     stock: { type: Number, default: 0 },
     weight: { type: Number, default: 0 },
   },
