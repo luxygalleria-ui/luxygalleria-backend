@@ -33,6 +33,8 @@ export interface IProduct extends Document {
   showOnLandingPage: boolean;
   isGifting: boolean;
   isNewArrival: boolean;
+  giftingOrder: number;
+  newArrivalOrder: number;
   stock: number;
   weight: number;
 }
@@ -70,6 +72,9 @@ const productSchema = new Schema<IProduct>(
     showOnLandingPage: { type: Boolean, default: false },
     isGifting: { type: Boolean, default: false, index: true },
     isNewArrival: { type: Boolean, default: false, index: true },
+    // Display positions on /gifting and /new-arrivals (ascending); managed from their admin pages
+    giftingOrder: { type: Number, default: 0 },
+    newArrivalOrder: { type: Number, default: 0 },
     stock: { type: Number, default: 0 },
     weight: { type: Number, default: 0 },
   },

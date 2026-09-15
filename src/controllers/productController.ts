@@ -119,6 +119,13 @@ export const getProducts = asyncHandler(async (req: Request, res: Response) => {
   }
   if (req.query.newArrival === 'true') {
     collectionScope.isNewArrival = true;
+    // Gifting is exclusive: a Gifting product never shows under New Arrivals
+    collectionScope.isGifting = { $ne: true };
+  }
+  // Main Shop page: only general products — Gifting / New Arrivals live exclusively on their own pages
+  if (req.query.general === 'true') {
+    collectionScope.isGifting = { $ne: true };
+    collectionScope.isNewArrival = { $ne: true };
   }
   Object.assign(query, collectionScope);
 
@@ -227,6 +234,11 @@ export const getProducts = asyncHandler(async (req: Request, res: Response) => {
     sortQuery = { starRating: -1 };
   } else if (sortVal === 'newest') {
     sortQuery = { createdAt: -1 };
+  } else if (sortVal === 'featured' && req.query.gifting === 'true') {
+    // Order chosen by the admin on the Gifting page
+    sortQuery = { giftingOrder: 1, createdAt: -1 };
+  } else if (sortVal === 'featured' && req.query.newArrival === 'true') {
+    sortQuery = { newArrivalOrder: 1, createdAt: -1 };
   }
 
   // Execute queries
@@ -358,6 +370,37 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
   
   successResponse(res, 200, 'Product updated successfully', product);
 });
+
+// Replaces a whole collection (Gifting / New Arrivals) in one call; array order becomes the display order.
+// Gifting is exclusive: adding a product to Gifting removes it from New Arrivals,
+// and Gifting products are refused when saving New Arrivals.
+const setCollectionProducts = (flag: 'isGifting' | 'isNewArrival', orderField: 'giftingOrder' | 'newArrivalOrder') =>
+  asyncHandler(async (req: Request, res: Response) => {
+    const { productIds } = req.body;
+    if (!Array.isArray(productIds) || !productIds.every(id => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id))) {
+      return errorResponse(res, 400, 'productIds must be an array of product IDs');
+    }
+    const ids = [...new Set(productIds as string[])].map(id => new mongoose.Types.ObjectId(id));
+
+    if (flag === 'isNewArrival') {
+      const conflicts = await Product.find({ _id: { $in: ids }, isGifting: true }).select('name').lean();
+      if (conflicts.length > 0) {
+        return errorResponse(res, 400, `Already in Gifting (remove from Gifting first): ${conflicts.map(p => p.name).join(', ')}`);
+      }
+    }
+    const exclusive = flag === 'isGifting' ? { isNewArrival: false, newArrivalOrder: 0 } : {};
+
+    await Product.bulkWrite([
+      { updateMany: { filter: { _id: { $nin: ids }, [flag]: true }, update: { $set: { [flag]: false, [orderField]: 0 } } } },
+      ...ids.map((_id, index) => ({ updateOne: { filter: { _id }, update: { $set: { [flag]: true, [orderField]: index, ...exclusive } } } })),
+    ]);
+
+    const products = await Product.find({ [flag]: true }).sort({ [orderField]: 1 });
+    successResponse(res, 200, 'Collection updated successfully', products);
+  });
+
+export const setGiftingProducts = setCollectionProducts('isGifting', 'giftingOrder');
+export const setNewArrivalProducts = setCollectionProducts('isNewArrival', 'newArrivalOrder');
 
 export const deleteProduct = asyncHandler(async (req: Request, res: Response) => {
   const product = await Product.findByIdAndDelete(req.params.id);

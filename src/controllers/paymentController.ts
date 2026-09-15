@@ -18,7 +18,12 @@ const razorpayInstance = new Razorpay({
 // Create Order — Only creates a Razorpay order, does NOT save to DB yet
 export const createOrder = async (req: Request, res: Response) => {
   try {
-    const { total, items } = req.body;
+    const { total, items, shippingAddress } = req.body;
+
+    // Refuse to start a payment without a deliverable address
+    if (!shippingAddress?.city?.trim?.() || !shippingAddress?.state?.trim?.() || !shippingAddress?.zipCode?.trim?.()) {
+      return res.status(400).json({ success: false, message: 'Please select or add a shipping address' });
+    }
 
     if (typeof total !== 'number' || Number.isNaN(total) || total <= 0) {
       return res.status(400).json({ success: false, message: 'Invalid order total. Please refresh and try again.' });

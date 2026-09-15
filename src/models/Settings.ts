@@ -12,6 +12,12 @@ export interface ISettings extends Document {
   shippingWeightThreshold: number;
   /** Subtotal at or above which shipping is free. 0 disables the tier. */
   freeShippingThreshold: number;
+  /** Heading and subheading of the storefront /gifting page. */
+  giftingTitle: string;
+  giftingSubtitle: string;
+  /** Heading and subheading of the storefront /new-arrivals page. */
+  newArrivalsTitle: string;
+  newArrivalsSubtitle: string;
 }
 
 const settingsSchema = new Schema<ISettings>(
@@ -26,6 +32,10 @@ const settingsSchema = new Schema<ISettings>(
     shippingAbove500g: { type: Number, default: 80 },
     shippingWeightThreshold: { type: Number, default: 500 },
     freeShippingThreshold: { type: Number, default: 0 },
+    giftingTitle: { type: String, default: 'Gifting' },
+    giftingSubtitle: { type: String, default: 'Curated picks, ready to be wrapped.' },
+    newArrivalsTitle: { type: String, default: 'New Arrivals' },
+    newArrivalsSubtitle: { type: String, default: 'The latest additions to the collection.' },
   },
   { timestamps: true }
 );
