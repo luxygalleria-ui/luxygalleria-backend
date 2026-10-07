@@ -20,3 +20,663 @@
     at model.Query._updateMany (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/mongoose/lib/query.js:4137:23)
     at model.Query.exec (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/mongoose/lib/query.js:4627:80)
     at processTicksAndRejections (node:internal/process/task_queues:95:5)
+2026-10-07T06:12:05.927Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:05.933Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:05.935Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:05.938Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:05.941Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:05.942Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:05.948Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:07.295Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:07.298Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:07.300Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:07.303Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:07.304Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:07.306Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:07.441Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:08.320Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:08.321Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:38.569Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:38.573Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:38.574Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:38.575Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:38.578Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:38.583Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:38.714Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:39.788Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:39.790Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:39.791Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:39.793Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:39.794Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:39.795Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:39.938Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:41.070Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:41.071Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:41.073Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:41.074Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:41.077Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:41.078Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:41.216Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:42.307Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:42.309Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:42.310Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:42.312Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:42.314Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:42.315Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:42.454Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:43.371Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:12:43.373Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:13:13.641Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:13:13.646Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:13:13.648Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:13:13.650Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:13:13.653Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:13:13.654Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:13:13.772Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:13:14.845Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:13:14.847Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:13:14.849Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:13:14.850Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:13:14.851Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:13:14.852Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
+2026-10-07T06:13:14.991Z: Error: Not allowed by CORS
+    at origin (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/src/app.ts:72:14)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:219:13
+    at optionsCallback (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:199:9)
+    at corsMiddleware (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/cors/lib/index.js:204:7)
+    at Layer.handle [as handle_request] (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:328:13)
+    at /Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:346:12)
+    at next (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/express/lib/router/index.js:280:10)
+    at internalNext (/Users/muhammedshareefcv/Desktop/PAID-ECOM-8999/luxy-galleria/luxy-backend/node_modules/helmet/index.cjs:537:6)
