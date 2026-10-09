@@ -43,11 +43,21 @@ const get = async (qs) => {
         if (flag) {
             const scoped = await get(flag);
             const all = await get('');
-            assert_1.default.ok(scoped.length > 0, `${label}: collection is empty`);
+            // An empty collection is valid data (e.g. every New Arrival is also in Gifting), so note it rather than fail
+            if (scoped.length === 0)
+                console.log(`  ${label}: collection is currently empty`);
             assert_1.default.ok(scoped.length <= all.length, `${label}: collection is not a subset`);
         }
         console.log(`  ${label}: ${facets.categories.length} categories, ${facets.brands.length} brands — all return results`);
     }
+    // Main Shop (general=true) must never include Gifting or New Arrival products, in results or facets
+    const general = await get('general=true');
+    assert_1.default.ok(general.every((p) => !p.isGifting && !p.isNewArrival), 'general=true leaked a Gifting/New Arrival product');
+    console.log(`  general shop: ${general.length} products, none from collections`);
+    // Gifting is exclusive: New Arrivals must never include a Gifting product
+    const newArrivals = await get('newArrival=true');
+    assert_1.default.ok(newArrivals.every((p) => !p.isGifting), 'newArrival=true leaked a Gifting product');
+    console.log(`  new arrivals: ${newArrivals.length} products, none from Gifting`);
     console.log('✅ collection + filter combinations OK');
     process.exit(0);
 })().catch(err => { console.error('❌', err.message); process.exit(1); });

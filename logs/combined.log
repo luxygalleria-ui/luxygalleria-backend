@@ -122,3 +122,13 @@
 {"level":"warn","message":"CORS blocked request from origin: http://localhost:3458","service":"luxygalleria-backend","timestamp":"2026-10-07 11:43:14"}
 {"level":"warn","message":"CORS blocked request from origin: http://localhost:3458","service":"luxygalleria-backend","timestamp":"2026-10-07 11:43:14"}
 {"level":"warn","message":"CORS blocked request from origin: http://localhost:3458","service":"luxygalleria-backend","timestamp":"2026-10-07 11:43:14"}
+{"level":"warn","message":"CORS blocked request from origin: http://localhost:3100","service":"luxygalleria-backend","timestamp":"2026-10-08 11:53:01"}
+{"level":"warn","message":"CORS blocked request from origin: http://localhost:3100","service":"luxygalleria-backend","timestamp":"2026-10-08 11:53:01"}
+{"level":"warn","message":"CORS blocked request from origin: http://localhost:3100","service":"luxygalleria-backend","timestamp":"2026-10-08 11:53:01"}
+{"level":"warn","message":"CORS blocked request from origin: http://localhost:3100","service":"luxygalleria-backend","timestamp":"2026-10-08 11:53:01"}
+{"level":"warn","message":"CORS blocked request from origin: http://localhost:3100","service":"luxygalleria-backend","timestamp":"2026-10-08 11:53:01"}
+{"level":"warn","message":"CORS blocked request from origin: http://localhost:3100","service":"luxygalleria-backend","timestamp":"2026-10-08 11:53:01"}
+{"level":"warn","message":"CORS blocked request from origin: http://localhost:3100","service":"luxygalleria-backend","timestamp":"2026-10-08 11:53:01"}
+{"level":"warn","message":"CORS blocked request from origin: http://localhost:3100","service":"luxygalleria-backend","timestamp":"2026-10-08 11:53:03"}
+{"level":"warn","message":"CORS blocked request from origin: http://localhost:3100","service":"luxygalleria-backend","timestamp":"2026-10-08 11:53:07"}
+{"level":"warn","message":"CORS blocked request from origin: http://localhost:3100","service":"luxygalleria-backend","timestamp":"2026-10-08 11:53:38"}

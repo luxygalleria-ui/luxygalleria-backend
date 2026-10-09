@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteProduct = exports.updateProduct = exports.getProducts = exports.createProduct = void 0;
+exports.deleteProduct = exports.setNewArrivalProducts = exports.setGiftingProducts = exports.updateProduct = exports.getProducts = exports.createProduct = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const Product_1 = require("../models/Product");
 const Category_1 = require("../models/Category");
@@ -118,6 +118,13 @@ exports.getProducts = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     }
     if (req.query.newArrival === 'true') {
         collectionScope.isNewArrival = true;
+        // Gifting is exclusive: a Gifting product never shows under New Arrivals
+        collectionScope.isGifting = { $ne: true };
+    }
+    // Main Shop page: only general products — Gifting / New Arrivals live exclusively on their own pages
+    if (req.query.general === 'true') {
+        collectionScope.isGifting = { $ne: true };
+        collectionScope.isNewArrival = { $ne: true };
     }
     Object.assign(query, collectionScope);
     // Filter facets: the categories/brands that actually occur inside this
@@ -223,6 +230,13 @@ exports.getProducts = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     }
     else if (sortVal === 'newest') {
         sortQuery = { createdAt: -1 };
+    }
+    else if (sortVal === 'featured' && req.query.gifting === 'true') {
+        // Order chosen by the admin on the Gifting page
+        sortQuery = { giftingOrder: 1, createdAt: -1 };
+    }
+    else if (sortVal === 'featured' && req.query.newArrival === 'true') {
+        sortQuery = { newArrivalOrder: 1, createdAt: -1 };
     }
     // Execute queries
     const page = req.query.page ? Number(req.query.page) : null;
@@ -343,6 +357,31 @@ exports.updateProduct = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     });
     (0, responseHandler_1.successResponse)(res, 200, 'Product updated successfully', product);
 });
+// Replaces a whole collection (Gifting / New Arrivals) in one call; array order becomes the display order.
+// Gifting is exclusive: adding a product to Gifting removes it from New Arrivals,
+// and Gifting products are refused when saving New Arrivals.
+const setCollectionProducts = (flag, orderField) => (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    const { productIds } = req.body;
+    if (!Array.isArray(productIds) || !productIds.every(id => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id))) {
+        return (0, responseHandler_1.errorResponse)(res, 400, 'productIds must be an array of product IDs');
+    }
+    const ids = [...new Set(productIds)].map(id => new mongoose_1.default.Types.ObjectId(id));
+    if (flag === 'isNewArrival') {
+        const conflicts = await Product_1.Product.find({ _id: { $in: ids }, isGifting: true }).select('name').lean();
+        if (conflicts.length > 0) {
+            return (0, responseHandler_1.errorResponse)(res, 400, `Already in Gifting (remove from Gifting first): ${conflicts.map(p => p.name).join(', ')}`);
+        }
+    }
+    const exclusive = flag === 'isGifting' ? { isNewArrival: false, newArrivalOrder: 0 } : {};
+    await Product_1.Product.bulkWrite([
+        { updateMany: { filter: { _id: { $nin: ids }, [flag]: true }, update: { $set: { [flag]: false, [orderField]: 0 } } } },
+        ...ids.map((_id, index) => ({ updateOne: { filter: { _id }, update: { $set: { [flag]: true, [orderField]: index, ...exclusive } } } })),
+    ]);
+    const products = await Product_1.Product.find({ [flag]: true }).sort({ [orderField]: 1 });
+    (0, responseHandler_1.successResponse)(res, 200, 'Collection updated successfully', products);
+});
+exports.setGiftingProducts = setCollectionProducts('isGifting', 'giftingOrder');
+exports.setNewArrivalProducts = setCollectionProducts('isNewArrival', 'newArrivalOrder');
 exports.deleteProduct = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const product = await Product_1.Product.findByIdAndDelete(req.params.id);
     if (!product) {

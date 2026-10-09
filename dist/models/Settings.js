@@ -39,13 +39,17 @@ const settingsSchema = new mongoose_1.Schema({
     bannerText: { type: String, default: '' },
     isBannerActive: { type: Boolean, default: false },
     footerText: { type: String, default: '© 2026 Luxy Galleria. All rights reserved.' },
-    whatsappNumber: { type: String, default: '917736989068' },
+    whatsappNumber: { type: String, default: '919847978098' },
     primaryColor: { type: String, default: '#8B5E34' },
     secondaryColor: { type: String, default: '#F5F1E8' },
     shippingBelow500g: { type: Number, default: 40 },
     shippingAbove500g: { type: Number, default: 80 },
     shippingWeightThreshold: { type: Number, default: 500 },
     freeShippingThreshold: { type: Number, default: 0 },
+    giftingTitle: { type: String, default: 'Gifting' },
+    giftingSubtitle: { type: String, default: 'Curated picks, ready to be wrapped.' },
+    newArrivalsTitle: { type: String, default: 'New Arrivals' },
+    newArrivalsSubtitle: { type: String, default: 'The latest additions to the collection.' },
 }, { timestamps: true });
 exports.Settings = mongoose_1.default.model('Settings', settingsSchema);
 //# sourceMappingURL=Settings.js.map
