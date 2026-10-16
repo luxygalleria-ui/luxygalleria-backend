@@ -58,3 +58,5 @@ export const authorize = (...roles: string[]) => {
     next();
   };
 };
+
+export const adminOnly = authorize('admin', 'superadmin');

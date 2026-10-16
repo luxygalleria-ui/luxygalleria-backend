@@ -73,5 +73,7 @@ const OrderSchema = new mongoose_1.Schema({
     razorpayPaymentId: { type: String },
     razorpaySignature: { type: String },
 }, { timestamps: true });
+// One order per Razorpay order: closes the race between verify's duplicate check and save.
+OrderSchema.index({ razorpayOrderId: 1 }, { unique: true, partialFilterExpression: { razorpayOrderId: { $type: 'string' } } });
 exports.default = mongoose_1.default.model('Order', OrderSchema);
 //# sourceMappingURL=Order.js.map

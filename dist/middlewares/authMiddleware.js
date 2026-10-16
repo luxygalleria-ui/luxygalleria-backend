@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.authorize = exports.protect = void 0;
+exports.adminOnly = exports.authorize = exports.protect = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const User_1 = require("../models/User");
 const asyncHandler_1 = require("../utils/asyncHandler");
@@ -49,4 +49,5 @@ const authorize = (...roles) => {
     };
 };
 exports.authorize = authorize;
+exports.adminOnly = (0, exports.authorize)('admin', 'superadmin');
 //# sourceMappingURL=authMiddleware.js.map

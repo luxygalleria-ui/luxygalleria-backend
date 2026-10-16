@@ -9,15 +9,16 @@ import {
   googleAuth
 } from '../controllers/authController';
 import { User } from '../models/User';
+import { authLimiter, otpLimiter } from '../middlewares/rateLimiter';
 
 const router = Router();
 
-router.post('/login', loginAdmin);
-router.post('/customer-login', loginCustomer);
-router.post('/register', registerCustomer);
-router.post('/verify-otp', verifyOtp);
-router.post('/resend-otp', resendOtp);
-router.post('/google', googleAuth);
+router.post('/login', authLimiter, loginAdmin);
+router.post('/customer-login', authLimiter, loginCustomer);
+router.post('/register', authLimiter, registerCustomer);
+router.post('/verify-otp', otpLimiter, verifyOtp);
+router.post('/resend-otp', otpLimiter, resendOtp);
+router.post('/google', authLimiter, googleAuth);
 router.post('/setup-test-admin', createTestAdmin);
 
 // Debug endpoint (development only)

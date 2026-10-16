@@ -156,7 +156,7 @@ export const toggleCustomerStatus = asyncHandler(async (req: Request, res: Respo
   const { id } = req.params;
   
   const user = await User.findById(id);
-  if (!user) return errorResponse(res, 404, 'Customer not found');
+  if (!user || user.role !== 'customer') return errorResponse(res, 404, 'Customer not found');
 
   user.isActive = !user.isActive;
   await user.save();

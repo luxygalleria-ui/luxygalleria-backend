@@ -36,32 +36,21 @@ app.use((0, helmet_1.default)({
     },
 }));
 // CORS configuration
-const allowedOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(",").map(o => o.trim())
-    : [
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'http://localhost:3002',
-        'http://localhost:3000/',
-        'http://localhost:3001/',
-        'http://localhost:3002/',
-        'https://luxygalleria-frontend.vercel.app',
-        'https://luxygalleria-admin.vercel.app',
-        'https://*.vercel.app', // Allow all Vercel preview deployments
-    ];
+// Exact origins only. Any wildcard on *.vercel.app would let any Vercel user's site call this API.
+const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://localhost:3002',
+    'https://luxygalleria-frontend.vercel.app',
+    'https://luxygalleria-admin.vercel.app',
+    ...(process.env.CORS_ORIGIN || '').split(',').map(o => o.trim().replace(/\/$/, '')).filter(Boolean),
+];
 const corsConfig = {
     origin: function (origin, callback) {
         // Allow requests with no origin (mobile apps, Postman, etc.)
         if (!origin)
             return callback(null, true);
-        // Check exact match
         if (allowedOrigins.includes(origin)) {
-            callback(null, true);
-            return;
-        }
-        // Check wildcard match for Vercel preview deployments
-        const isVercelPreview = origin.includes('.vercel.app');
-        if (isVercelPreview) {
             callback(null, true);
             return;
         }
@@ -90,8 +79,8 @@ app.get('/api/v1/health', (req, res) => {
     });
 });
 // Body parsers with size limits
-app.use(express_1.default.json({ limit: '50mb' }));
-app.use(express_1.default.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express_1.default.json({ limit: '1mb' }));
+app.use(express_1.default.urlencoded({ extended: true, limit: '1mb' }));
 app.use((0, cookie_parser_1.default)());
 // Sanitization middleware - prevent NoSQL injection and XSS
 app.use(sanitize_1.sanitizeInput);

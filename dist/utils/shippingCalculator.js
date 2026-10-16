@@ -1,6 +1,10 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.calculateShippingForItems = exports.calculateShippingPure = exports.parseWeightFromVolume = exports.resolveShippingConfig = exports.DEFAULT_SHIPPING_CONFIG = void 0;
+exports.calculateShippingForItems = exports.MAX_QTY_PER_LINE = exports.calculateShippingPure = exports.parseWeightFromVolume = exports.resolveShippingConfig = exports.DEFAULT_SHIPPING_CONFIG = void 0;
+const mongoose_1 = __importDefault(require("mongoose"));
 const Product_1 = require("../models/Product");
 const Settings_1 = require("../models/Settings");
 exports.DEFAULT_SHIPPING_CONFIG = {
@@ -122,6 +126,7 @@ const calculateShippingPure = (items, config = exports.DEFAULT_SHIPPING_CONFIG) 
     };
 };
 exports.calculateShippingPure = calculateShippingPure;
+exports.MAX_QTY_PER_LINE = 100;
 /**
  * Calculates shipping for a list of cart items.
  * Fetches prices and weights directly from the database for security, then
@@ -131,8 +136,12 @@ const calculateShippingForItems = async (items) => {
     const config = await (0, exports.resolveShippingConfig)();
     const resolved = [];
     for (const item of items) {
-        if (!item.product || !item.quantity || item.quantity <= 0) {
-            throw new Error('Invalid item details: product and quantity are required');
+        // Whole units only: fractional quantities would let a buyer pay for 0.01 of an item.
+        if (!item || !item.product || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > exports.MAX_QTY_PER_LINE) {
+            throw new Error(`Invalid item details: quantity must be a whole number between 1 and ${exports.MAX_QTY_PER_LINE}`);
+        }
+        if (!mongoose_1.default.isValidObjectId(item.product)) {
+            throw new Error('Invalid product id');
         }
         const product = await Product_1.Product.findById(item.product);
         if (!product) {
@@ -154,6 +163,7 @@ const calculateShippingForItems = async (items) => {
         }
         else if (product.variants && product.variants.length > 0) {
             const defaultVariant = product.variants[0];
+            variant = defaultVariant;
             itemPrice = defaultVariant.offerPrice || defaultVariant.price || 0;
             const parsedDefaultWeight = (0, exports.parseWeightFromVolume)(defaultVariant.volume || '');
             itemWeight = (defaultVariant.weight && defaultVariant.weight > 0) ? defaultVariant.weight : (parsedDefaultWeight || product.weight || 0);
@@ -161,9 +171,17 @@ const calculateShippingForItems = async (items) => {
         else {
             throw new Error(`Product ${product.name} has no variants configured`);
         }
-        resolved.push({ price: itemPrice, weight: itemWeight, quantity: item.quantity });
+        resolved.push({
+            product: product._id.toString(),
+            variantId: variant._id.toString(),
+            price: itemPrice,
+            weight: itemWeight,
+            quantity: item.quantity,
+            stock: Number(variant.stock) || 0,
+            name: product.name,
+        });
     }
-    return (0, exports.calculateShippingPure)(resolved, config);
+    return { ...(0, exports.calculateShippingPure)(resolved, config), lines: resolved };
 };
 exports.calculateShippingForItems = calculateShippingForItems;
 //# sourceMappingURL=shippingCalculator.js.map

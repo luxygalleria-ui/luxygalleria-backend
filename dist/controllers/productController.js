@@ -11,6 +11,7 @@ const Brand_1 = require("../models/Brand");
 const asyncHandler_1 = require("../utils/asyncHandler");
 const responseHandler_1 = require("../utils/responseHandler");
 const shippingCalculator_1 = require("../utils/shippingCalculator");
+const contactController_1 = require("./contactController");
 exports.createProduct = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     let existingImages = [];
     if (req.body.images) {
@@ -99,12 +100,12 @@ exports.getProducts = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         query.categoryId = req.query.categoryId;
     }
     else if (req.query.category && req.query.category !== 'all') {
-        const categorySlug = req.query.category.toString().replace(/-/g, ' ');
+        const categorySlug = (0, contactController_1.escapeRegex)(req.query.category.toString().replace(/-/g, ' '));
         const matchedCat = await Category_1.Category.findOne({ name: { $regex: new RegExp(`^${categorySlug}$`, 'i') } });
         if (matchedCat) {
             query.$or = [
                 { categoryId: matchedCat._id },
-                { category: { $regex: new RegExp(`^${matchedCat.name}$`, 'i') } }
+                { category: { $regex: new RegExp(`^${(0, contactController_1.escapeRegex)(matchedCat.name)}$`, 'i') } }
             ];
         }
         else {
@@ -121,10 +122,10 @@ exports.getProducts = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         // Gifting is exclusive: a Gifting product never shows under New Arrivals
         collectionScope.isGifting = { $ne: true };
     }
-    // Main Shop page: only general products — Gifting / New Arrivals live exclusively on their own pages
+    // Main Shop / homepage: everything except Gifting, which lives exclusively on /gifting.
+    // New Arrivals also show here.
     if (req.query.general === 'true') {
         collectionScope.isGifting = { $ne: true };
-        collectionScope.isNewArrival = { $ne: true };
     }
     Object.assign(query, collectionScope);
     // Filter facets: the categories/brands that actually occur inside this
@@ -156,7 +157,7 @@ exports.getProducts = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         query.brandId = req.query.brandId;
     }
     else if (req.query.brand && req.query.brand !== 'all') {
-        const brandSlug = req.query.brand.toString().replace(/-/g, ' ');
+        const brandSlug = (0, contactController_1.escapeRegex)(req.query.brand.toString().replace(/-/g, ' '));
         const matchedBrand = await Brand_1.Brand.findOne({ name: { $regex: new RegExp(`^${brandSlug}$`, 'i') } });
         if (matchedBrand) {
             query.brandId = matchedBrand._id;
@@ -201,7 +202,7 @@ exports.getProducts = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     }
     */
     // Search filter
-    const searchTerm = req.query.search ? req.query.search.toString().trim() : '';
+    const searchTerm = req.query.search ? (0, contactController_1.escapeRegex)(req.query.search.toString().trim().slice(0, 100)) : '';
     if (searchTerm) {
         const matchingBrands = await Brand_1.Brand.find({ name: { $regex: searchTerm, $options: 'i' } });
         const matchingBrandIds = matchingBrands.map(b => b._id);

@@ -51,7 +51,15 @@ if (isCloudinaryConfigured) {
   });
 }
 
+const ALLOWED_IMAGE_EXT = ['.jpg', '.jpeg', '.png', '.webp'];
+
 export const upload = multer({ 
   storage: storage,
-  limits: { fileSize: 15 * 1024 * 1024 } // 15MB limit
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB limit
+  // Images only: local disk storage keeps the client's extension, and /uploads is served statically
+  fileFilter: (req, file, cb) => {
+    const ok = file.mimetype.startsWith('image/') && ALLOWED_IMAGE_EXT.includes(path.extname(file.originalname).toLowerCase());
+    if (ok) return cb(null, true);
+    cb(Object.assign(new Error('Only JPG, PNG or WEBP images are allowed'), { statusCode: 400 }));
+  },
 });

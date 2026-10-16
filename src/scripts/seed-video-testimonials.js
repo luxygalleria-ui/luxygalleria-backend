@@ -1,6 +1,7 @@
+require('dotenv').config();
 const mongoose = require('mongoose');
 
-const MONGO_URI = 'mongodb+srv://luxygalleria_db_user:edDnNHp379axfIo1@cluster0.vtzh76l.mongodb.net/luxy';
+const MONGO_URI = process.env.MONGO_URI;
 
 const videoTestimonialSchema = new mongoose.Schema(
   {

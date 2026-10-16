@@ -6,6 +6,7 @@ import { Brand } from '../models/Brand';
 import { asyncHandler } from '../utils/asyncHandler';
 import { successResponse, errorResponse } from '../utils/responseHandler';
 import { parseWeightFromVolume } from '../utils/shippingCalculator';
+import { escapeRegex } from './contactController';
 
 export const createProduct = asyncHandler(async (req: Request, res: Response) => {
   let existingImages: string[] = [];
@@ -100,12 +101,12 @@ export const getProducts = asyncHandler(async (req: Request, res: Response) => {
   if (req.query.categoryId) {
     query.categoryId = req.query.categoryId;
   } else if (req.query.category && req.query.category !== 'all') {
-    const categorySlug = req.query.category.toString().replace(/-/g, ' ');
+    const categorySlug = escapeRegex(req.query.category.toString().replace(/-/g, ' '));
     const matchedCat = await Category.findOne({ name: { $regex: new RegExp(`^${categorySlug}$`, 'i') } });
     if (matchedCat) {
       query.$or = [
         { categoryId: matchedCat._id },
-        { category: { $regex: new RegExp(`^${matchedCat.name}$`, 'i') } }
+        { category: { $regex: new RegExp(`^${escapeRegex(matchedCat.name)}$`, 'i') } }
       ];
     } else {
       query.category = { $regex: new RegExp(`^${categorySlug}$`, 'i') };
@@ -122,10 +123,10 @@ export const getProducts = asyncHandler(async (req: Request, res: Response) => {
     // Gifting is exclusive: a Gifting product never shows under New Arrivals
     collectionScope.isGifting = { $ne: true };
   }
-  // Main Shop page: only general products — Gifting / New Arrivals live exclusively on their own pages
+  // Main Shop / homepage: everything except Gifting, which lives exclusively on /gifting.
+  // New Arrivals also show here.
   if (req.query.general === 'true') {
     collectionScope.isGifting = { $ne: true };
-    collectionScope.isNewArrival = { $ne: true };
   }
   Object.assign(query, collectionScope);
 
@@ -158,7 +159,7 @@ export const getProducts = asyncHandler(async (req: Request, res: Response) => {
   if (req.query.brandId) {
     query.brandId = req.query.brandId;
   } else if (req.query.brand && req.query.brand !== 'all') {
-    const brandSlug = req.query.brand.toString().replace(/-/g, ' ');
+    const brandSlug = escapeRegex(req.query.brand.toString().replace(/-/g, ' '));
     const matchedBrand = await Brand.findOne({ name: { $regex: new RegExp(`^${brandSlug}$`, 'i') } });
     if (matchedBrand) {
       query.brandId = matchedBrand._id;
@@ -205,7 +206,7 @@ export const getProducts = asyncHandler(async (req: Request, res: Response) => {
   */
 
   // Search filter
-  const searchTerm = req.query.search ? req.query.search.toString().trim() : '';
+  const searchTerm = req.query.search ? escapeRegex(req.query.search.toString().trim().slice(0, 100)) : '';
   if (searchTerm) {
     const matchingBrands = await Brand.find({ name: { $regex: searchTerm, $options: 'i' } });
     const matchingBrandIds = matchingBrands.map(b => b._id);

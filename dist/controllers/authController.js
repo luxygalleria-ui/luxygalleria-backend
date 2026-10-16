@@ -10,6 +10,7 @@ const asyncHandler_1 = require("../utils/asyncHandler");
 const responseHandler_1 = require("../utils/responseHandler");
 const env_1 = require("../config/env");
 const google_auth_library_1 = require("google-auth-library");
+const crypto_1 = __importDefault(require("crypto"));
 const generateToken = (id, role) => {
     return jsonwebtoken_1.default.sign({ id, role }, env_1.ENV.JWT_SECRET, {
         expiresIn: env_1.ENV.JWT_EXPIRES_IN,
@@ -52,8 +53,8 @@ exports.loginAdmin = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
 });
 // Helper to quickly create a test admin user (Can be removed later)
 exports.createTestAdmin = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
-    if (env_1.ENV.NODE_ENV === 'production') {
-        return (0, responseHandler_1.errorResponse)(res, 403, 'Cannot create test admin in production');
+    if (env_1.ENV.NODE_ENV !== 'development') {
+        return (0, responseHandler_1.errorResponse)(res, 403, 'Test admin setup is only available in development');
     }
     const adminEmail = process.env.ADMIN_EMAIL || 'admin@luxygalleria.com';
     const adminPassword = process.env.ADMIN_PASSWORD || 'password123';
@@ -134,7 +135,7 @@ exports.verifyOtp = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     if (user.isVerified) {
         return (0, responseHandler_1.errorResponse)(res, 400, 'User is already verified');
     }
-    if (user.otp !== otp) {
+    if (!user.otp || user.otp !== String(otp)) {
         return (0, responseHandler_1.errorResponse)(res, 400, 'Invalid OTP code');
     }
     if (user.otpExpires && user.otpExpires < new Date()) {
@@ -203,51 +204,35 @@ exports.resendOtp = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
             message: emailMessage,
             html: emailHTML
         });
-        console.log('\n✅ New OTP Email sent to:', email, 'OTP:', otp, '\n');
     }
     catch (emailError) {
         console.error('⚠️ Failed to send OTP email:', emailError.message);
         // Don't fail if email sending fails - continue anyway
-        console.log('\n✅ NEW OTP:', otp, 'for', user.email, '(Email sending failed but OTP generated)\n');
     }
-    (0, responseHandler_1.successResponse)(res, 200, 'New verification code generated and sent to your email.', {
-        otp
-    });
+    (0, responseHandler_1.successResponse)(res, 200, 'New verification code generated and sent to your email.', null);
 });
 exports.loginCustomer = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     try {
         const { email, password } = req.body;
-        console.log("[DEBUG LOGIN] 1. Received Email:", email);
         if (!email || !password) {
-            console.log("[DEBUG LOGIN] Validation failed: email or password missing");
             return (0, responseHandler_1.errorResponse)(res, 400, 'Please provide email and password');
         }
         const user = await User_1.User.findOne({ email }).select('+password');
-        console.log("[DEBUG LOGIN] 2. User found in DB?:", !!user);
         if (!user) {
-            console.log("[DEBUG LOGIN] 7. Returning 'Invalid email or password' because user was not found in DB");
             return (0, responseHandler_1.errorResponse)(res, 401, 'Invalid email or password');
         }
-        console.log("[DEBUG LOGIN] 3. DB User Email:", user.email);
-        console.log("[DEBUG LOGIN] 4. DB User Role:", user.role);
-        console.log("[DEBUG LOGIN] 5. Password field exists in DB user?:", !!user.password);
         const isMatch = await user.matchPassword(password);
-        console.log("[DEBUG LOGIN] 6. Password match result:", isMatch);
         if (!isMatch) {
-            console.log("[DEBUG LOGIN] 7. Returning 'Invalid email or password' because password does not match");
             return (0, responseHandler_1.errorResponse)(res, 401, 'Invalid email or password');
         }
         if (!user.isVerified) {
-            console.log("[DEBUG LOGIN] Verification check failed: User not verified");
             return (0, responseHandler_1.errorResponse)(res, 403, 'Please verify your email to continue. We have sent an OTP to your email during registration.');
         }
         if (!user.isActive) {
-            console.log("[DEBUG LOGIN] Active check failed: User deactivated");
             return (0, responseHandler_1.errorResponse)(res, 403, 'Your account has been deactivated');
         }
         // Only allow customers to use this endpoint
         if (user.role !== 'customer') {
-            console.log("[DEBUG LOGIN] Role check failed: User is not a customer");
             return (0, responseHandler_1.errorResponse)(res, 403, 'Please use the admin portal to login');
         }
         const token = generateToken(user._id.toString(), user.role);
@@ -273,48 +258,50 @@ exports.loginCustomer = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
 });
 // Google OAuth Sign-In (supports both ID token and access token flows)
 exports.googleAuth = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
-    const { credential, googleId: bodyGoogleId, email: bodyEmail, name: bodyName, picture: bodyPicture } = req.body;
+    const { credential, googleId: bodyGoogleId, name: bodyName, picture: bodyPicture } = req.body;
     let email;
     let name;
     let picture;
     let googleId;
-    // Flow 1: ID Token (from Google One Tap / renderButton)
-    if (credential && !bodyGoogleId) {
-        const googleClientId = process.env.GOOGLE_CLIENT_ID;
-        if (!googleClientId) {
-            return (0, responseHandler_1.errorResponse)(res, 500, 'Google OAuth is not configured');
-        }
-        const client = new google_auth_library_1.OAuth2Client(googleClientId);
-        try {
-            const ticket = await client.verifyIdToken({
-                idToken: credential,
-                audience: googleClientId,
-            });
-            const payload = ticket.getPayload();
-            if (!payload || !payload.email) {
-                return (0, responseHandler_1.errorResponse)(res, 400, 'Invalid Google token');
-            }
-            email = payload.email;
-            name = payload.name;
-            picture = payload.picture;
-            googleId = payload.sub;
-        }
-        catch (error) {
-            console.error('Google ID token verification error:', error);
-            return (0, responseHandler_1.errorResponse)(res, 401, 'Invalid Google token');
-        }
+    let emailVerified = false;
+    const googleClientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!googleClientId) {
+        return (0, responseHandler_1.errorResponse)(res, 500, 'Google OAuth is not configured');
     }
-    // Flow 2: Access Token (from @react-oauth/google useGoogleLogin)
-    else if (bodyGoogleId && bodyEmail) {
-        // The frontend already fetched user info from Google's userinfo endpoint
-        // We trust this because it came from a verified Google access token on the frontend
-        email = bodyEmail;
-        name = bodyName;
-        picture = bodyPicture;
-        googleId = bodyGoogleId;
-    }
-    else {
+    if (!credential || typeof credential !== 'string') {
         return (0, responseHandler_1.errorResponse)(res, 400, 'Google credential is required');
+    }
+    const client = new google_auth_library_1.OAuth2Client(googleClientId);
+    try {
+        if (bodyGoogleId) {
+            // Access token (useGoogleLogin): identity comes only from Google, never from the request body.
+            const info = await client.getTokenInfo(credential);
+            if (info.aud !== googleClientId) {
+                return (0, responseHandler_1.errorResponse)(res, 401, 'Invalid Google token');
+            }
+            email = info.email;
+            googleId = info.sub;
+            emailVerified = String(info.email_verified) === 'true';
+            name = typeof bodyName === 'string' ? bodyName : undefined; // display only
+            picture = typeof bodyPicture === 'string' ? bodyPicture : undefined; // display only
+        }
+        else {
+            // ID token (One Tap / renderButton)
+            const ticket = await client.verifyIdToken({ idToken: credential, audience: googleClientId });
+            const payload = ticket.getPayload();
+            email = payload?.email;
+            googleId = payload?.sub;
+            emailVerified = payload?.email_verified === true;
+            name = payload?.name;
+            picture = payload?.picture;
+        }
+    }
+    catch (error) {
+        console.error('Google token verification failed:', error.message);
+        return (0, responseHandler_1.errorResponse)(res, 401, 'Invalid Google token');
+    }
+    if (!emailVerified) {
+        return (0, responseHandler_1.errorResponse)(res, 401, 'Google account email is not verified');
     }
     if (!email || !googleId) {
         return (0, responseHandler_1.errorResponse)(res, 400, 'Invalid Google authentication data');
@@ -326,6 +313,10 @@ exports.googleAuth = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
             // User exists — check if active
             if (!user.isActive) {
                 return (0, responseHandler_1.errorResponse)(res, 403, 'Your account has been deactivated');
+            }
+            // Admin accounts sign in through the admin portal only, like loginCustomer
+            if (user.role !== 'customer') {
+                return (0, responseHandler_1.errorResponse)(res, 403, 'Please use the admin portal to login');
             }
             // Update Google ID if not set, and make sure user is marked verified
             if (!user.googleId || !user.isVerified) {
@@ -350,7 +341,7 @@ exports.googleAuth = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
                 role: 'customer',
                 isVerified: true, // Google emails are already verified
                 isActive: true,
-                password: `google_${googleId}_${Date.now()}`, // Random password since Google users don't need one
+                password: crypto_1.default.randomBytes(32).toString('hex'), // Unguessable; Google users never use it
             });
         }
         const token = generateToken(user._id.toString(), user.role);

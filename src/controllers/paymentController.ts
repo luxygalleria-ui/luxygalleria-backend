@@ -7,13 +7,35 @@ import { Settings } from '../models/Settings';
 import { sendEmail } from '../utils/sendEmail';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
+import { ENV } from '../config/env';
 import { calculateShippingForItems, calculateShippingPure } from '../utils/shippingCalculator';
 dotenv.config();
 
-const razorpayInstance = new Razorpay({
+export const razorpayInstance = new Razorpay({
   key_id: (process.env.RAZORPAY_KEY_ID || 'dummy_key_id').trim(),
   key_secret: (process.env.RAZORPAY_KEY_SECRET || 'dummy_key_secret').trim(),
 });
+
+const razorpayKeysMissing = () =>
+  !process.env.RAZORPAY_KEY_ID ||
+  process.env.RAZORPAY_KEY_ID === 'dummy_key_id' ||
+  process.env.RAZORPAY_KEY_ID === 'YOUR_RAZORPAY_KEY_ID' ||
+  process.env.RAZORPAY_KEY_ID.startsWith('rzp_test_Luxy') || // Our placeholder test keys
+  !process.env.RAZORPAY_KEY_SECRET ||
+  process.env.RAZORPAY_KEY_SECRET === 'dummy_key_secret' ||
+  process.env.RAZORPAY_KEY_SECRET === 'YOUR_RAZORPAY_KEY_SECRET' ||
+  process.env.RAZORPAY_KEY_SECRET.startsWith('LuxySecret'); // Our placeholder secret
+
+/** Mock payments exist only for local development without Razorpay keys — never anywhere else. */
+export const isMockPaymentMode = () => ENV.NODE_ENV === 'development' && razorpayKeysMissing();
+
+/** Constant-time compare of the Razorpay HMAC signature. */
+export const isValidRazorpaySignature = (orderId: string, paymentId: string, signature: string, secret: string) => {
+  const expected = crypto.createHmac('sha256', secret).update(`${orderId}|${paymentId}`).digest('hex');
+  const a = Buffer.from(expected);
+  const b = Buffer.from(String(signature));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+};
 
 // Create Order — Only creates a Razorpay order, does NOT save to DB yet
 export const createOrder = async (req: Request, res: Response) => {
@@ -49,30 +71,36 @@ export const createOrder = async (req: Request, res: Response) => {
       });
     }
 
+    // Refuse before payment rather than oversell after it
+    const wanted = new Map<string, { qty: number; stock: number; name: string }>();
+    for (const line of totals.lines) {
+      const w = wanted.get(line.variantId) || { qty: 0, stock: line.stock, name: line.name };
+      w.qty += line.quantity;
+      wanted.set(line.variantId, w);
+    }
+    for (const w of wanted.values()) {
+      if (w.qty > w.stock) {
+        return res.status(400).json({ success: false, message: `Only ${Math.max(0, w.stock)} of ${w.name} left in stock` });
+      }
+    }
+
     let razorpayOrder;
     let isMock = false;
 
-    const missingRazorpayConfig = 
-      !process.env.RAZORPAY_KEY_ID || 
-      process.env.RAZORPAY_KEY_ID === 'dummy_key_id' || 
-      process.env.RAZORPAY_KEY_ID === 'YOUR_RAZORPAY_KEY_ID' ||
-      process.env.RAZORPAY_KEY_ID.startsWith('rzp_test_Luxy') || // Our placeholder test keys
-      !process.env.RAZORPAY_KEY_SECRET || 
-      process.env.RAZORPAY_KEY_SECRET === 'dummy_key_secret' ||
-      process.env.RAZORPAY_KEY_SECRET === 'YOUR_RAZORPAY_KEY_SECRET' ||
-      process.env.RAZORPAY_KEY_SECRET.startsWith('LuxySecret'); // Our placeholder secret
-
-    // Use mock order in development or when Razorpay credentials are missing
-    if (missingRazorpayConfig || total < 1) {
+    if (isMockPaymentMode()) {
       razorpayOrder = {
         id: `mock_order_${Date.now()}`,
-        amount: Math.round(total * 100),
+        amount: Math.round(totals.grandTotal * 100),
         currency: 'INR'
       };
       isMock = true;
+    } else if (razorpayKeysMissing()) {
+      console.error('Razorpay keys are not configured; refusing to create a payment');
+      return res.status(503).json({ success: false, message: 'Payments are temporarily unavailable' });
     } else {
       const options = {
-        amount: Math.round(total * 100),
+        // Charge the server-calculated amount, never the client's number
+        amount: Math.round(totals.grandTotal * 100),
         currency: "INR",
         receipt: `receipt_order_${Date.now()}`
       };
@@ -91,7 +119,7 @@ export const createOrder = async (req: Request, res: Response) => {
 
   } catch (error: any) {
     console.error('Error creating order:', error);
-    res.status(500).json({ success: false, message: error.message || 'Error creating order' });
+    res.status(500).json({ success: false, message: 'Error creating order' });
   }
 };
 
@@ -104,37 +132,31 @@ export const verifyPayment = async (req: Request, res: Response) => {
       razorpay_signature,
       items,
       shippingAddress,
-      subtotal,
-      discount,
-      shippingFee,
-      total,
     } = req.body;
-
-    // Validate required fields
-    if (!razorpay_order_id || !razorpay_payment_id) {
-      return res.status(400).json({ success: false, message: 'Missing payment details' });
-    }
-
-    if (!items || items.length === 0) {
-      return res.status(400).json({ success: false, message: 'No items in order' });
-    }
-
-    // Ensure all items have a valid variantId
-    for (const item of items) {
-      if (!item.variantId) {
-        const product = await Product.findById(item.product);
-        if (product && product.variants && product.variants.length > 0) {
-          const match = product.variants.find((v: any) => v.volume?.toLowerCase() === item.size?.toLowerCase());
-          item.variantId = match ? match._id?.toString() : product.variants[0]._id?.toString();
-        }
-      }
-    }
 
     if (!req.user || !req.user._id) {
       return res.status(401).json({ success: false, message: 'User not authenticated' });
     }
 
-    // Server-side amount validation before saving order
+    if (typeof razorpay_order_id !== 'string' || typeof razorpay_payment_id !== 'string' || !razorpay_order_id || !razorpay_payment_id) {
+      return res.status(400).json({ success: false, message: 'Missing payment details' });
+    }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: 'No items in order' });
+    }
+
+    // Idempotent: a payment can create at most one order (double clicks, retries, replays)
+    const existing = await Order.findOne({ $or: [{ razorpayPaymentId: razorpay_payment_id }, { razorpayOrderId: razorpay_order_id }] })
+      .populate('items.product', 'name images variants');
+    if (existing) {
+      if (existing.user.toString() === req.user._id.toString() && existing.razorpayPaymentId === razorpay_payment_id) {
+        return res.status(200).json({ success: true, message: 'Order already placed for this payment', data: existing });
+      }
+      return res.status(409).json({ success: false, message: 'This payment has already been used' });
+    }
+
+    // Server-side amount validation before saving order — prices come from the DB only
     let totals;
     try {
       totals = await calculateShippingForItems(items);
@@ -142,36 +164,50 @@ export const verifyPayment = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: err.message || 'Validation failed' });
     }
 
-    if (Math.abs(totals.grandTotal - total) > 1) {
-      return res.status(400).json({ success: false, message: 'Order totals verification failed. Server calculation mismatch.' });
-    }
-
     let paymentVerified = false;
+    const isMock = razorpay_payment_id === 'mock_payment';
 
-    if (razorpay_payment_id === 'mock_payment') {
-      paymentVerified = true;
+    if (isMock) {
+      // Only ever honoured in local development without Razorpay keys
+      paymentVerified = isMockPaymentMode() && razorpay_order_id.startsWith('mock_order_');
     } else {
       if (!razorpay_signature) {
         return res.status(400).json({ success: false, message: 'Missing payment signature' });
       }
-      const sign = razorpay_order_id + "|" + razorpay_payment_id;
-      const keySecret = (process.env.RAZORPAY_KEY_SECRET || 'dummy_key_secret').trim();
-      const expectedSign = crypto
-        .createHmac("sha256", keySecret)
-        .update(sign.toString())
-        .digest("hex");
-
-      paymentVerified = (razorpay_signature === expectedSign);
+      const keySecret = (process.env.RAZORPAY_KEY_SECRET || '').trim();
+      if (keySecret && isValidRazorpaySignature(razorpay_order_id, razorpay_payment_id, razorpay_signature, keySecret)) {
+        // The signature proves the payment belongs to the order; Razorpay tells us what was actually paid.
+        const payment: any = await razorpayInstance.payments.fetch(razorpay_payment_id);
+        paymentVerified =
+          payment.order_id === razorpay_order_id &&
+          ['authorized', 'captured'].includes(payment.status) &&
+          payment.currency === 'INR' &&
+          // Paid at least the current cart value (₹1 rounding slack, as above)
+          Number(payment.amount) >= Math.round(totals.grandTotal * 100) - 100;
+        if (!paymentVerified) {
+          console.warn(`Payment ${razorpay_payment_id} rejected: status/amount does not match cart`);
+        }
+      }
     }
 
     if (paymentVerified) {
       // Payment confirmed — 
+      const orderItems = totals.lines.map((line, i) => ({
+        product: line.product,
+        variantId: line.variantId,
+        quantity: line.quantity,
+        price: line.price,
+        size: typeof items[i].size === 'string' ? items[i].size : undefined,
+        image: typeof items[i].image === 'string' ? items[i].image : undefined,
+        subtotal: line.price * line.quantity,
+      }));
+
       const newOrder = new Order({
         user: req.user._id,
-        items,
+        items: orderItems,
         shippingAddress,
         subtotal: totals.subtotal,
-        discount: discount || 0,
+        discount: 0, // No server-side discount is applied to the charged total
         shippingFee: totals.shipping,
         total: totals.grandTotal,
         paymentMethod: 'razorpay',
@@ -179,35 +215,31 @@ export const verifyPayment = async (req: Request, res: Response) => {
         orderStatus: 'processing',
         razorpayOrderId: razorpay_order_id,
         razorpayPaymentId: razorpay_payment_id,
-        razorpaySignature: razorpay_payment_id === 'mock_payment' ? 'mock_signature' : razorpay_signature,
+        razorpaySignature: isMock ? 'mock_signature' : razorpay_signature,
       });
 
       await newOrder.save();
       await newOrder.populate('items.product', 'name images variants');
 
-      // Reduce stock for each product and variant
-      try {
-        for (const item of items) {
-          const product = await Product.findById(item.product);
-          if (product) {
-            if (item.variantId && product.variants && product.variants.length > 0) {
-              const variant = product.variants.find((v: any) => v._id && v._id.toString() === item.variantId.toString());
-              if (variant) {
-                variant.stock = Math.max(0, (variant.stock || 0) - item.quantity);
-              }
-            }
-            product.stock = Math.max(0, (product.stock || 0) - item.quantity);
-            await product.save();
+      // Reduce stock atomically so concurrent orders can't both read the same count
+      for (const line of totals.lines) {
+        try {
+          const r = await Product.updateOne(
+            { _id: line.product, variants: { $elemMatch: { _id: line.variantId, stock: { $gte: line.quantity } } } },
+            { $inc: { 'variants.$.stock': -line.quantity, stock: -line.quantity } }
+          );
+          if (!r.modifiedCount) {
+            console.warn(`Stock short for order ${newOrder._id}: product ${line.product} variant ${line.variantId}`);
           }
+        } catch (stockErr) {
+          console.error('Error reducing stock:', stockErr);
         }
-      } catch (stockErr) {
-        console.error('Error reducing stock:', stockErr);
       }
 
       // Send Order Confirmation Email
       try {
         if (req.user && req.user.email) {
-          const autoLoginToken = jwt.sign({ id: req.user._id, role: (req.user as any).role || 'customer' }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
+          const autoLoginToken = jwt.sign({ id: req.user._id, role: (req.user as any).role || 'customer' }, ENV.JWT_SECRET, { expiresIn: '7d' });
 
           const itemsHtml = newOrder.items.map((item: any) => {
             const product = item.product;
@@ -303,7 +335,7 @@ export const verifyPayment = async (req: Request, res: Response) => {
     }
   } catch (error: any) {
     console.error('Error verifying payment:', error);
-    res.status(500).json({ success: false, message: error.message || 'Error verifying payment' });
+    res.status(500).json({ success: false, message: 'Error verifying payment' });
   }
 };
 
@@ -370,10 +402,14 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { orderStatus } = req.body;
 
+    if (!['processing', 'shipped', 'delivered', 'cancelled'].includes(orderStatus)) {
+      return res.status(400).json({ success: false, message: 'Invalid order status' });
+    }
+
     const order = await Order.findByIdAndUpdate(
       id,
       { orderStatus },
-      { new: true }
+      { new: true, runValidators: true }
     ).populate('user', 'name email phone')
       .populate('items.product', 'name images variants');
 
@@ -385,7 +421,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
     try {
       const user = order.user as any;
       if (user && user.email) {
-        const autoLoginToken = jwt.sign({ id: user._id, role: user.role || 'customer' }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
+        const autoLoginToken = jwt.sign({ id: user._id, role: user.role || 'customer' }, ENV.JWT_SECRET, { expiresIn: '7d' });
         let statusColor = '#3b82f6'; // default blue
         let statusMessage = "There is an update regarding your recent order.";
         let subject = `Order Status Update - Luxy Galleria`;

@@ -8,11 +8,11 @@ const couponController_1 = require("../controllers/couponController");
 const authMiddleware_1 = require("../middlewares/authMiddleware");
 const router = express_1.default.Router();
 router.route('/')
-    .post(authMiddleware_1.protect, couponController_1.createCoupon)
-    .get(couponController_1.getCoupons);
+    .post(authMiddleware_1.protect, authMiddleware_1.adminOnly, couponController_1.createCoupon)
+    .get(authMiddleware_1.protect, authMiddleware_1.adminOnly, couponController_1.getCoupons);
 router.post('/validate', couponController_1.validateCoupon);
 router.route('/:id')
-    .put(authMiddleware_1.protect, couponController_1.updateCoupon)
-    .delete(authMiddleware_1.protect, couponController_1.deleteCoupon);
+    .put(authMiddleware_1.protect, authMiddleware_1.adminOnly, couponController_1.updateCoupon)
+    .delete(authMiddleware_1.protect, authMiddleware_1.adminOnly, couponController_1.deleteCoupon);
 exports.default = router;
 //# sourceMappingURL=couponRoutes.js.map

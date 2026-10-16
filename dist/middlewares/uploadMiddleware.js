@@ -51,8 +51,16 @@ else {
         },
     });
 }
+const ALLOWED_IMAGE_EXT = ['.jpg', '.jpeg', '.png', '.webp'];
 exports.upload = (0, multer_1.default)({
     storage: storage,
-    limits: { fileSize: 15 * 1024 * 1024 } // 15MB limit
+    limits: { fileSize: 15 * 1024 * 1024 }, // 15MB limit
+    // Images only: local disk storage keeps the client's extension, and /uploads is served statically
+    fileFilter: (req, file, cb) => {
+        const ok = file.mimetype.startsWith('image/') && ALLOWED_IMAGE_EXT.includes(path_1.default.extname(file.originalname).toLowerCase());
+        if (ok)
+            return cb(null, true);
+        cb(Object.assign(new Error('Only JPG, PNG or WEBP images are allowed'), { statusCode: 400 }));
+    },
 });
 //# sourceMappingURL=uploadMiddleware.js.map

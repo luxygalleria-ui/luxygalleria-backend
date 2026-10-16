@@ -75,4 +75,7 @@ const OrderSchema: Schema = new Schema(
   { timestamps: true }
 );
 
+// One order per Razorpay order: closes the race between verify's duplicate check and save.
+OrderSchema.index({ razorpayOrderId: 1 }, { unique: true, partialFilterExpression: { razorpayOrderId: { $type: 'string' } } });
+
 export default mongoose.model<IOrder>('Order', OrderSchema);

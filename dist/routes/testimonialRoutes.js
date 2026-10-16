@@ -8,10 +8,10 @@ const testimonialController_1 = require("../controllers/testimonialController");
 const authMiddleware_1 = require("../middlewares/authMiddleware");
 const router = express_1.default.Router();
 router.route('/')
-    .post(authMiddleware_1.protect, testimonialController_1.createTestimonial)
+    .post(authMiddleware_1.protect, authMiddleware_1.adminOnly, testimonialController_1.createTestimonial)
     .get(testimonialController_1.getTestimonials);
 router.route('/:id')
-    .put(authMiddleware_1.protect, testimonialController_1.updateTestimonial)
-    .delete(authMiddleware_1.protect, testimonialController_1.deleteTestimonial);
+    .put(authMiddleware_1.protect, authMiddleware_1.adminOnly, testimonialController_1.updateTestimonial)
+    .delete(authMiddleware_1.protect, authMiddleware_1.adminOnly, testimonialController_1.deleteTestimonial);
 exports.default = router;
 //# sourceMappingURL=testimonialRoutes.js.map

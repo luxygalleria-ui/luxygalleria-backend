@@ -23,8 +23,9 @@ router.get('/health', checkHealth);
 
 // Generic Image Upload (Cloudinary/Local)
 import { upload } from '../middlewares/uploadMiddleware';
-import { protect } from '../middlewares/authMiddleware';
-router.post('/upload', protect, upload.single('imageFile'), (req, res) => {
+import { protect, adminOnly } from '../middlewares/authMiddleware';
+import { uploadLimiter } from '../middlewares/rateLimiter';
+router.post('/upload', uploadLimiter, protect, adminOnly, upload.single('imageFile'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'No file uploaded' });
   }

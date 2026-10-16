@@ -123,7 +123,7 @@ exports.getAllCustomers = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
 exports.toggleCustomerStatus = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const { id } = req.params;
     const user = await User_1.User.findById(id);
-    if (!user)
+    if (!user || user.role !== 'customer')
         return (0, responseHandler_1.errorResponse)(res, 404, 'Customer not found');
     user.isActive = !user.isActive;
     await user.save();

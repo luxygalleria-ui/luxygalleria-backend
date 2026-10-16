@@ -1,12 +1,13 @@
 import express from 'express';
 import { createOrder, verifyPayment, getMyOrders, getAllOrders, updateOrderStatus, deleteOrder, calculateShipping } from '../controllers/paymentController';
 import { protect, authorize } from '../middlewares/authMiddleware';
+import { paymentLimiter } from '../middlewares/rateLimiter';
 
 const router = express.Router();
 
 router.post('/calculate-shipping', calculateShipping);
-router.post('/create-order', protect, createOrder);
-router.post('/verify', protect, verifyPayment);
+router.post('/create-order', paymentLimiter, protect, createOrder);
+router.post('/verify', paymentLimiter, protect, verifyPayment);
 router.get('/myorders', protect, getMyOrders);
 
 // Admin routes

@@ -5,6 +5,7 @@ import { asyncHandler } from '../utils/asyncHandler';
 import { successResponse, errorResponse } from '../utils/responseHandler';
 import { ENV } from '../config/env';
 import { OAuth2Client } from 'google-auth-library';
+import crypto from 'crypto';
 
 const generateToken = (id: string, role: string) => {
   return jwt.sign({ id, role }, ENV.JWT_SECRET, {
@@ -58,8 +59,8 @@ export const loginAdmin = asyncHandler(async (req: Request, res: Response) => {
 
 // Helper to quickly create a test admin user (Can be removed later)
 export const createTestAdmin = asyncHandler(async (req: Request, res: Response) => {
-  if (ENV.NODE_ENV === 'production') {
-    return errorResponse(res, 403, 'Cannot create test admin in production');
+  if (ENV.NODE_ENV !== 'development') {
+    return errorResponse(res, 403, 'Test admin setup is only available in development');
   }
 
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@luxygalleria.com';
@@ -160,7 +161,7 @@ export const verifyOtp = asyncHandler(async (req: Request, res: Response) => {
     return errorResponse(res, 400, 'User is already verified');
   }
 
-  if (user.otp !== otp) {
+  if (!user.otp || user.otp !== String(otp)) {
     return errorResponse(res, 400, 'Invalid OTP code');
   }
 
@@ -244,62 +245,44 @@ export const resendOtp = asyncHandler(async (req: Request, res: Response) => {
       html: emailHTML
     });
     
-    console.log('\n✅ New OTP Email sent to:', email, 'OTP:', otp, '\n');
   } catch (emailError: any) {
     console.error('⚠️ Failed to send OTP email:', emailError.message);
     // Don't fail if email sending fails - continue anyway
-    console.log('\n✅ NEW OTP:', otp, 'for', user.email, '(Email sending failed but OTP generated)\n');
   }
 
-  successResponse(res, 200, 'New verification code generated and sent to your email.', {
-    otp
-  });
+  successResponse(res, 200, 'New verification code generated and sent to your email.', null);
 });
 
 export const loginCustomer = asyncHandler(async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
 
-    console.log("[DEBUG LOGIN] 1. Received Email:", email);
-
     if (!email || !password) {
-      console.log("[DEBUG LOGIN] Validation failed: email or password missing");
       return errorResponse(res, 400, 'Please provide email and password');
     }
 
     const user = await User.findOne({ email }).select('+password');
-    console.log("[DEBUG LOGIN] 2. User found in DB?:", !!user);
 
     if (!user) {
-      console.log("[DEBUG LOGIN] 7. Returning 'Invalid email or password' because user was not found in DB");
       return errorResponse(res, 401, 'Invalid email or password');
     }
 
-    console.log("[DEBUG LOGIN] 3. DB User Email:", user.email);
-    console.log("[DEBUG LOGIN] 4. DB User Role:", user.role);
-    console.log("[DEBUG LOGIN] 5. Password field exists in DB user?:", !!user.password);
-
     const isMatch = await user.matchPassword(password);
-    console.log("[DEBUG LOGIN] 6. Password match result:", isMatch);
 
     if (!isMatch) {
-      console.log("[DEBUG LOGIN] 7. Returning 'Invalid email or password' because password does not match");
       return errorResponse(res, 401, 'Invalid email or password');
     }
 
     if (!user.isVerified) {
-      console.log("[DEBUG LOGIN] Verification check failed: User not verified");
       return errorResponse(res, 403, 'Please verify your email to continue. We have sent an OTP to your email during registration.');
     }
 
     if (!user.isActive) {
-      console.log("[DEBUG LOGIN] Active check failed: User deactivated");
       return errorResponse(res, 403, 'Your account has been deactivated');
     }
 
     // Only allow customers to use this endpoint
     if (user.role !== 'customer') {
-      console.log("[DEBUG LOGIN] Role check failed: User is not a customer");
       return errorResponse(res, 403, 'Please use the admin portal to login');
     }
 
@@ -328,52 +311,52 @@ export const loginCustomer = asyncHandler(async (req: Request, res: Response) =>
 
 // Google OAuth Sign-In (supports both ID token and access token flows)
 export const googleAuth = asyncHandler(async (req: Request, res: Response) => {
-  const { credential, googleId: bodyGoogleId, email: bodyEmail, name: bodyName, picture: bodyPicture } = req.body;
+  const { credential, googleId: bodyGoogleId, name: bodyName, picture: bodyPicture } = req.body;
 
   let email: string | undefined;
   let name: string | undefined;
   let picture: string | undefined;
   let googleId: string | undefined;
+  let emailVerified = false;
 
-  // Flow 1: ID Token (from Google One Tap / renderButton)
-  if (credential && !bodyGoogleId) {
-    const googleClientId = process.env.GOOGLE_CLIENT_ID;
-    if (!googleClientId) {
-      return errorResponse(res, 500, 'Google OAuth is not configured');
-    }
-
-    const client = new OAuth2Client(googleClientId);
-
-    try {
-      const ticket = await client.verifyIdToken({
-        idToken: credential,
-        audience: googleClientId,
-      });
-
-      const payload = ticket.getPayload();
-      if (!payload || !payload.email) {
-        return errorResponse(res, 400, 'Invalid Google token');
-      }
-
-      email = payload.email;
-      name = payload.name;
-      picture = payload.picture;
-      googleId = payload.sub;
-    } catch (error: any) {
-      console.error('Google ID token verification error:', error);
-      return errorResponse(res, 401, 'Invalid Google token');
-    }
+  const googleClientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+  if (!googleClientId) {
+    return errorResponse(res, 500, 'Google OAuth is not configured');
   }
-  // Flow 2: Access Token (from @react-oauth/google useGoogleLogin)
-  else if (bodyGoogleId && bodyEmail) {
-    // The frontend already fetched user info from Google's userinfo endpoint
-    // We trust this because it came from a verified Google access token on the frontend
-    email = bodyEmail;
-    name = bodyName;
-    picture = bodyPicture;
-    googleId = bodyGoogleId;
-  } else {
+  if (!credential || typeof credential !== 'string') {
     return errorResponse(res, 400, 'Google credential is required');
+  }
+
+  const client = new OAuth2Client(googleClientId);
+  try {
+    if (bodyGoogleId) {
+      // Access token (useGoogleLogin): identity comes only from Google, never from the request body.
+      const info = await client.getTokenInfo(credential);
+      if (info.aud !== googleClientId) {
+        return errorResponse(res, 401, 'Invalid Google token');
+      }
+      email = info.email;
+      googleId = info.sub;
+      emailVerified = String(info.email_verified) === 'true';
+      name = typeof bodyName === 'string' ? bodyName : undefined; // display only
+      picture = typeof bodyPicture === 'string' ? bodyPicture : undefined; // display only
+    } else {
+      // ID token (One Tap / renderButton)
+      const ticket = await client.verifyIdToken({ idToken: credential, audience: googleClientId });
+      const payload = ticket.getPayload();
+      email = payload?.email;
+      googleId = payload?.sub;
+      emailVerified = payload?.email_verified === true;
+      name = payload?.name;
+      picture = payload?.picture;
+    }
+  } catch (error: any) {
+    console.error('Google token verification failed:', error.message);
+    return errorResponse(res, 401, 'Invalid Google token');
+  }
+
+  if (!emailVerified) {
+    return errorResponse(res, 401, 'Google account email is not verified');
   }
 
   if (!email || !googleId) {
@@ -388,6 +371,10 @@ export const googleAuth = asyncHandler(async (req: Request, res: Response) => {
       // User exists — check if active
       if (!user.isActive) {
         return errorResponse(res, 403, 'Your account has been deactivated');
+      }
+      // Admin accounts sign in through the admin portal only, like loginCustomer
+      if (user.role !== 'customer') {
+        return errorResponse(res, 403, 'Please use the admin portal to login');
       }
       // Update Google ID if not set, and make sure user is marked verified
       if (!user.googleId || !user.isVerified) {
@@ -410,7 +397,7 @@ export const googleAuth = asyncHandler(async (req: Request, res: Response) => {
         role: 'customer',
         isVerified: true, // Google emails are already verified
         isActive: true,
-        password: `google_${googleId}_${Date.now()}`, // Random password since Google users don't need one
+        password: crypto.randomBytes(32).toString('hex'), // Unguessable; Google users never use it
       });
     }
 

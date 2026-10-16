@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { Product } from '../models/Product';
 import { Settings } from '../models/Settings';
 
@@ -164,18 +165,37 @@ export const calculateShippingPure = (
   };
 };
 
+/** A cart line priced from the database; the only price checkout may trust. */
+export interface ResolvedLine {
+  product: string;
+  variantId: string;
+  price: number;
+  weight: number;
+  quantity: number;
+  stock: number;
+  name: string;
+}
+
+export const MAX_QTY_PER_LINE = 100;
+
 /**
  * Calculates shipping for a list of cart items.
  * Fetches prices and weights directly from the database for security, then
  * defers to calculateShippingPure so there is one copy of the formula.
  */
-export const calculateShippingForItems = async (items: InputItem[]): Promise<ShippingCalculationResult> => {
+export const calculateShippingForItems = async (
+  items: InputItem[]
+): Promise<ShippingCalculationResult & { lines: ResolvedLine[] }> => {
   const config = await resolveShippingConfig();
-  const resolved: Array<{ price: number; weight: number; quantity: number }> = [];
+  const resolved: ResolvedLine[] = [];
 
   for (const item of items) {
-    if (!item.product || !item.quantity || item.quantity <= 0) {
-      throw new Error('Invalid item details: product and quantity are required');
+    // Whole units only: fractional quantities would let a buyer pay for 0.01 of an item.
+    if (!item || !item.product || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > MAX_QTY_PER_LINE) {
+      throw new Error(`Invalid item details: quantity must be a whole number between 1 and ${MAX_QTY_PER_LINE}`);
+    }
+    if (!mongoose.isValidObjectId(item.product)) {
+      throw new Error('Invalid product id');
     }
 
     const product = await Product.findById(item.product);
@@ -188,7 +208,7 @@ export const calculateShippingForItems = async (items: InputItem[]): Promise<Shi
 
     const parsedVariantWeight = parseWeightFromVolume(item.size || '');
 
-    let variant = null;
+    let variant: any = null;
     if (item.variantId && product.variants && product.variants.length > 0) {
       variant = product.variants.find((v: any) => v._id && v._id.toString() === item.variantId?.toString());
     }
@@ -201,6 +221,7 @@ export const calculateShippingForItems = async (items: InputItem[]): Promise<Shi
       itemWeight = (variant.weight && variant.weight > 0) ? variant.weight : (parsedVariantWeight || product.weight || 0);
     } else if (product.variants && product.variants.length > 0) {
       const defaultVariant = product.variants[0];
+      variant = defaultVariant;
       itemPrice = defaultVariant.offerPrice || defaultVariant.price || 0;
       const parsedDefaultWeight = parseWeightFromVolume(defaultVariant.volume || '');
       itemWeight = (defaultVariant.weight && defaultVariant.weight > 0) ? defaultVariant.weight : (parsedDefaultWeight || product.weight || 0);
@@ -208,8 +229,16 @@ export const calculateShippingForItems = async (items: InputItem[]): Promise<Shi
       throw new Error(`Product ${product.name} has no variants configured`);
     }
 
-    resolved.push({ price: itemPrice, weight: itemWeight, quantity: item.quantity });
+    resolved.push({
+      product: product._id.toString(),
+      variantId: variant._id.toString(),
+      price: itemPrice,
+      weight: itemWeight,
+      quantity: item.quantity,
+      stock: Number(variant.stock) || 0,
+      name: product.name,
+    });
   }
 
-  return calculateShippingPure(resolved, config);
+  return { ...calculateShippingPure(resolved, config), lines: resolved };
 };
