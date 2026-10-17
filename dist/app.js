@@ -79,7 +79,8 @@ app.get('/api/v1/health', (req, res) => {
     });
 });
 // Body parsers with size limits
-app.use(express_1.default.json({ limit: '1mb' }));
+// rawBody: the exact bytes the ERP signed (middlewares/erpAuth.ts)
+app.use(express_1.default.json({ limit: '1mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.use(express_1.default.urlencoded({ extended: true, limit: '1mb' }));
 app.use((0, cookie_parser_1.default)());
 // Sanitization middleware - prevent NoSQL injection and XSS

@@ -11,7 +11,9 @@
     "setup-categories": "ts-node-dev src/scripts/setupCategories.ts",
     "seed-data": "ts-node-dev src/scripts/seedOriginalData.ts",
     "seed-banners": "ts-node-dev src/scripts/seedBanners.ts",
-    "test": "ts-node-dev src/tests/shipping.test.ts"
+    "check-skus": "ts-node-dev src/scripts/checkSkus.ts",
+    "test": "ts-node-dev src/tests/shipping.test.ts",
+    "test:erp": "ts-node --transpile-only src/tests/erp.test.ts"
   },
   "dependencies": {
     "@sendgrid/mail": "^8.1.6",

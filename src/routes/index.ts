@@ -15,6 +15,7 @@ import dashboardRoutes from './dashboardRoutes';
 import contactRoutes from './contactRoutes';
 import faqRoutes from './faqRoutes';
 import settingsRoutes from './settingsRoutes';
+import erpRoutes from './erpRoutes';
 
 const router = Router();
 
@@ -48,5 +49,6 @@ router.use('/dashboard', dashboardRoutes);
 router.use('/contacts', contactRoutes);
 router.use('/faqs', faqRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/erp', erpRoutes);
 
 export default router;

@@ -72,7 +72,13 @@ const OrderSchema = new mongoose_1.Schema({
     razorpayOrderId: { type: String },
     razorpayPaymentId: { type: String },
     razorpaySignature: { type: String },
+    // Set by the ERP order-status webhook
+    erpOrderId: { type: String },
+    trackingNumber: { type: String },
+    statusUpdatedAt: { type: Date }, // ERP event time of the last applied status; older events are ignored
 }, { timestamps: true });
+// Stable order for ERP incremental sync (GET /erp/orders?updatedSince=)
+OrderSchema.index({ updatedAt: 1, _id: 1 });
 // One order per Razorpay order: closes the race between verify's duplicate check and save.
 OrderSchema.index({ razorpayOrderId: 1 }, { unique: true, partialFilterExpression: { razorpayOrderId: { $type: 'string' } } });
 exports.default = mongoose_1.default.model('Order', OrderSchema);

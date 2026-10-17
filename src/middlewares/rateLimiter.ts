@@ -7,6 +7,17 @@ export const apiLimiter = rateLimit({
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
+  // ERP routes have their own budget (erpLimiter); mounted at /api/, so req.path starts at /v1
+  skip: (req) => process.env.NODE_ENV === 'development' || req.path.startsWith('/v1/erp/'),
+});
+
+// ERP integration: machine traffic from one source, bursts during bulk syncs
+export const erpLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 600,
+  message: { success: false, message: 'Too many ERP requests, retry after the Retry-After interval', errors: [{ code: 'RATE_LIMITED' }] },
+  standardHeaders: true,
+  legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'development',
 });
 

@@ -47,6 +47,8 @@ const variantSchema = new mongoose_1.Schema({
     weight: { type: Number, required: true, default: 0 },
     image: { type: String },
     sku: { type: String },
+    // ERP timestamp of the stock figure last applied; older ERP updates are refused
+    stockAsOf: { type: Date },
     description: { type: String },
     name: { type: String },
 });
@@ -72,5 +74,8 @@ const productSchema = new mongoose_1.Schema({
     stock: { type: Number, default: 0 },
     weight: { type: Number, default: 0 },
 }, { timestamps: true });
+// ERP looks items up by SKU. ponytail: not unique until existing SKUs are backfilled (src/scripts/checkSkus.ts);
+// the ERP API refuses duplicates in code meanwhile.
+productSchema.index({ 'variants.sku': 1 });
 exports.Product = mongoose_1.default.model('Product', productSchema);
 //# sourceMappingURL=Product.js.map

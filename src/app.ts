@@ -85,7 +85,8 @@ app.get('/api/v1/health', (req, res) => {
 });
 
 // Body parsers with size limits
-app.use(express.json({ limit: '1mb' }));
+// rawBody: the exact bytes the ERP signed (middlewares/erpAuth.ts)
+app.use(express.json({ limit: '1mb', verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());
 

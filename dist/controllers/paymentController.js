@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteOrder = exports.updateOrderStatus = exports.getAllOrders = exports.getMyOrders = exports.calculateShipping = exports.verifyPayment = exports.createOrder = exports.isValidRazorpaySignature = exports.isMockPaymentMode = exports.razorpayInstance = void 0;
+exports.deleteOrder = exports.sendOrderStatusEmail = exports.updateOrderStatus = exports.getAllOrders = exports.getMyOrders = exports.calculateShipping = exports.verifyPayment = exports.createOrder = exports.isValidRazorpaySignature = exports.isMockPaymentMode = exports.razorpayInstance = void 0;
 const razorpay_1 = __importDefault(require("razorpay"));
 const crypto_1 = __importDefault(require("crypto"));
 const Order_1 = __importDefault(require("../models/Order"));
@@ -383,37 +383,47 @@ const updateOrderStatus = async (req, res) => {
         if (!order) {
             return res.status(404).json({ success: false, message: 'Order not found' });
         }
-        // Send Status Update Email
-        try {
-            const user = order.user;
-            if (user && user.email) {
-                const autoLoginToken = jsonwebtoken_1.default.sign({ id: user._id, role: user.role || 'customer' }, env_1.ENV.JWT_SECRET, { expiresIn: '7d' });
-                let statusColor = '#3b82f6'; // default blue
-                let statusMessage = "There is an update regarding your recent order.";
-                let subject = `Order Status Update - Luxy Galleria`;
-                if (orderStatus === 'processing') {
-                    statusColor = '#f59e0b'; // orange
-                    statusMessage = "Your order has been placed successfully and is now being processed.";
-                    subject = `Order Placed - Luxy Galleria`;
-                }
-                else if (orderStatus === 'shipped') {
-                    statusColor = '#3b82f6'; // blue
-                    statusMessage = "Great news! Your order has been shipped and is on its way to you.";
-                    subject = `Order Shipped - Luxy Galleria`;
-                }
-                else if (orderStatus === 'delivered') {
-                    statusColor = '#10b981'; // green
-                    statusMessage = "Your order has been delivered successfully. We hope you enjoy your purchase!";
-                    subject = `Order Delivered - Luxy Galleria`;
-                }
-                else if (orderStatus === 'cancelled') {
-                    statusColor = '#ef4444'; // red
-                    statusMessage = "Your order has been cancelled. If you have been charged, a refund will be initiated shortly.";
-                    subject = `Order Cancelled - Luxy Galleria`;
-                }
-                const itemsHtml = order.items.map((item) => {
-                    const product = item.product;
-                    return `
+        await (0, exports.sendOrderStatusEmail)(order, orderStatus);
+        res.status(200).json({ success: true, data: order });
+    }
+    catch (error) {
+        console.error('Error updating order status:', error);
+        res.status(500).json({ success: false, message: error.message || 'Error updating order status' });
+    }
+};
+exports.updateOrderStatus = updateOrderStatus;
+/** Emails the customer about a status change. Never throws: a mail failure must not fail the status change. */
+const sendOrderStatusEmail = async (order, orderStatus) => {
+    try {
+        const user = order.user;
+        if (user && user.email) {
+            const autoLoginToken = jsonwebtoken_1.default.sign({ id: user._id, role: user.role || 'customer' }, env_1.ENV.JWT_SECRET, { expiresIn: '7d' });
+            let statusColor = '#3b82f6'; // default blue
+            let statusMessage = "There is an update regarding your recent order.";
+            let subject = `Order Status Update - Luxy Galleria`;
+            if (orderStatus === 'processing') {
+                statusColor = '#f59e0b'; // orange
+                statusMessage = "Your order has been placed successfully and is now being processed.";
+                subject = `Order Placed - Luxy Galleria`;
+            }
+            else if (orderStatus === 'shipped') {
+                statusColor = '#3b82f6'; // blue
+                statusMessage = "Great news! Your order has been shipped and is on its way to you.";
+                subject = `Order Shipped - Luxy Galleria`;
+            }
+            else if (orderStatus === 'delivered') {
+                statusColor = '#10b981'; // green
+                statusMessage = "Your order has been delivered successfully. We hope you enjoy your purchase!";
+                subject = `Order Delivered - Luxy Galleria`;
+            }
+            else if (orderStatus === 'cancelled') {
+                statusColor = '#ef4444'; // red
+                statusMessage = "Your order has been cancelled. If you have been charged, a refund will be initiated shortly.";
+                subject = `Order Cancelled - Luxy Galleria`;
+            }
+            const itemsHtml = order.items.map((item) => {
+                const product = item.product;
+                return `
             <tr>
               <td style="padding: 15px 10px; border-bottom: 1px solid #eaeaea;">
                 <p style="margin: 0; font-weight: bold; color: #111827; font-size: 15px;">${product?.name || 'Product'}</p>
@@ -424,8 +434,8 @@ const updateOrderStatus = async (req, res) => {
               </td>
             </tr>
           `;
-                }).join('');
-                const htmlMessage = `
+            }).join('');
+            const htmlMessage = `
             <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #eaeaea; border-radius: 10px; overflow: hidden; background-color: #ffffff;">
               <div style="background-color: #111827; padding: 30px; text-align: center;">
                 <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 2px; text-transform: uppercase;">Luxy Galleria</h1>
@@ -487,27 +497,21 @@ const updateOrderStatus = async (req, res) => {
               </div>
             </div>
         `;
-                await (0, sendEmail_1.sendEmail)({
-                    email: user.email,
-                    subject: subject,
-                    html: htmlMessage
-                });
-            }
-            else {
-                console.warn(`Skipping email for order ${order._id} because user email is missing.`);
-            }
+            await (0, sendEmail_1.sendEmail)({
+                email: user.email,
+                subject: subject,
+                html: htmlMessage
+            });
         }
-        catch (emailErr) {
-            console.error('Error sending status update email:', emailErr);
+        else {
+            console.warn(`Skipping email for order ${order._id} because user email is missing.`);
         }
-        res.status(200).json({ success: true, data: order });
     }
-    catch (error) {
-        console.error('Error updating order status:', error);
-        res.status(500).json({ success: false, message: error.message || 'Error updating order status' });
+    catch (emailErr) {
+        console.error('Error sending status update email:', emailErr);
     }
 };
-exports.updateOrderStatus = updateOrderStatus;
+exports.sendOrderStatusEmail = sendOrderStatusEmail;
 // Delete Order (Admin only)
 const deleteOrder = async (req, res) => {
     try {

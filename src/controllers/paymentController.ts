@@ -417,7 +417,17 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
 
-    // Send Status Update Email
+    await sendOrderStatusEmail(order, orderStatus);
+
+    res.status(200).json({ success: true, data: order });
+  } catch (error: any) {
+    console.error('Error updating order status:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error updating order status' });
+  }
+};
+
+/** Emails the customer about a status change. Never throws: a mail failure must not fail the status change. */
+export const sendOrderStatusEmail = async (order: any, orderStatus: string) => {
     try {
       const user = order.user as any;
       if (user && user.email) {
@@ -532,12 +542,6 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
     } catch (emailErr) {
       console.error('Error sending status update email:', emailErr);
     }
-
-    res.status(200).json({ success: true, data: order });
-  } catch (error: any) {
-    console.error('Error updating order status:', error);
-    res.status(500).json({ success: false, message: error.message || 'Error updating order status' });
-  }
 };
 
 
