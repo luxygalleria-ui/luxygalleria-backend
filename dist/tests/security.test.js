@@ -275,6 +275,21 @@ const run = async () => {
         const ok = await call('GET', '/health', undefined, undefined, { Origin: 'https://luxygalleria-frontend.vercel.app' });
         assert_1.default.strictEqual(ok.headers.get('access-control-allow-origin'), 'https://luxygalleria-frontend.vercel.app');
     });
+    await test('CORS: custom domains allowed (GET + preflight), unknown origin gets 403', async () => {
+        for (const origin of ['https://luxygalleria.com', 'https://www.luxygalleria.com', 'https://admin.luxygalleria.com']) {
+            const get = await call('GET', '/banners', undefined, undefined, { Origin: origin });
+            assert_1.default.strictEqual(get.status, 200);
+            assert_1.default.strictEqual(get.headers.get('access-control-allow-origin'), origin);
+            assert_1.default.strictEqual(get.headers.get('access-control-allow-credentials'), 'true');
+            const pre = await fetch(base + '/auth/login', { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type,authorization' } });
+            assert_1.default.ok(pre.status === 200 || pre.status === 204);
+            assert_1.default.strictEqual(pre.headers.get('access-control-allow-origin'), origin);
+            assert_1.default.match(pre.headers.get('access-control-allow-headers') || '', /authorization/i);
+        }
+        const evil = await call('GET', '/banners', undefined, undefined, { Origin: 'https://evil.example.com' });
+        assert_1.default.strictEqual(evil.status, 403);
+        assert_1.default.strictEqual(evil.headers.get('access-control-allow-origin'), null);
+    });
     await test('product search treats regex metacharacters literally', async () => {
         const r = await call('GET', `/products?search=${encodeURIComponent('(a+)+$')}`);
         assert_1.default.strictEqual(r.status, 200);

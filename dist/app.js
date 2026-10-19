@@ -43,6 +43,9 @@ const allowedOrigins = [
     'http://localhost:3002',
     'https://luxygalleria-frontend.vercel.app',
     'https://luxygalleria-admin.vercel.app',
+    'https://luxygalleria.com',
+    'https://www.luxygalleria.com',
+    'https://admin.luxygalleria.com',
     ...(process.env.CORS_ORIGIN || '').split(',').map(o => o.trim().replace(/\/$/, '')).filter(Boolean),
 ];
 const corsConfig = {
@@ -55,7 +58,8 @@ const corsConfig = {
             return;
         }
         logger_1.default.warn(`CORS blocked request from origin: ${origin}`);
-        callback(new Error("Not allowed by CORS"));
+        // Still reject before any handler runs (cookie auth), but as a 403, not a 500.
+        callback(Object.assign(new Error("Not allowed by CORS"), { statusCode: 403 }));
     },
     credentials: true,
     optionsSuccessStatus: 200,
