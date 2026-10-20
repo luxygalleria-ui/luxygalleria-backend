@@ -21,6 +21,7 @@ const contactRoutes_1 = __importDefault(require("./contactRoutes"));
 const faqRoutes_1 = __importDefault(require("./faqRoutes"));
 const settingsRoutes_1 = __importDefault(require("./settingsRoutes"));
 const erpRoutes_1 = __importDefault(require("./erpRoutes"));
+const erpConsoleRoutes_1 = __importDefault(require("./erpConsoleRoutes"));
 const router = (0, express_1.Router)();
 // Health Check
 router.get('/health', healthController_1.checkHealth);
@@ -51,5 +52,6 @@ router.use('/contacts', contactRoutes_1.default);
 router.use('/faqs', faqRoutes_1.default);
 router.use('/settings', settingsRoutes_1.default);
 router.use('/erp', erpRoutes_1.default);
+router.use('/erp-console', erpConsoleRoutes_1.default);
 exports.default = router;
 //# sourceMappingURL=index.js.map

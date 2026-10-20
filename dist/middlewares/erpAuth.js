@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.erpAuth = exports.erpSignature = exports.erpHeaders = void 0;
+exports.erpAuth = exports.erpSignature = exports.signErpRequest = exports.erpHeaders = exports.loadKeys = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 const responseHandler_1 = require("../utils/responseHandler");
 const TOLERANCE_SECONDS = 300;
@@ -23,6 +23,7 @@ const loadKeys = () => {
     }
     return keys;
 };
+exports.loadKeys = loadKeys;
 // ponytail: in-process replay cache, fine for a single Render instance; move to Mongo/Redis if the API scales out.
 const seen = new Map();
 const isReplay = (signature, nowSeconds) => {
@@ -43,7 +44,7 @@ const erpHeaders = (req, res, next) => {
         event: 'ERP_API', keyId: req.erpKeyId || null, claimedKeyId: req.get('X-ERP-Key-Id') || null,
         method: req.method, path: req.originalUrl.split('?')[0], status: res.statusCode, ms: Date.now() - started,
     })));
-    const keys = loadKeys();
+    const keys = (0, exports.loadKeys)();
     if (!keys.size)
         return (0, responseHandler_1.errorResponse)(res, 503, 'ERP integration is not configured', [{ code: 'UNAVAILABLE' }]);
     if (!keys.has(req.get('X-ERP-Key-Id') || ''))
@@ -59,15 +60,17 @@ exports.erpHeaders = erpHeaders;
  * X-ERP-Signature = hex HMAC-SHA256(secret, `${timestamp}.${METHOD}.${pathWithQuery}.${hex sha256(body)}`)
  * body = raw JSON bytes, the uploaded file bytes for /images, or empty for GET.
  */
+const signErpRequest = (secret, timestamp, method, pathWithQuery, body) => {
+    const bodyHash = crypto_1.default.createHash('sha256').update(body || Buffer.alloc(0)).digest('hex');
+    return crypto_1.default.createHmac('sha256', secret).update(`${timestamp}.${method}.${pathWithQuery}.${bodyHash}`).digest('hex');
+};
+exports.signErpRequest = signErpRequest;
 const erpSignature = (bodyOf) => (req, res, next) => {
     const keyId = req.get('X-ERP-Key-Id') || '';
-    const secret = loadKeys().get(keyId);
+    const secret = (0, exports.loadKeys)().get(keyId);
     if (!secret)
         return unauthorized(res, 'Invalid ERP credentials');
-    const bodyHash = crypto_1.default.createHash('sha256').update(bodyOf(req) || Buffer.alloc(0)).digest('hex');
-    const expected = crypto_1.default.createHmac('sha256', secret)
-        .update(`${req.get('X-ERP-Timestamp')}.${req.method}.${req.originalUrl}.${bodyHash}`)
-        .digest('hex');
+    const expected = (0, exports.signErpRequest)(secret, String(req.get('X-ERP-Timestamp')), req.method, req.originalUrl, bodyOf(req));
     const given = String(req.get('X-ERP-Signature') || '').toLowerCase();
     if (given.length !== expected.length || !crypto_1.default.timingSafeEqual(Buffer.from(given), Buffer.from(expected))) {
         return unauthorized(res, 'Invalid X-ERP-Signature');

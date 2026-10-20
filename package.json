@@ -13,7 +13,9 @@
     "seed-banners": "ts-node-dev src/scripts/seedBanners.ts",
     "check-skus": "ts-node-dev src/scripts/checkSkus.ts",
     "test": "ts-node-dev src/tests/shipping.test.ts",
-    "test:erp": "ts-node --transpile-only src/tests/erp.test.ts"
+    "test:erp": "ts-node --transpile-only src/tests/erp.test.ts",
+    "test:erp-console": "ts-node --transpile-only src/tests/erpConsole.test.ts",
+    "test:dev-routes": "ts-node --transpile-only src/tests/devRoutes.test.ts"
   },
   "dependencies": {
     "@sendgrid/mail": "^8.1.6",

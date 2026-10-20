@@ -17,7 +17,7 @@ const TOLERANCE_SECONDS = 300;
  * ERP_API_KEYS="keyId:secret[,keyId2:secret2]". A second entry lets a secret be rotated without downtime.
  * Sandbox and production deployments each get their own keys. Secrets under 32 characters are ignored.
  */
-const loadKeys = () => {
+export const loadKeys = () => {
   const keys = new Map<string, string>();
   for (const entry of (process.env.ERP_API_KEYS || '').split(',')) {
     const i = entry.indexOf(':');
@@ -62,15 +62,17 @@ export const erpHeaders = (req: Request, res: Response, next: NextFunction) => {
  * X-ERP-Signature = hex HMAC-SHA256(secret, `${timestamp}.${METHOD}.${pathWithQuery}.${hex sha256(body)}`)
  * body = raw JSON bytes, the uploaded file bytes for /images, or empty for GET.
  */
+export const signErpRequest = (secret: string, timestamp: string, method: string, pathWithQuery: string, body?: Buffer) => {
+  const bodyHash = crypto.createHash('sha256').update(body || Buffer.alloc(0)).digest('hex');
+  return crypto.createHmac('sha256', secret).update(`${timestamp}.${method}.${pathWithQuery}.${bodyHash}`).digest('hex');
+};
+
 export const erpSignature = (bodyOf: (req: Request) => Buffer | undefined) =>
   (req: Request, res: Response, next: NextFunction) => {
     const keyId = req.get('X-ERP-Key-Id') || '';
     const secret = loadKeys().get(keyId);
     if (!secret) return unauthorized(res, 'Invalid ERP credentials');
-    const bodyHash = crypto.createHash('sha256').update(bodyOf(req) || Buffer.alloc(0)).digest('hex');
-    const expected = crypto.createHmac('sha256', secret)
-      .update(`${req.get('X-ERP-Timestamp')}.${req.method}.${req.originalUrl}.${bodyHash}`)
-      .digest('hex');
+    const expected = signErpRequest(secret, String(req.get('X-ERP-Timestamp')), req.method, req.originalUrl, bodyOf(req));
     const given = String(req.get('X-ERP-Signature') || '').toLowerCase();
     if (given.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(given), Buffer.from(expected))) {
       return unauthorized(res, 'Invalid X-ERP-Signature');
