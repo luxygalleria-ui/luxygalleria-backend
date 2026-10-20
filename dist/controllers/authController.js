@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.googleAuth = exports.loginCustomer = exports.resendOtp = exports.verifyOtp = exports.registerCustomer = exports.createTestAdmin = exports.loginAdmin = void 0;
+exports.googleAuth = exports.loginCustomer = exports.resendOtp = exports.verifyOtp = exports.registerCustomer = exports.loginAdmin = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const User_1 = require("../models/User");
 const asyncHandler_1 = require("../utils/asyncHandler");
@@ -49,41 +49,6 @@ exports.loginAdmin = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         phone: user.phone,
         role: user.role,
         token
-    });
-});
-// Helper to quickly create a test admin user (Can be removed later)
-exports.createTestAdmin = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
-    if (env_1.ENV.NODE_ENV !== 'development') {
-        return (0, responseHandler_1.errorResponse)(res, 403, 'Test admin setup is only available in development');
-    }
-    const adminEmail = process.env.ADMIN_EMAIL || 'admin@luxygalleria.com';
-    const adminPassword = process.env.ADMIN_PASSWORD || 'password123';
-    const userExists = await User_1.User.findOne({ email: adminEmail }).select('+password');
-    if (userExists) {
-        if (userExists.role === 'admin' || userExists.role === 'superadmin') {
-            userExists.password = adminPassword;
-            userExists.role = 'superadmin';
-            userExists.isVerified = true;
-            userExists.isActive = true;
-            await userExists.save();
-            return (0, responseHandler_1.successResponse)(res, 200, 'Test admin reset successfully. You can now login.', {
-                email: adminEmail,
-                password: adminPassword
-            });
-        }
-        return (0, responseHandler_1.errorResponse)(res, 400, 'Email is already registered as a customer');
-    }
-    const admin = await User_1.User.create({
-        name: 'System Admin',
-        email: adminEmail,
-        password: adminPassword,
-        role: 'superadmin',
-        isVerified: true,
-        isActive: true,
-    });
-    (0, responseHandler_1.successResponse)(res, 201, 'Test admin created successfully. You can now login.', {
-        email: admin.email,
-        password: adminPassword
     });
 });
 const sendEmail_1 = require("../utils/sendEmail");

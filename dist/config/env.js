@@ -6,8 +6,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ENV = void 0;
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
+// Fail closed: only an explicit NODE_ENV=development enables development behaviour. Unset or unknown values
+// (e.g. "dev", "staging") run as production: secure cookies, no stack traces, JWT_SECRET required.
+const RAW_NODE_ENV = (process.env.NODE_ENV || '').trim();
+if (RAW_NODE_ENV !== 'development' && RAW_NODE_ENV !== 'production') {
+    console.warn(`⚠️  NODE_ENV is ${RAW_NODE_ENV ? `"${RAW_NODE_ENV}"` : 'not set'}; running with production settings`);
+}
 exports.ENV = {
-    NODE_ENV: process.env.NODE_ENV || 'development',
+    NODE_ENV: RAW_NODE_ENV === 'development' ? 'development' : 'production',
     PORT: process.env.PORT || 5000,
     MONGODB_URI: process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/heedy-db',
     JWT_SECRET: process.env.JWT_SECRET || '',

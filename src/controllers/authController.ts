@@ -57,48 +57,6 @@ export const loginAdmin = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
-// Helper to quickly create a test admin user (Can be removed later)
-export const createTestAdmin = asyncHandler(async (req: Request, res: Response) => {
-  if (ENV.NODE_ENV !== 'development') {
-    return errorResponse(res, 403, 'Test admin setup is only available in development');
-  }
-
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@luxygalleria.com';
-  const adminPassword = process.env.ADMIN_PASSWORD || 'password123';
-  const userExists = await User.findOne({ email: adminEmail }).select('+password');
-
-  if (userExists) {
-    if (userExists.role === 'admin' || userExists.role === 'superadmin') {
-      userExists.password = adminPassword;
-      userExists.role = 'superadmin';
-      userExists.isVerified = true;
-      userExists.isActive = true;
-      await userExists.save();
-
-      return successResponse(res, 200, 'Test admin reset successfully. You can now login.', {
-        email: adminEmail,
-        password: adminPassword
-      });
-    }
-
-    return errorResponse(res, 400, 'Email is already registered as a customer');
-  }
-
-  const admin = await User.create({
-    name: 'System Admin',
-    email: adminEmail,
-    password: adminPassword,
-    role: 'superadmin',
-    isVerified: true,
-    isActive: true,
-  });
-
-  successResponse(res, 201, 'Test admin created successfully. You can now login.', {
-    email: admin.email,
-    password: adminPassword
-  });
-});
-
 import { sendEmail } from '../utils/sendEmail';
 
 export const registerCustomer = asyncHandler(async (req: Request, res: Response) => {
