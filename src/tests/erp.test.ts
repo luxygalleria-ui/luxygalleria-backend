@@ -95,14 +95,50 @@ const run = async () => {
   const brand = await Brand.create({ name: 'Lumina' });
 
   console.log('\nAuthentication');
-  await test('missing headers, unknown key, bad signature and expired timestamp are rejected', async () => {
+  await test('missing headers, unknown key, missing timestamp, bad signature and expired timestamp are rejected', async () => {
     const plain = await parse(await fetch(origin + '/api/v1/erp/orders'));
     assert.strictEqual(plain.status, 401);
-    assert.strictEqual((await erp('GET', '/orders', undefined, { keyId: 'nope' })).status, 401);
+    const unknownKey = await erp('GET', '/orders', undefined, { keyId: 'nope' });
+    assert.strictEqual(unknownKey.status, 401);
+    assert.strictEqual(unknownKey.json.message, 'Invalid ERP credentials');
     assert.strictEqual((await erp('GET', '/orders', undefined, { secret: 'x'.repeat(40) })).status, 401);
+    const missingTimestampHeaders: Record<string, string> = signHeaders('GET', '/api/v1/erp/orders', '');
+    delete missingTimestampHeaders['X-ERP-Timestamp'];
+    const missingTimestamp = await parse(await fetch(origin + '/api/v1/erp/orders', { headers: missingTimestampHeaders }));
+    assert.strictEqual(missingTimestamp.status, 401);
+    assert.match(missingTimestamp.json.message, /Timestamp/);
     const old = await erp('GET', '/orders', undefined, { ts: Math.floor(Date.now() / 1000) - 301 });
     assert.strictEqual(old.status, 401);
     assert.match(old.json.message, /Timestamp/);
+    const milliseconds = await erp('GET', '/orders', undefined, { ts: Date.now() });
+    assert.strictEqual(milliseconds.status, 401);
+    assert.match(milliseconds.json.message, /Timestamp/);
+  });
+  await test('a configured rotated key works and the exact GET query is signed', async () => {
+    const configuredKeys = process.env.ERP_API_KEYS;
+    const rotatedSecret = 'rotated_erp_secret_0123456789abcdef';
+    process.env.ERP_API_KEYS = `${KEY_ID}:${SECRET},erp-rotated:${rotatedSecret}`;
+    try {
+      const exactPath = '/api/v1/erp/orders?limit=1';
+      const headers = signHeaders('GET', exactPath, '', { keyId: 'erp-rotated', secret: rotatedSecret });
+      assert.strictEqual((await fetch(origin + exactPath, { headers })).status, 200);
+
+      const mismatchedHeaders = signHeaders('GET', exactPath, '');
+      assert.strictEqual((await fetch(origin + '/api/v1/erp/orders?limit=2', { headers: mismatchedHeaders })).status, 401);
+    } finally {
+      process.env.ERP_API_KEYS = configuredKeys;
+    }
+  });
+  await test('JSON signatures use the exact request bytes, including whitespace', async () => {
+    const full = '/api/v1/erp/stock/UNKNOWN';
+    const rawBody = `{ "quantity": 1, "asOf": "${iso(0)}" }\n`;
+    const headers = signHeaders('PUT', full, rawBody);
+    const response = await fetch(origin + full, {
+      method: 'PUT',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: rawBody,
+    });
+    assert.strictEqual(response.status, 404, 'authentication passed and the unknown SKU reached the controller');
   });
   await test('a replayed signed request is rejected', async () => {
     const full = '/api/v1/erp/orders';
