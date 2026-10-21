@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| Version | 1.0 (implementation draft) |
-| Date | 17 October 2026 |
+| Version | 1.1 (implementation and auth diagnostics) |
+| Date | 21 October 2026 |
 | Audience | ERP development team; Luxy Galleria backend team |
-| Production host | `https://luxygalleria-backend.onrender.com` (supplied by the project owner) |
+| Production host | `https://api.luxygalleria.com` (supplied by the project owner) |
 | API prefix | `/api/v1/erp` |
 | Source | `luxy-backend` — `src/routes/erpRoutes.ts`, `src/controllers/erpController.ts`, `src/middlewares/erpAuth.ts` |
 | Tests | `src/tests/erp.test.ts` (`npm run test:erp`) |
@@ -17,26 +17,26 @@
 | ✅ **Implemented and locally tested** | Code exists in `luxy-backend` and passes the automated tests against a local throwaway MongoDB |
 | 🟡 **Implemented but not yet tested** | Code exists; no automated test covers it yet |
 | 🟦 **Requires ERP-team confirmation** | A contract or business rule we propose and the ERP team must accept or change |
-| 🚀 **Requires production deployment and verification** | Not live until deployed to Render and smoke-tested |
+| 🚀 **Requires production verification** | Deployment or behavior has not been independently verified against production |
 
-> **None of the endpoints below is live yet.** They are implemented and tested locally. They become available at the URLs shown only after deployment to Render, configuration of `ERP_API_KEYS`, and a successful smoke test (Section 11). 🚀
+> A production request has reached ERP authentication and returned `401 Invalid ERP credentials`. This confirms that at least the requested route and auth middleware are deployed; successful ERP authentication, database access, and the other production routes have not been independently verified here.
 
 | # | Capability | Method | Full URL | Status |
 |---|---|---|---|---|
-| 1 | Stock Update | `PUT` | `https://luxygalleria-backend.onrender.com/api/v1/erp/stock/{sku}` | ✅ 🚀 |
-| 2 | Item Add / Upsert | `POST` | `https://luxygalleria-backend.onrender.com/api/v1/erp/items` | ✅ 🚀 |
-| 3 | Item Edit | `PATCH` | `https://luxygalleria-backend.onrender.com/api/v1/erp/items/{sku}` | ✅ 🚀 |
-| 4 | Order Checking | `GET` | `https://luxygalleria-backend.onrender.com/api/v1/erp/orders` | ✅ 🚀 |
-| 5 | Order Details | `GET` | `https://luxygalleria-backend.onrender.com/api/v1/erp/orders/{orderId}` | ✅ 🚀 |
-| 6 | Order Status Changing (ERP callback) | `POST` | `https://luxygalleria-backend.onrender.com/api/v1/erp/webhooks/order-status` | ✅ 🚀 |
-| 7 | Image Upload | `POST` | `https://luxygalleria-backend.onrender.com/api/v1/erp/images` | ✅ 🚀 |
+| 1 | Stock Update | `PUT` | `https://api.luxygalleria.com/api/v1/erp/stock/{sku}` | ✅ 🚀 |
+| 2 | Item Add / Upsert | `POST` | `https://api.luxygalleria.com/api/v1/erp/items` | ✅ 🚀 |
+| 3 | Item Edit | `PATCH` | `https://api.luxygalleria.com/api/v1/erp/items/{sku}` | ✅ 🚀 |
+| 4 | Order Checking | `GET` | `https://api.luxygalleria.com/api/v1/erp/orders` | ✅ 🚀 |
+| 5 | Order Details | `GET` | `https://api.luxygalleria.com/api/v1/erp/orders/{orderId}` | ✅ 🚀 |
+| 6 | Order Status Changing (ERP callback) | `POST` | `https://api.luxygalleria.com/api/v1/erp/webhooks/order-status` | ✅ 🚀 |
+| 7 | Image Upload | `POST` | `https://api.luxygalleria.com/api/v1/erp/images` | ✅ 🚀 |
 | — | Website → ERP order push | `POST` (to ERP) | ERP-provided | ❌ **Not implemented** — waiting for the ERP sales-order API (Section 10) 🟦 |
 
 ---
 
 ## 1. Authentication (all seven endpoints)
 
-🟦 **Proposed contract.** HMAC request signing is our proposal. The ERP team must confirm it or tell us its own standard.
+HMAC request signing is implemented in `src/middlewares/erpAuth.ts` and exercised by the local ERP integration suite. The integration contract remains subject to ERP-team confirmation where noted.
 
 Every request carries three headers:
 
@@ -58,6 +58,7 @@ stringToSign = <X-ERP-Timestamp> + "." + <HTTP METHOD> + "." + <path and query e
 
 **Rules**
 
+- The `X-ERP-Key-Id` header must exactly match a configured key ID, including letter case. The key ID is not a secret.
 - **Sign every attempt with a fresh timestamp.** An identical signature seen again within 10 minutes is rejected as a replay.
 - Admin or customer logins and JWTs are **not accepted** on these routes. ERP keys grant access to nothing outside `/api/v1/erp/*`.
 - If no ERP keys are configured on the server, every ERP route returns `503` (fail closed).
@@ -77,7 +78,7 @@ stringToSign = <X-ERP-Timestamp> + "." + <HTTP METHOD> + "." + <path and query e
 **Shell helper used by the curl examples** (placeholders only):
 
 ```bash
-BASE=https://luxygalleria-backend.onrender.com
+BASE=https://api.luxygalleria.com
 KEY_ID=YOUR_ERP_KEY_ID
 SECRET=YOUR_ERP_SECRET          # never commit or paste into tickets
 
@@ -90,6 +91,23 @@ sign() {
 }
 ```
 
+**Node.js signing client:** [`docs/erp-signing-client.mjs`](erp-signing-client.mjs) reads `ERP_KEY_ID`, `ERP_SECRET`, and optionally `ERP_API_BASE_URL` from its environment. The default API base is `https://api.luxygalleria.com/api/v1`. It constructs the URL first, signs that URL's exact path and query, and sends the same uppercase method. JSON bodies are signed and sent as the same `Buffer`; image uploads sign the image bytes while sending a multipart request. The script prints only the HTTP status, not API response data or credentials.
+
+Offline signing check (no credentials or network request required):
+
+```bash
+node docs/erp-signing-client.mjs --verify-vector
+```
+
+After setting the client environment variables in a secure local shell or secret manager, these production checks are non-destructive:
+
+```bash
+ERP_API_BASE_URL=https://api.luxygalleria.com/api/v1 node docs/erp-signing-client.mjs get
+ERP_API_BASE_URL=https://api.luxygalleria.com/api/v1 node docs/erp-signing-client.mjs json-validation
+```
+
+Expected: `get` returns HTTP 200 and only reads one order page; `json-validation` sends `{}` to item validation, expects HTTP 400, and creates or changes no data. The `upload` mode writes an image to Cloudinary; use staging only.
+
 **Authentication errors**
 
 | HTTP | `message` | `errors[0].code` |
@@ -100,6 +118,12 @@ sign() {
 | 401 | `Replayed request: sign every attempt with a fresh timestamp` | `UNAUTHENTICATED` |
 | 503 | `ERP integration is not configured` | `UNAVAILABLE` |
 | 429 | `Too many ERP requests, retry after the Retry-After interval` | `RATE_LIMITED` |
+
+### Diagnosing `Invalid ERP credentials`
+
+The middleware returns this message when the supplied key ID is absent from the parsed `ERP_API_KEYS` key map. The configuration is read at request time as comma-separated `keyId:secret` pairs; key IDs and secrets are trimmed, and secrets shorter than 32 characters are ignored. If no valid pairs remain, the response is `503 ERP integration is not configured` instead. A stale timestamp, signature mismatch, or replay has a different 401 message.
+
+Therefore, a production `401 Invalid ERP credentials` indicates a key-ID/configuration mismatch in the normal request flow, not a body, path, method, timestamp, or HMAC mismatch. Verify in the production secret manager that `ERP_API_KEYS` contains the exact ID sent in `X-ERP-Key-Id`, with a secret of at least 32 characters. Do not print or paste the variable value. This repository cannot verify the live secret-manager value.
 
 ## 2. Common conventions
 
@@ -138,7 +162,7 @@ sign() {
 
 **Purpose:** set the **absolute sellable quantity** of one product variant. This is not an adjustment.
 
-**Full URL:** `https://luxygalleria-backend.onrender.com/api/v1/erp/stock/{sku}`
+**Full URL:** `https://api.luxygalleria.com/api/v1/erp/stock/{sku}`
 
 | Path parameter | Type | Rules |
 |---|---|---|
@@ -222,7 +246,7 @@ curl -sS -X PUT "$BASE$P" -H "Content-Type: application/json" \
 
 **Purpose:** create a product with its variants, or update the product that already carries these SKUs.
 
-**Full URL:** `https://luxygalleria-backend.onrender.com/api/v1/erp/items`
+**Full URL:** `https://api.luxygalleria.com/api/v1/erp/items`
 
 | Body field | Type | Required | Rules / mapping |
 |---|---|---|---|
@@ -316,7 +340,7 @@ curl -sS -X POST "$BASE$P" -H "Content-Type: application/json" \
 
 **Purpose:** change only the supplied fields of the variant `sku` and its product.
 
-**Full URL:** `https://luxygalleria-backend.onrender.com/api/v1/erp/items/{sku}`
+**Full URL:** `https://api.luxygalleria.com/api/v1/erp/items/{sku}`
 
 **Allowed fields** (at least one; anything else → `400`):
 
@@ -389,7 +413,7 @@ curl -sS -X PATCH "$BASE$P" -H "Content-Type: application/json" \
 
 **Purpose:** list orders page by page, oldest change first, for incremental sync.
 
-**Full URL:** `https://luxygalleria-backend.onrender.com/api/v1/erp/orders`
+**Full URL:** `https://api.luxygalleria.com/api/v1/erp/orders`
 
 | Query parameter | Type | Default | Rules |
 |---|---|---|---|
@@ -460,7 +484,7 @@ curl -sS "$BASE$P" -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" -H "X-ER
 
 **Purpose:** return one order by its website order id (24 hex characters).
 
-**Full URL:** `https://luxygalleria-backend.onrender.com/api/v1/erp/orders/{orderId}`
+**Full URL:** `https://api.luxygalleria.com/api/v1/erp/orders/{orderId}`
 
 **Success `200`** — every field in Section 6, plus:
 
@@ -521,7 +545,7 @@ curl -sS "$BASE$P" -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" -H "X-ER
 
 **Purpose:** the ERP tells the website that an order's fulfilment status changed.
 
-**Full URL:** `https://luxygalleria-backend.onrender.com/api/v1/erp/webhooks/order-status`
+**Full URL:** `https://api.luxygalleria.com/api/v1/erp/webhooks/order-status`
 
 | Body field | Type | Required | Rules |
 |---|---|---|---|
@@ -625,7 +649,7 @@ curl -sS -X POST "$BASE$P" -H "Content-Type: application/json" \
 
 **Simpler alternative:** if your images already have public `https://` URLs, send those directly in the item APIs and skip this endpoint.
 
-**Full URL:** `https://luxygalleria-backend.onrender.com/api/v1/erp/images`
+**Full URL:** `https://api.luxygalleria.com/api/v1/erp/images`
 
 | Item | Value |
 |---|---|
@@ -709,11 +733,13 @@ curl -sS -X POST "$BASE$P" -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" 
 3. The key id is sent separately.
 4. Rotate immediately if exposure is suspected, and at least yearly.
 
-**Deploy steps**
+**Safe deploy steps**
 
-1. Review and commit the `luxy-backend` changes, including the rebuilt `dist/` (Render starts `node dist/server.js`).
-2. Set `ERP_API_KEYS` on Render.
-3. Deploy.
+1. Run `npm run test:erp` against the dedicated local test database and `npm run build`. Do not run data seeding or SKU scripts as part of an auth deployment.
+2. Review and commit the backend source, documentation, sample client, and build output required by the deployment process (`node dist/server.js` is the configured start command).
+3. Deploy through the normal reviewed production release process. Do not change production environment values as part of this code change.
+4. In the production secret manager, privately verify that the configured `ERP_API_KEYS` entry has the same key ID as the ERP client's `X-ERP-Key-Id` and that its secret is at least 32 characters. Never print, paste, or log the secret. If the IDs differ, coordinate a credential update/rotation with the ERP owner as a separate approved operation; keep both IDs during an agreed rotation window, then remove the retired key.
+5. Use the non-destructive signed GET and JSON-validation checks above. Do not use the upload mode against production because a successful upload writes to Cloudinary.
 
 **Production smoke test** — none of these changes data:
 
