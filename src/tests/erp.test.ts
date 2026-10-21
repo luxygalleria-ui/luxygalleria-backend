@@ -29,6 +29,7 @@ import { Brand } from '../models/Brand';
 import Order from '../models/Order';
 import { ErpEvent } from '../models/ErpEvent';
 import { imageStore } from '../controllers/erpController';
+import { getErpKeyConfigurationStatus } from '../middlewares/erpAuth';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const payment = require('../controllers/paymentController');
 
@@ -95,6 +96,22 @@ const run = async () => {
   const brand = await Brand.create({ name: 'Lumina' });
 
   console.log('\nAuthentication');
+  await test('ERP key config accepts trimmed comma-separated pairs and reports no secret material', async () => {
+    const configuredKeys = process.env.ERP_API_KEYS;
+    try {
+      process.env.ERP_API_KEYS = ` erp-one : ${SECRET} , erp-two:${SECRET}:suffix `;
+      const validStatus = getErpKeyConfigurationStatus();
+      assert.deepStrictEqual(validStatus, { valid: true, keyIds: ['erp-one', 'erp-two'] });
+      assert.ok(!JSON.stringify(validStatus).includes(SECRET));
+
+      process.env.ERP_API_KEYS = `erp-one:${SECRET},malformed,erp-short:short`;
+      const invalidStatus = getErpKeyConfigurationStatus();
+      assert.deepStrictEqual(invalidStatus, { valid: false, keyIds: ['erp-one', 'erp-short'] });
+      assert.ok(!JSON.stringify(invalidStatus).includes(SECRET));
+    } finally {
+      process.env.ERP_API_KEYS = configuredKeys;
+    }
+  });
   await test('missing headers, unknown key, missing timestamp, bad signature and expired timestamp are rejected', async () => {
     const plain = await parse(await fetch(origin + '/api/v1/erp/orders'));
     assert.strictEqual(plain.status, 401);

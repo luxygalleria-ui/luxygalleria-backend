@@ -719,12 +719,19 @@ curl -sS -X POST "$BASE$P" -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" 
 
 ## 11. Deployment, configuration and verification (Luxy Galleria)
 
-**Environment variable (Render → Environment)** — names only; never share values in documents or chat.
+**Environment variable (Hostinger production environment)** — names only; never share values in documents or chat.
 
 | Name | Value format |
 |---|---|
 | `ERP_API_KEYS` | `keyId:secret` pairs, comma-separated, e.g. `erp-prod-1:<64 hex chars>`. Generate with `openssl rand -hex 32`. Use a different key for sandbox/staging. During a rotation, list old and new keys, then remove the old one. |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Already used by admin uploads; required for Section 9 |
+
+**Exact key parser behavior**
+
+- The application splits `ERP_API_KEYS` on literal commas. Each entry uses its first colon as the key-ID/secret separator; colons after that are part of the secret. Commas cannot be part of a key ID or secret.
+- Leading/trailing whitespace around each entry, key ID, and secret is trimmed. IDs are matched case-sensitively. Secrets shorter than 32 characters are ignored.
+- Use a generated hex secret (`openssl rand -hex 32`) to avoid dotenv/shell special-character and quoting surprises. Quoting a dotenv value does not make commas safe: the parser still splits on commas after dotenv loads it.
+- After building the current source with `npm run build`, run `npm run diagnose:erp-keys` from `/opt/luxygalleria-migration/backend` to print only parsed key IDs and a validity boolean. Example shape: `{"valid":true,"keyIds":["erp-prod-1"]}`. Invalid configuration exits nonzero. It never prints secret values or hashes. Do not add logging around `process.env.ERP_API_KEYS`.
 
 **Secure credential exchange**
 
@@ -738,7 +745,7 @@ curl -sS -X POST "$BASE$P" -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" 
 1. Run `npm run test:erp` against the dedicated local test database and `npm run build`. Do not run data seeding or SKU scripts as part of an auth deployment.
 2. Review and commit the backend source, documentation, sample client, and build output required by the deployment process (`node dist/server.js` is the configured start command).
 3. Deploy through the normal reviewed production release process. Do not change production environment values as part of this code change.
-4. In the production secret manager, privately verify that the configured `ERP_API_KEYS` entry has the same key ID as the ERP client's `X-ERP-Key-Id` and that its secret is at least 32 characters. Never print, paste, or log the secret. If the IDs differ, coordinate a credential update/rotation with the ERP owner as a separate approved operation; keep both IDs during an agreed rotation window, then remove the retired key.
+4. On Hostinger, privately verify the configured `ERP_API_KEYS` entry has the same key ID as the ERP client's `X-ERP-Key-Id` and a secret of at least 32 characters. The `diagnose:erp-keys` command reports accepted IDs without revealing secrets. Never print, paste, or log the variable value. If the IDs differ, coordinate a credential update/rotation with the ERP owner as a separate approved operation; keep both IDs during an agreed rotation window, then remove the retired key.
 5. Use the non-destructive signed GET and JSON-validation checks above. Do not use the upload mode against production because a successful upload writes to Cloudinary.
 
 **Production smoke test** — none of these changes data:
