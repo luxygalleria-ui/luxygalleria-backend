@@ -202,6 +202,18 @@ const run = async () => {
     assert.strictEqual(p.variants[0].oldPrice, 599);
     assert.strictEqual(p.stock, 10);
   });
+  await test('lists real products and variants by SKU without inventing missing identifiers', async () => {
+    const r = await erp('GET', '/items?search=ROSE-30');
+    assert.strictEqual(r.status, 200, JSON.stringify(r.json));
+    assert.strictEqual(r.json.data.items.length, 1);
+    assert.strictEqual(r.json.data.items[0].productId, productId);
+    assert.strictEqual(r.json.data.items[0].variants[0].sku, 'ROSE-30');
+    const exactItem = await erp('GET', '/items/ROSE-30');
+    assert.strictEqual(exactItem.status, 200);
+    assert.strictEqual(exactItem.json.data.variant.sku, 'ROSE-30');
+    assert.strictEqual((await erp('GET', '/items/MISSING-SKU')).status, 404);
+    assert.strictEqual((await erp('GET', '/items?limit=0')).status, 400);
+  });
   await test('upserting the same SKU updates in place: no duplicate, omitted fields and stock preserved', async () => {
     const r = await erp('POST', '/items', { name: 'Rose Serum 2', variants: [{ sku: 'ROSE-30', offerPrice: 450, stock: 99 }] });
     assert.strictEqual(r.status, 200, JSON.stringify(r.json));
@@ -273,6 +285,9 @@ const run = async () => {
     const p = (await Product.findById(productId))!;
     assert.strictEqual(p.variants[0].stock, 25);
     assert.strictEqual(p.stock, 29);
+    const readback = await erp('GET', '/items?search=ROSE-30');
+    assert.strictEqual(readback.status, 200);
+    assert.strictEqual(readback.json.data.items[0].variants[0].stock, 25);
   });
   await test('redelivery of the same update is a no-op; an older update is refused as stale', async () => {
     const again = await erp('PUT', '/stock/ROSE-30', { quantity: 25, asOf: t1 });
@@ -312,6 +327,7 @@ const run = async () => {
     assert.strictEqual(dup.status, 409);
     assert.strictEqual(dup.json.errors[0].code, 'DUPLICATE_SKU');
     assert.strictEqual((await erp('PATCH', '/items/DUP', { name: 'x' })).status, 409);
+    assert.strictEqual((await erp('GET', '/items/DUP')).status, 409);
     assert.strictEqual((await erp('POST', '/items', { variants: [{ sku: 'DUP' }] })).status, 409);
   });
   await test('checkout stock decrement still works after an ERP stock update', async () => {

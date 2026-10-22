@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.uploadImage = exports.readImage = exports.imageStore = exports.orderStatusWebhook = exports.getOrder = exports.listOrders = exports.updateStock = exports.patchItem = exports.upsertItem = void 0;
+exports.uploadImage = exports.readImage = exports.imageStore = exports.orderStatusWebhook = exports.getOrder = exports.listOrders = exports.updateStock = exports.patchItem = exports.upsertItem = exports.listItems = exports.getItemBySku = void 0;
 const path_1 = __importDefault(require("path"));
 const mongoose_1 = __importDefault(require("mongoose"));
 const multer_1 = __importDefault(require("multer"));
@@ -32,6 +32,11 @@ const money = zod_1.z.number().finite().min(0).max(10_000_000);
 const httpsUrl = zod_1.z.string().trim().url().max(2048).refine((u) => u.startsWith('https://'), 'must be an https URL');
 const ORDER_STATUSES = ['processing', 'shipped', 'delivered', 'cancelled'];
 const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'refunded'];
+const itemListSchema = zod_1.z.object({
+    page: zod_1.z.coerce.number().int().min(1).default(1),
+    limit: zod_1.z.coerce.number().int().min(1).max(100).default(50),
+    search: zod_1.z.string().trim().max(100).optional(),
+}).strict();
 // Stock updates keep the product-level total equal to the sum of its variants, in one atomic write.
 const syncProductStock = (id) => Product_1.Product.updateOne({ _id: id }, [{ $set: { stock: { $sum: '$variants.stock' } } }]);
 /** The one variant carrying this SKU. Several carriers mean bad data the ERP must not paper over. */
@@ -120,7 +125,60 @@ const variantSummary = (v) => ({
     sku: v.sku, variantId: String(v._id), size: v.size || v.volume, flavor: v.flavor,
     offerPrice: v.offerPrice, actualPrice: v.actualPrice, stock: v.stock, weight: v.weight, image: v.image || null,
 });
+// GET /erp/items/:sku — return the exact product variant addressed by SKU.
+exports.getItemBySku = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    const code = req.params.sku.trim();
+    const hits = await findSku(code);
+    if (hits.length !== 1)
+        return skuLookupError(res, code, hits.length);
+    const { product, variant } = hits[0];
+    (0, responseHandler_1.successResponse)(res, 200, 'Item fetched', {
+        productId: String(product._id),
+        name: product.name,
+        description: product.description,
+        category: product.category,
+        images: product.images ?? [],
+        variant: variantSummary(variant),
+    });
+});
 // POST /erp/items — create, or update the product that already carries these SKUs
+exports.listItems = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    const parsed = itemListSchema.safeParse(req.query);
+    if (!parsed.success)
+        return invalid(res, parsed.error);
+    const { page, limit, search } = parsed.data;
+    const filter = search
+        ? { $or: [{ name: { $regex: (0, contactController_1.escapeRegex)(search), $options: 'i' } }, { 'variants.sku': { $regex: (0, contactController_1.escapeRegex)(search), $options: 'i' } }] }
+        : {};
+    const [total, products] = await Promise.all([
+        Product_1.Product.countDocuments(filter),
+        Product_1.Product.find(filter).sort({ updatedAt: -1, _id: 1 }).skip((page - 1) * limit).limit(limit).lean(),
+    ]);
+    (0, responseHandler_1.successResponse)(res, 200, 'Items fetched', {
+        items: products.map((product) => ({
+            productId: String(product._id),
+            name: product.name,
+            description: product.description,
+            category: product.category,
+            images: product.images ?? [],
+            status: product.status,
+            updatedAt: product.updatedAt,
+            variants: product.variants.map((variant) => ({
+                variantId: String(variant._id),
+                sku: variant.sku ?? null,
+                name: variant.name ?? null,
+                size: variant.size || variant.volume || null,
+                flavor: variant.flavor ?? null,
+                offerPrice: variant.offerPrice ?? variant.price,
+                actualPrice: variant.actualPrice ?? variant.oldPrice ?? null,
+                stock: variant.stock,
+                weight: variant.weight,
+                image: variant.image ?? null,
+            })),
+        })),
+        pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    });
+});
 exports.upsertItem = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const parsed = upsertSchema.safeParse(req.body);
     if (!parsed.success)

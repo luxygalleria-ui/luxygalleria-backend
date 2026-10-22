@@ -33,6 +33,11 @@ const money = z.number().finite().min(0).max(10_000_000);
 const httpsUrl = z.string().trim().url().max(2048).refine((u) => u.startsWith('https://'), 'must be an https URL');
 const ORDER_STATUSES = ['processing', 'shipped', 'delivered', 'cancelled'] as const;
 const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'refunded'] as const;
+const itemListSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  search: z.string().trim().max(100).optional(),
+}).strict();
 
 // Stock updates keep the product-level total equal to the sum of its variants, in one atomic write.
 const syncProductStock = (id: unknown) =>
@@ -121,7 +126,63 @@ const variantSummary = (v: any) => ({
   offerPrice: v.offerPrice, actualPrice: v.actualPrice, stock: v.stock, weight: v.weight, image: v.image || null,
 });
 
+// GET /erp/items/:sku — return the exact product variant addressed by SKU.
+export const getItemBySku = asyncHandler(async (req: Request, res: Response) => {
+  const code = req.params.sku.trim();
+  const hits = await findSku(code);
+  if (hits.length !== 1) return skuLookupError(res, code, hits.length);
+  const { product, variant } = hits[0];
+
+  successResponse(res, 200, 'Item fetched', {
+    productId: String(product._id),
+    name: product.name,
+    description: product.description,
+    category: product.category,
+    images: product.images ?? [],
+    variant: variantSummary(variant),
+  });
+});
+
 // POST /erp/items — create, or update the product that already carries these SKUs
+export const listItems = asyncHandler(async (req: Request, res: Response) => {
+  const parsed = itemListSchema.safeParse(req.query);
+  if (!parsed.success) return invalid(res, parsed.error);
+  const { page, limit, search } = parsed.data;
+  const filter = search
+    ? { $or: [{ name: { $regex: escapeRegex(search), $options: 'i' } }, { 'variants.sku': { $regex: escapeRegex(search), $options: 'i' } }] }
+    : {};
+
+  const [total, products] = await Promise.all([
+    Product.countDocuments(filter),
+    Product.find(filter).sort({ updatedAt: -1, _id: 1 }).skip((page - 1) * limit).limit(limit).lean(),
+  ]);
+
+  successResponse(res, 200, 'Items fetched', {
+    items: products.map((product: any) => ({
+      productId: String(product._id),
+      name: product.name,
+      description: product.description,
+      category: product.category,
+      images: product.images ?? [],
+      status: product.status,
+      updatedAt: product.updatedAt,
+      variants: product.variants.map((variant: any) => ({
+        variantId: String(variant._id),
+        sku: variant.sku ?? null,
+        name: variant.name ?? null,
+        size: variant.size || variant.volume || null,
+        flavor: variant.flavor ?? null,
+        offerPrice: variant.offerPrice ?? variant.price,
+        actualPrice: variant.actualPrice ?? variant.oldPrice ?? null,
+        stock: variant.stock,
+        weight: variant.weight,
+        image: variant.image ?? null,
+      })),
+    })),
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+  });
+});
+
 export const upsertItem = asyncHandler(async (req: Request, res: Response) => {
   const parsed = upsertSchema.safeParse(req.body);
   if (!parsed.success) return invalid(res, parsed.error);

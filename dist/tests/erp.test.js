@@ -31,6 +31,7 @@ const Brand_1 = require("../models/Brand");
 const Order_1 = __importDefault(require("../models/Order"));
 const ErpEvent_1 = require("../models/ErpEvent");
 const erpController_1 = require("../controllers/erpController");
+const erpAuth_1 = require("../middlewares/erpAuth");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const payment = require('../controllers/paymentController');
 let origin = '';
@@ -91,14 +92,66 @@ const run = async () => {
     await Category_1.Category.create({ name: 'Skincare', image: 'https://res.cloudinary.com/x/skincare.jpg' });
     const brand = await Brand_1.Brand.create({ name: 'Lumina' });
     console.log('\nAuthentication');
-    await test('missing headers, unknown key, bad signature and expired timestamp are rejected', async () => {
+    await test('ERP key config accepts trimmed comma-separated pairs and reports no secret material', async () => {
+        const configuredKeys = process.env.ERP_API_KEYS;
+        try {
+            process.env.ERP_API_KEYS = ` erp-one : ${SECRET} , erp-two:${SECRET}:suffix `;
+            const validStatus = (0, erpAuth_1.getErpKeyConfigurationStatus)();
+            assert_1.default.deepStrictEqual(validStatus, { valid: true, keyIds: ['erp-one', 'erp-two'] });
+            assert_1.default.ok(!JSON.stringify(validStatus).includes(SECRET));
+            process.env.ERP_API_KEYS = `erp-one:${SECRET},malformed,erp-short:short`;
+            const invalidStatus = (0, erpAuth_1.getErpKeyConfigurationStatus)();
+            assert_1.default.deepStrictEqual(invalidStatus, { valid: false, keyIds: ['erp-one', 'erp-short'] });
+            assert_1.default.ok(!JSON.stringify(invalidStatus).includes(SECRET));
+        }
+        finally {
+            process.env.ERP_API_KEYS = configuredKeys;
+        }
+    });
+    await test('missing headers, unknown key, missing timestamp, bad signature and expired timestamp are rejected', async () => {
         const plain = await parse(await fetch(origin + '/api/v1/erp/orders'));
         assert_1.default.strictEqual(plain.status, 401);
-        assert_1.default.strictEqual((await erp('GET', '/orders', undefined, { keyId: 'nope' })).status, 401);
+        const unknownKey = await erp('GET', '/orders', undefined, { keyId: 'nope' });
+        assert_1.default.strictEqual(unknownKey.status, 401);
+        assert_1.default.strictEqual(unknownKey.json.message, 'Invalid ERP credentials');
         assert_1.default.strictEqual((await erp('GET', '/orders', undefined, { secret: 'x'.repeat(40) })).status, 401);
+        const missingTimestampHeaders = signHeaders('GET', '/api/v1/erp/orders', '');
+        delete missingTimestampHeaders['X-ERP-Timestamp'];
+        const missingTimestamp = await parse(await fetch(origin + '/api/v1/erp/orders', { headers: missingTimestampHeaders }));
+        assert_1.default.strictEqual(missingTimestamp.status, 401);
+        assert_1.default.match(missingTimestamp.json.message, /Timestamp/);
         const old = await erp('GET', '/orders', undefined, { ts: Math.floor(Date.now() / 1000) - 301 });
         assert_1.default.strictEqual(old.status, 401);
         assert_1.default.match(old.json.message, /Timestamp/);
+        const milliseconds = await erp('GET', '/orders', undefined, { ts: Date.now() });
+        assert_1.default.strictEqual(milliseconds.status, 401);
+        assert_1.default.match(milliseconds.json.message, /Timestamp/);
+    });
+    await test('a configured rotated key works and the exact GET query is signed', async () => {
+        const configuredKeys = process.env.ERP_API_KEYS;
+        const rotatedSecret = 'rotated_erp_secret_0123456789abcdef';
+        process.env.ERP_API_KEYS = `${KEY_ID}:${SECRET},erp-rotated:${rotatedSecret}`;
+        try {
+            const exactPath = '/api/v1/erp/orders?limit=1';
+            const headers = signHeaders('GET', exactPath, '', { keyId: 'erp-rotated', secret: rotatedSecret });
+            assert_1.default.strictEqual((await fetch(origin + exactPath, { headers })).status, 200);
+            const mismatchedHeaders = signHeaders('GET', exactPath, '');
+            assert_1.default.strictEqual((await fetch(origin + '/api/v1/erp/orders?limit=2', { headers: mismatchedHeaders })).status, 401);
+        }
+        finally {
+            process.env.ERP_API_KEYS = configuredKeys;
+        }
+    });
+    await test('JSON signatures use the exact request bytes, including whitespace', async () => {
+        const full = '/api/v1/erp/stock/UNKNOWN';
+        const rawBody = `{ "quantity": 1, "asOf": "${iso(0)}" }\n`;
+        const headers = signHeaders('PUT', full, rawBody);
+        const response = await fetch(origin + full, {
+            method: 'PUT',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: rawBody,
+        });
+        assert_1.default.strictEqual(response.status, 404, 'authentication passed and the unknown SKU reached the controller');
     });
     await test('a replayed signed request is rejected', async () => {
         const full = '/api/v1/erp/orders';
@@ -143,6 +196,18 @@ const run = async () => {
         assert_1.default.strictEqual(p.variants[0].price, 499);
         assert_1.default.strictEqual(p.variants[0].oldPrice, 599);
         assert_1.default.strictEqual(p.stock, 10);
+    });
+    await test('lists real products and variants by SKU without inventing missing identifiers', async () => {
+        const r = await erp('GET', '/items?search=ROSE-30');
+        assert_1.default.strictEqual(r.status, 200, JSON.stringify(r.json));
+        assert_1.default.strictEqual(r.json.data.items.length, 1);
+        assert_1.default.strictEqual(r.json.data.items[0].productId, productId);
+        assert_1.default.strictEqual(r.json.data.items[0].variants[0].sku, 'ROSE-30');
+        const exactItem = await erp('GET', '/items/ROSE-30');
+        assert_1.default.strictEqual(exactItem.status, 200);
+        assert_1.default.strictEqual(exactItem.json.data.variant.sku, 'ROSE-30');
+        assert_1.default.strictEqual((await erp('GET', '/items/MISSING-SKU')).status, 404);
+        assert_1.default.strictEqual((await erp('GET', '/items?limit=0')).status, 400);
     });
     await test('upserting the same SKU updates in place: no duplicate, omitted fields and stock preserved', async () => {
         const r = await erp('POST', '/items', { name: 'Rose Serum 2', variants: [{ sku: 'ROSE-30', offerPrice: 450, stock: 99 }] });
@@ -213,6 +278,9 @@ const run = async () => {
         const p = (await Product_1.Product.findById(productId));
         assert_1.default.strictEqual(p.variants[0].stock, 25);
         assert_1.default.strictEqual(p.stock, 29);
+        const readback = await erp('GET', '/items?search=ROSE-30');
+        assert_1.default.strictEqual(readback.status, 200);
+        assert_1.default.strictEqual(readback.json.data.items[0].variants[0].stock, 25);
     });
     await test('redelivery of the same update is a no-op; an older update is refused as stale', async () => {
         const again = await erp('PUT', '/stock/ROSE-30', { quantity: 25, asOf: t1 });
@@ -252,6 +320,7 @@ const run = async () => {
         assert_1.default.strictEqual(dup.status, 409);
         assert_1.default.strictEqual(dup.json.errors[0].code, 'DUPLICATE_SKU');
         assert_1.default.strictEqual((await erp('PATCH', '/items/DUP', { name: 'x' })).status, 409);
+        assert_1.default.strictEqual((await erp('GET', '/items/DUP')).status, 409);
         assert_1.default.strictEqual((await erp('POST', '/items', { variants: [{ sku: 'DUP' }] })).status, 409);
     });
     await test('checkout stock decrement still works after an ERP stock update', async () => {

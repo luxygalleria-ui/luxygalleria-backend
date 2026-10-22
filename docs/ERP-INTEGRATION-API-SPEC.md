@@ -32,6 +32,8 @@
 | 7 | Image Upload | `POST` | `https://api.luxygalleria.com/api/v1/erp/images` | ✅ 🚀 |
 | — | Website → ERP order push | `POST` (to ERP) | ERP-provided | ❌ **Not implemented** — waiting for the ERP sales-order API (Section 10) 🟦 |
 
+The admin ERP workbench also uses two read-only catalogue routes: `GET /api/v1/erp/items` and `GET /api/v1/erp/items/{sku}`. These do not change the established orders list response or pagination. They are ERP workbench support routes in addition to the seven integration operations listed above.
+
 ---
 
 ## 1. Authentication (all seven endpoints)
@@ -237,6 +239,19 @@ curl -sS -X PUT "$BASE$P" -H "Content-Type: application/json" \
 ```
 
 **Source:** `erpController.ts` → `updateStock`. **Tests:** "Stock update" section of `erp.test.ts`.
+
+## ERP Workbench Catalogue Reads
+
+The admin workbench uses these authenticated, read-only routes to find variants and verify writes:
+
+| Method and path | Result |
+|---|---|
+| `GET /api/v1/erp/items?page=1&limit=50&search=SKU` | Existing products with real variants and pagination. Search matches product name or SKU. |
+| `GET /api/v1/erp/items/{sku}` | One product and the exact variant identified by the SKU. |
+
+`sku` is optional on the existing variant schema and is not globally unique-indexed. The list returns `null` for an unset SKU; exact lookup/update returns `404` when absent and `409 DUPLICATE_SKU` when more than one variant has that SKU. Use the variant SKU, not a product or order ID, for stock and variant edits.
+
+After `PUT /stock/{sku}`, read `GET /items/{sku}` and compare `data.variant.stock` with the stock endpoint's returned `data.quantity`. Stock sync accounts for website orders created after the supplied `asOf` snapshot, so that stored quantity can be lower than the raw ERP count.
 
 ---
 
@@ -748,6 +763,12 @@ curl -sS -X POST "$BASE$P" -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" 
 4. On Hostinger, privately verify the configured `ERP_API_KEYS` entry has the same key ID as the ERP client's `X-ERP-Key-Id` and a secret of at least 32 characters. The `diagnose:erp-keys` command reports accepted IDs without revealing secrets. Never print, paste, or log the variable value. If the IDs differ, coordinate a credential update/rotation with the ERP owner as a separate approved operation; keep both IDs during an agreed rotation window, then remove the retired key.
 5. Use the non-destructive signed GET and JSON-validation checks above. Do not use the upload mode against production because a successful upload writes to Cloudinary.
 
+**Admin workbench (Vercel)**
+
+The browser UI is `/dashboard/erp` in the existing admin app. Its same-origin Next.js Route Handler validates the admin session and role, then signs allow-listed ERP requests server-side. In the admin Vercel project's server environment, configure `ERP_KEY_ID`, `ERP_SECRET`, and `ERP_API_BASE_URL=https://api.luxygalleria.com/api/v1`. These variables must not use a `NEXT_PUBLIC_` prefix. `ERP_KEY_ID` must match one key ID in Hostinger's `ERP_API_KEYS`; `ERP_SECRET` is that key's corresponding secret. Redeploy the admin app after adding variables.
+
+The production admin URL listed by the project is `https://luxygalleria-admin.vercel.app/dashboard/erp`; verify the assigned domain in the Vercel project before sharing it. The admin app setup and deployment notes are in `luxy-admin/docs/ERP-INTEGRATION.md`.
+
 **Production smoke test** — none of these changes data:
 
 | Check | Expected |
@@ -805,5 +826,6 @@ curl -sS -X POST "$BASE$P" -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" 
 | `src/controllers/paymentController.ts` | `sendOrderStatusEmail` (shared by admin and webhook) |
 | `src/app.ts` | Captures raw JSON bytes for signature checks |
 | `src/scripts/checkSkus.ts` | Read-only SKU report (`npm run check-skus`) |
-| `src/tests/erp.test.ts` | 29 tests (`npm run test:erp`, local MongoDB) |
+| `src/tests/erp.test.ts` | ERP integration tests (`npm run test:erp`, local throwaway MongoDB) |
 | `.env.example` | Variable names, including `ERP_API_KEYS` |
+| `src/scripts/diagnoseErpKeys.ts` | Prints only accepted ERP key IDs and a configuration-valid flag |

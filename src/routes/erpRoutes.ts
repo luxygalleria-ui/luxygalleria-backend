@@ -2,13 +2,15 @@ import { Router } from 'express';
 import { erpLimiter } from '../middlewares/rateLimiter';
 import { erpAuth, erpHeaders, erpSignature } from '../middlewares/erpAuth';
 import {
-  updateStock, upsertItem, patchItem, listOrders, getOrder, orderStatusWebhook, readImage, uploadImage,
+  updateStock, listItems, getItemBySku, upsertItem, patchItem, listOrders, getOrder, orderStatusWebhook, readImage, uploadImage,
 } from '../controllers/erpController';
 
 // Machine-to-machine API for the ERP. HMAC-signed only: admin/customer JWTs are not accepted here.
 const router = Router();
 router.use(erpLimiter);
 
+router.get('/items', erpAuth, listItems);
+router.get('/items/:sku', erpAuth, getItemBySku);
 router.put('/stock/:sku', erpAuth, updateStock);
 router.post('/items', erpAuth, upsertItem);
 router.patch('/items/:sku', erpAuth, patchItem);

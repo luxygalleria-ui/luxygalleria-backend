@@ -7,6 +7,8 @@ const erpController_1 = require("../controllers/erpController");
 // Machine-to-machine API for the ERP. HMAC-signed only: admin/customer JWTs are not accepted here.
 const router = (0, express_1.Router)();
 router.use(rateLimiter_1.erpLimiter);
+router.get('/items', erpAuth_1.erpAuth, erpController_1.listItems);
+router.get('/items/:sku', erpAuth_1.erpAuth, erpController_1.getItemBySku);
 router.put('/stock/:sku', erpAuth_1.erpAuth, erpController_1.updateStock);
 router.post('/items', erpAuth_1.erpAuth, erpController_1.upsertItem);
 router.patch('/items/:sku', erpAuth_1.erpAuth, erpController_1.patchItem);
