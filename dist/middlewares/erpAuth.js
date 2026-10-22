@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.erpAuth = exports.erpSignature = exports.erpHeaders = void 0;
+exports.erpAuth = exports.erpSignature = exports.erpHeaders = exports.getErpKeyConfigurationStatus = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 const responseHandler_1 = require("../utils/responseHandler");
 const TOLERANCE_SECONDS = 300;
@@ -11,18 +11,36 @@ const TOLERANCE_SECONDS = 300;
  * ERP_API_KEYS="keyId:secret[,keyId2:secret2]". A second entry lets a secret be rotated without downtime.
  * Sandbox and production deployments each get their own keys. Secrets under 32 characters are ignored.
  */
-const loadKeys = () => {
+const parseKeys = (configuration) => {
     const keys = new Map();
-    for (const entry of (process.env.ERP_API_KEYS || '').split(',')) {
-        const i = entry.indexOf(':');
-        if (i <= 0)
+    const keyIds = new Set();
+    const entries = configuration.split(',');
+    let valid = configuration.trim().length > 0;
+    for (const rawEntry of entries) {
+        const entry = rawEntry.trim();
+        const separator = entry.indexOf(':');
+        if (!entry || separator <= 0) {
+            valid = false;
             continue;
-        const secret = entry.slice(i + 1).trim();
-        if (secret.length >= 32)
-            keys.set(entry.slice(0, i).trim(), secret);
+        }
+        const keyId = entry.slice(0, separator).trim();
+        const secret = entry.slice(separator + 1).trim();
+        if (!keyId || secret.length < 32 || keys.has(keyId))
+            valid = false;
+        if (keyId)
+            keyIds.add(keyId);
+        if (keyId && secret.length >= 32)
+            keys.set(keyId, secret);
     }
-    return keys;
+    return { keys, keyIds: Array.from(keyIds), valid: valid && keys.size > 0 };
 };
+const loadKeys = () => parseKeys(process.env.ERP_API_KEYS || '').keys;
+/** Safe configuration summary for operator diagnostics. Secret material never leaves this module. */
+const getErpKeyConfigurationStatus = () => {
+    const { keyIds, valid } = parseKeys(process.env.ERP_API_KEYS || '');
+    return { valid, keyIds };
+};
+exports.getErpKeyConfigurationStatus = getErpKeyConfigurationStatus;
 // ponytail: in-process replay cache, fine for a single Render instance; move to Mongo/Redis if the API scales out.
 const seen = new Map();
 const isReplay = (signature, nowSeconds) => {
