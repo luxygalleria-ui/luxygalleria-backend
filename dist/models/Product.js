@@ -73,6 +73,9 @@ const productSchema = new mongoose_1.Schema({
     newArrivalOrder: { type: Number, default: 0 },
     stock: { type: Number, default: 0 },
     weight: { type: Number, default: 0 },
+    requiresSpecialPackaging: { type: Boolean, default: false },
+    taxRate: { type: Number, min: 0, max: 100, default: null },
+    hsnCode: { type: String, trim: true, maxlength: 20 },
 }, { timestamps: true });
 // ERP looks items up by SKU. ponytail: not unique until existing SKUs are backfilled (src/scripts/checkSkus.ts);
 // the ERP API refuses duplicates in code meanwhile.

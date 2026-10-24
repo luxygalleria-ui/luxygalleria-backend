@@ -9,6 +9,8 @@ const seedData = async () => {
   try {
     // Connect to MongoDB
     const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/luxy-db';
+    // Demo seed that wipes collections: never run it against a shared or production database
+    if (!/^mongodb:\/\/(localhost|127\.0\.0\.1)[:/]/.test(mongoUri)) throw new Error('Seed scripts only run against a local MongoDB (localhost/127.0.0.1)');
     await mongoose.connect(mongoUri);
     console.log('✅ Connected to MongoDB');
 

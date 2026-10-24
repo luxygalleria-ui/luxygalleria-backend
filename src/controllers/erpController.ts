@@ -385,6 +385,8 @@ const orderLines = (order: any, products: Map<string, any>) => order.items.map((
     quantity: it.quantity,
     unitPrice: it.price,
     lineTotal: it.subtotal ?? it.price * it.quantity,
+    taxRate: it.taxRate ?? null,
+    taxAmount: it.taxAmount ?? null,
   };
 });
 
@@ -401,6 +403,18 @@ const orderSummary = (o: any, refs: Awaited<ReturnType<typeof loadRefs>>) => {
     discount: o.discount,
     shippingFee: o.shippingFee,
     total: o.total,
+    // Added fields (orders placed before these existed: delivery, no extra charges)
+    fulfillment: {
+      method: o.fulfillmentMethod ?? 'delivery',
+      shippingMethod: o.shippingMethod ?? null,
+      zone: o.shippingZone ?? null,
+      pickup: o.fulfillmentMethod === 'pickup' ? { storeName: o.pickupDetails?.storeName ?? null, address: o.pickupDetails?.address ?? null } : null,
+    },
+    charges: {
+      pickupFee: o.pickupFee ?? 0,
+      specialPackagingFee: o.specialPackagingFee ?? 0,
+      tax: o.tax?.enabled ? { pricesIncludeTax: o.tax.pricesIncludeTax, taxableValue: o.tax.taxableValue, taxAmount: o.tax.taxAmount } : null,
+    },
     customer: { customerId: String(o.user), name: u?.name ?? null, email: u?.email ?? null },
     items: orderLines(o, refs.products),
     erp: { erpOrderId: o.erpOrderId ?? null, trackingNumber: o.trackingNumber ?? null },
@@ -443,7 +457,7 @@ export const getOrder = asyncHandler(async (req: Request, res: Response) => {
   successResponse(res, 200, 'Order fetched', {
     ...summary,
     customer: { ...summary.customer, phone: refs.users.get(String(o.user))?.phone ?? null },
-    shippingAddress: o.shippingAddress,
+    shippingAddress: o.shippingAddress ?? null, // null for store-pickup orders
     payment: {
       method: o.paymentMethod,
       status: o.paymentStatus,

@@ -18,6 +18,11 @@ export interface ISettings extends Document {
   /** Heading and subheading of the storefront /new-arrivals page. */
   newArrivalsTitle: string;
   newArrivalsSubtitle: string;
+  /** Checkout & fulfilment sections, validated and resolved in utils/checkoutSettings.ts. Absent = derived defaults. */
+  shipping?: unknown;
+  pickup?: unknown;
+  chocolate?: unknown;
+  tax?: unknown;
 }
 
 const settingsSchema = new Schema<ISettings>(
@@ -36,6 +41,11 @@ const settingsSchema = new Schema<ISettings>(
     giftingSubtitle: { type: String, default: 'Curated picks, ready to be wrapped.' },
     newArrivalsTitle: { type: String, default: 'New Arrivals' },
     newArrivalsSubtitle: { type: String, default: 'The latest additions to the collection.' },
+    // No defaults on purpose: an unsaved section keeps today's behaviour (see effectiveCheckoutSettings)
+    shipping: { type: Schema.Types.Mixed },
+    pickup: { type: Schema.Types.Mixed },
+    chocolate: { type: Schema.Types.Mixed },
+    tax: { type: Schema.Types.Mixed },
   },
   { timestamps: true }
 );

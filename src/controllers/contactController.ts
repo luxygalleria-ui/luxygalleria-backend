@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { Contact, CONTACT_STATUSES, ContactStatus } from '../models/Contact';
 import { asyncHandler } from '../utils/asyncHandler';
 import { successResponse, errorResponse } from '../utils/responseHandler';
@@ -73,14 +74,20 @@ export const getContacts = asyncHandler(async (req: Request, res: Response) => {
     return errorResponse(res, 400, built.message);
   }
 
-  const contacts = await Contact.find(built.query).sort({ createdAt: -1 });
-  successResponse(res, 200, 'Contacts fetched successfully', contacts);
+  const [contacts, byStatus] = await Promise.all([
+    Contact.find(built.query).sort({ createdAt: -1 }),
+    Contact.aggregate([{ $group: { _id: '$status', n: { $sum: 1 } } }]),
+  ]);
+  // Totals across all messages, so filter tabs and the unread badge stay right whatever filter is applied
+  const counts = Object.fromEntries(CONTACT_STATUSES.map((st) => [st, byStatus.find((r) => r._id === st)?.n ?? 0]));
+  res.status(200).json({ success: true, message: 'Contacts fetched successfully', data: contacts, counts: { ...counts, ALL: byStatus.reduce((a, r) => a + r.n, 0) } });
 });
 
 // @desc    Update a contact's status (NEW / READ / RESOLVED)
 // @route   PUT /api/v1/contacts/:id/status
 // @access  Private/Admin
 export const updateContactStatus = asyncHandler(async (req: Request, res: Response) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return errorResponse(res, 400, 'Invalid message id');
   const status = req.body.status?.toString().toUpperCase();
 
   if (!CONTACT_STATUSES.includes(status as ContactStatus)) {
@@ -104,6 +111,7 @@ export const updateContactStatus = asyncHandler(async (req: Request, res: Respon
 // @route   PUT /api/v1/contacts/:id/read
 // @access  Private/Admin
 export const markContactAsRead = asyncHandler(async (req: Request, res: Response) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return errorResponse(res, 400, 'Invalid message id');
   const contact = await Contact.findByIdAndUpdate(
     req.params.id,
     { status: 'READ' },
@@ -121,6 +129,7 @@ export const markContactAsRead = asyncHandler(async (req: Request, res: Response
 // @route   DELETE /api/v1/contacts/:id
 // @access  Private/Admin
 export const deleteContact = asyncHandler(async (req: Request, res: Response) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return errorResponse(res, 400, 'Invalid message id');
   const contact = await Contact.findByIdAndDelete(req.params.id);
 
   if (!contact) {

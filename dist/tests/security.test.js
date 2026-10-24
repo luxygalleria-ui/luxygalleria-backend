@@ -13,6 +13,7 @@ const crypto_1 = __importDefault(require("crypto"));
 // Must be set before the app (and dotenv) load. Never touch the real DB, mail or payment provider.
 const TEST_DB = 'mongodb://127.0.0.1:27017/luxy_security_test';
 process.env.NODE_ENV = 'development'; // keeps rate limiters off; ENV.NODE_ENV is flipped per test below
+process.env.HISTORY_READ_ENABLED = 'false'; // never reach a developer's history login from .env
 process.env.SENDGRID_API_KEY = '';
 process.env.GOOGLE_CLIENT_ID = 'test-client.apps.googleusercontent.com';
 const mongoose_1 = __importDefault(require("mongoose"));

@@ -116,7 +116,8 @@ if (ENV.NODE_ENV === 'development') {
 // API Routes
 app.use('/api/v1', apiRoutes);
 import path from 'path';
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// Public product images, shown by the storefront and admin on other origins (helmet defaults to same-origin)
+app.use('/uploads', (req, res, next) => { res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); next(); }, express.static(path.join(__dirname, '../uploads')));
 
 // 404 Handler
 app.use(notFoundHandler);

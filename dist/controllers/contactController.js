@@ -1,7 +1,11 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteContact = exports.markContactAsRead = exports.updateContactStatus = exports.getContacts = exports.escapeRegex = exports.submitContactForm = void 0;
 exports.buildContactQuery = buildContactQuery;
+const mongoose_1 = __importDefault(require("mongoose"));
 const Contact_1 = require("../models/Contact");
 const asyncHandler_1 = require("../utils/asyncHandler");
 const responseHandler_1 = require("../utils/responseHandler");
@@ -58,13 +62,20 @@ exports.getContacts = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     if (!built.ok) {
         return (0, responseHandler_1.errorResponse)(res, 400, built.message);
     }
-    const contacts = await Contact_1.Contact.find(built.query).sort({ createdAt: -1 });
-    (0, responseHandler_1.successResponse)(res, 200, 'Contacts fetched successfully', contacts);
+    const [contacts, byStatus] = await Promise.all([
+        Contact_1.Contact.find(built.query).sort({ createdAt: -1 }),
+        Contact_1.Contact.aggregate([{ $group: { _id: '$status', n: { $sum: 1 } } }]),
+    ]);
+    // Totals across all messages, so filter tabs and the unread badge stay right whatever filter is applied
+    const counts = Object.fromEntries(Contact_1.CONTACT_STATUSES.map((st) => [st, byStatus.find((r) => r._id === st)?.n ?? 0]));
+    res.status(200).json({ success: true, message: 'Contacts fetched successfully', data: contacts, counts: { ...counts, ALL: byStatus.reduce((a, r) => a + r.n, 0) } });
 });
 // @desc    Update a contact's status (NEW / READ / RESOLVED)
 // @route   PUT /api/v1/contacts/:id/status
 // @access  Private/Admin
 exports.updateContactStatus = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    if (!mongoose_1.default.isValidObjectId(req.params.id))
+        return (0, responseHandler_1.errorResponse)(res, 400, 'Invalid message id');
     const status = req.body.status?.toString().toUpperCase();
     if (!Contact_1.CONTACT_STATUSES.includes(status)) {
         return (0, responseHandler_1.errorResponse)(res, 400, `status must be one of: ${Contact_1.CONTACT_STATUSES.join(', ')}`);
@@ -79,6 +90,8 @@ exports.updateContactStatus = (0, asyncHandler_1.asyncHandler)(async (req, res) 
 // @route   PUT /api/v1/contacts/:id/read
 // @access  Private/Admin
 exports.markContactAsRead = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    if (!mongoose_1.default.isValidObjectId(req.params.id))
+        return (0, responseHandler_1.errorResponse)(res, 400, 'Invalid message id');
     const contact = await Contact_1.Contact.findByIdAndUpdate(req.params.id, { status: 'READ' }, { new: true });
     if (!contact) {
         return (0, responseHandler_1.errorResponse)(res, 404, 'Contact not found');
@@ -89,6 +102,8 @@ exports.markContactAsRead = (0, asyncHandler_1.asyncHandler)(async (req, res) =>
 // @route   DELETE /api/v1/contacts/:id
 // @access  Private/Admin
 exports.deleteContact = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    if (!mongoose_1.default.isValidObjectId(req.params.id))
+        return (0, responseHandler_1.errorResponse)(res, 400, 'Invalid message id');
     const contact = await Contact_1.Contact.findByIdAndDelete(req.params.id);
     if (!contact) {
         return (0, responseHandler_1.errorResponse)(res, 404, 'Contact not found');

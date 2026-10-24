@@ -38,6 +38,11 @@ export interface IProduct extends Document {
   newArrivalOrder: number;
   stock: number;
   weight: number;
+  /** Chocolate / temperature-sensitive: special packaging fee and delivery restrictions apply (Chocolate Shipping settings). */
+  requiresSpecialPackaging?: boolean;
+  /** GST % for this product, set by an authorised admin. Absent = not set (never defaulted to a store-wide rate). */
+  taxRate?: number | null;
+  hsnCode?: string;
 }
 
 const variantSchema = new Schema<IVariant>({
@@ -80,6 +85,9 @@ const productSchema = new Schema<IProduct>(
     newArrivalOrder: { type: Number, default: 0 },
     stock: { type: Number, default: 0 },
     weight: { type: Number, default: 0 },
+    requiresSpecialPackaging: { type: Boolean, default: false },
+    taxRate: { type: Number, min: 0, max: 100, default: null },
+    hsnCode: { type: String, trim: true, maxlength: 20 },
   },
   { timestamps: true }
 );

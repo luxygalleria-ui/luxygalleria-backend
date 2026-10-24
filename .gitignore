@@ -5,3 +5,24 @@ node_modules
 # runtime logs (may contain request data)
 logs/
 error-trace.log
+
+# Secrets: every env file except the names-only template
+.env*
+!.env.example
+.mongo-tools.yaml
+*.pem
+*.key
+
+# Database exports and backups (may contain production or customer data): keep them outside the repo
+catalogue-*/
+dump/
+backups/
+*.bson
+*.bson.gz
+*.archive
+*.archive.gz
+*.metadata.json.gz
+
+# Migration run reports (written by docs/CLOUDINARY-RECOVERY-RUNBOOK.md commands)
+migration-report-*.txt
+migration-apply-*.txt

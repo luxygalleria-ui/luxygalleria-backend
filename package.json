@@ -14,7 +14,9 @@
     "check-skus": "ts-node-dev src/scripts/checkSkus.ts",
     "test": "ts-node-dev src/tests/shipping.test.ts",
     "diagnose:erp-keys": "node dist/scripts/diagnoseErpKeys.js",
-    "test:erp": "ts-node --transpile-only src/tests/erp.test.ts"
+    "diagnose:history": "ts-node --transpile-only src/scripts/diagnoseHistory.ts",
+    "test:erp": "ts-node --transpile-only src/tests/erp.test.ts",
+    "migrate:cloudinary-cloud": "ts-node --transpile-only src/scripts/migrateCloudinaryCloud.ts"
   },
   "dependencies": {
     "@sendgrid/mail": "^8.1.6",

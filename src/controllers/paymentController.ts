@@ -8,7 +8,9 @@ import { sendEmail } from '../utils/sendEmail';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
 import { ENV } from '../config/env';
-import { calculateShippingForItems, calculateShippingPure } from '../utils/shippingCalculator';
+import { calculateShippingForItems } from '../utils/shippingCalculator';
+import { CheckoutRuleError, Selection } from '../utils/orderPricing';
+import { CheckoutSettingsError } from '../utils/checkoutSettings';
 dotenv.config();
 
 export const razorpayInstance = new Razorpay({
@@ -37,13 +39,65 @@ export const isValidRazorpaySignature = (orderId: string, paymentId: string, sig
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 };
 
+/**
+ * The customer's fulfilment choice from a checkout request. `fulfillment` is { method: 'delivery' | 'pickup',
+ * shippingMethod?: 'land' | 'air' }. Payment calls default to delivery (what every client sent before pickup existed);
+ * a quote without a choice lets the server pick the first available option.
+ */
+const selectionFrom = (body: any, paying: boolean): Selection | string => {
+  const f = body?.fulfillment;
+  if (f !== undefined && (typeof f !== 'object' || f === null)) return 'Invalid fulfillment option';
+  const method = f?.method;
+  if (method !== undefined && method !== 'delivery' && method !== 'pickup') return 'Invalid fulfillment method';
+  const shippingMethod = f?.shippingMethod;
+  if (shippingMethod !== undefined && shippingMethod !== null && shippingMethod !== 'land' && shippingMethod !== 'air') return 'Invalid shipping method';
+  return {
+    fulfillment: method ?? (paying ? 'delivery' : undefined),
+    shippingMethod: method === 'pickup' ? undefined : shippingMethod ?? undefined,
+    state: typeof body?.shippingAddress?.state === 'string' ? body.shippingAddress.state : undefined,
+  };
+};
+
+/** Pricing failures: a rule the customer can act on (400), settings we cannot read (503, never guessed charges), bad items (400). */
+const pricingError = (res: Response, err: any) => {
+  if (err instanceof CheckoutRuleError) {
+    return res.status(400).json({ success: false, message: err.message, code: err.code, data: err.options ? { options: err.options } : null });
+  }
+  if (err instanceof CheckoutSettingsError) {
+    console.error('Checkout settings unavailable:', err.message);
+    return res.status(503).json({ success: false, message: 'Delivery charges are temporarily unavailable. Please try again shortly.', code: 'SETTINGS_UNAVAILABLE' });
+  }
+  return res.status(400).json({ success: false, message: err?.message || 'Validation failed' });
+};
+
+const hasDeliveryAddress = (a: any) => !!(a?.city?.trim?.() && a?.state?.trim?.() && a?.zipCode?.trim?.());
+
+/** Email summary rows for delivery/pickup, packaging and GST, between Subtotal and Total. */
+const chargeRows = (o: any) => {
+  const row = (label: string, value: string) => `
+                    <tr>
+                      <td style="padding-bottom: 10px; color: #6b7280; font-size: 14px;">${label}</td>
+                      <td style="padding-bottom: 10px; color: #111827; font-weight: bold; font-size: 14px; text-align: right;">${value}</td>
+                    </tr>`;
+  const money = (n: number) => (n > 0 ? `₹${n}` : 'Free');
+  let rows = o.fulfillmentMethod === 'pickup' ? row('Store pickup:', money(o.pickupFee || 0)) : row('Shipping:', money(o.shippingFee || 0));
+  if (o.specialPackagingFee > 0) rows += row('Special packaging:', `₹${o.specialPackagingFee}`);
+  if (o.tax?.enabled && o.tax.taxAmount > 0) rows += row(o.tax.pricesIncludeTax ? 'GST (included):' : 'GST:', `₹${o.tax.taxAmount}`);
+  if (o.fulfillmentMethod === 'pickup' && o.pickupDetails?.storeName) {
+    rows += row('Collect from:', `${o.pickupDetails.storeName}${o.pickupDetails.address ? `, ${o.pickupDetails.address}` : ''}`);
+  }
+  return rows;
+};
+
 // Create Order — Only creates a Razorpay order, does NOT save to DB yet
 export const createOrder = async (req: Request, res: Response) => {
   try {
     const { total, items, shippingAddress } = req.body;
+    const selection = selectionFrom(req.body, true);
+    if (typeof selection === 'string') return res.status(400).json({ success: false, message: selection });
 
-    // Refuse to start a payment without a deliverable address
-    if (!shippingAddress?.city?.trim?.() || !shippingAddress?.state?.trim?.() || !shippingAddress?.zipCode?.trim?.()) {
+    // Refuse to start a delivery payment without a deliverable address (pickup orders need none)
+    if (selection.fulfillment === 'delivery' && !hasDeliveryAddress(shippingAddress)) {
       return res.status(400).json({ success: false, message: 'Please select or add a shipping address' });
     }
 
@@ -55,12 +109,12 @@ export const createOrder = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'No items in order to validate.' });
     }
 
-    // Server-side amount validation
+    // Server-side amount validation: shipping, packaging, pickup charge and tax are all recomputed here
     let totals;
     try {
-      totals = await calculateShippingForItems(items);
+      totals = await calculateShippingForItems(items, selection);
     } catch (err: any) {
-      return res.status(400).json({ success: false, message: err.message || 'Validation failed' });
+      return pricingError(res, err);
     }
 
     // Allow a small margin of error (e.g. 1 INR) for rounding differences
@@ -102,7 +156,8 @@ export const createOrder = async (req: Request, res: Response) => {
         // Charge the server-calculated amount, never the client's number
         amount: Math.round(totals.grandTotal * 100),
         currency: "INR",
-        receipt: `receipt_order_${Date.now()}`
+        receipt: `receipt_order_${Date.now()}`,
+        notes: { fulfillment: totals.fulfillmentMethod, shippingMethod: totals.shippingMethod || '' },
       };
       razorpayOrder = await razorpayInstance.orders.create(options);
     }
@@ -146,8 +201,14 @@ export const verifyPayment = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'No items in order' });
     }
 
+    const selection = selectionFrom(req.body, true);
+    if (typeof selection === 'string') return res.status(400).json({ success: false, message: selection });
+
     // Idempotent: a payment can create at most one order (double clicks, retries, replays)
-    const existing = await Order.findOne({ $or: [{ razorpayPaymentId: razorpay_payment_id }, { razorpayOrderId: razorpay_order_id }] })
+    // Mock payments (local development only) all share the id "mock_payment": key those on the order id alone
+    const existing = await Order.findOne(razorpay_payment_id === 'mock_payment'
+      ? { razorpayOrderId: razorpay_order_id }
+      : { $or: [{ razorpayPaymentId: razorpay_payment_id }, { razorpayOrderId: razorpay_order_id }] })
       .populate('items.product', 'name images variants');
     if (existing) {
       if (existing.user.toString() === req.user._id.toString() && existing.razorpayPaymentId === razorpay_payment_id) {
@@ -159,9 +220,9 @@ export const verifyPayment = async (req: Request, res: Response) => {
     // Server-side amount validation before saving order — prices come from the DB only
     let totals;
     try {
-      totals = await calculateShippingForItems(items);
+      totals = await calculateShippingForItems(items, selection);
     } catch (err: any) {
-      return res.status(400).json({ success: false, message: err.message || 'Validation failed' });
+      return pricingError(res, err);
     }
 
     let paymentVerified = false;
@@ -200,14 +261,23 @@ export const verifyPayment = async (req: Request, res: Response) => {
         size: typeof items[i].size === 'string' ? items[i].size : undefined,
         image: typeof items[i].image === 'string' ? items[i].image : undefined,
         subtotal: line.price * line.quantity,
+        ...(totals.tax.enabled ? { taxRate: totals.tax.lines[i]?.rate ?? null, taxAmount: totals.tax.lines[i]?.taxAmount ?? 0 } : {}),
       }));
 
+      const isPickup = totals.fulfillmentMethod === 'pickup';
       const newOrder = new Order({
         user: req.user._id,
         items: orderItems,
-        shippingAddress,
+        fulfillmentMethod: totals.fulfillmentMethod,
+        shippingMethod: totals.shippingMethod ?? undefined,
+        shippingZone: totals.zone ?? undefined,
+        shippingAddress: isPickup ? undefined : shippingAddress,
+        pickupDetails: isPickup ? totals.pickupDetails : undefined,
+        pickupFee: totals.pickupFee,
+        specialPackagingFee: totals.specialPackagingFee,
+        tax: { enabled: totals.tax.enabled, pricesIncludeTax: totals.tax.pricesIncludeTax, taxableValue: totals.tax.taxableValue, taxAmount: totals.tax.taxAmount, addedToTotal: totals.tax.addedToTotal },
         subtotal: totals.subtotal,
-        discount: 0, // No server-side discount is applied to the charged total
+        discount: totals.discount, // 0: no coupon is applied server-side at checkout
         shippingFee: totals.shipping,
         total: totals.grandTotal,
         paymentMethod: 'razorpay',
@@ -291,10 +361,7 @@ export const verifyPayment = async (req: Request, res: Response) => {
                       <td style="padding-bottom: 10px; color: #10b981; font-weight: bold; font-size: 14px; text-align: right;">-₹${newOrder.discount}</td>
                     </tr>
                     ` : ''}
-                    <tr>
-                      <td style="padding-bottom: 15px; color: #6b7280; font-size: 14px;">Shipping:</td>
-                      <td style="padding-bottom: 15px; color: #111827; font-weight: bold; font-size: 14px; text-align: right;">${newOrder.shippingFee > 0 ? `₹${newOrder.shippingFee}` : 'Free'}</td>
-                    </tr>
+                    ${chargeRows(newOrder)}
                     <tr>
                       <td style="padding-top: 15px; border-top: 1px solid #eaeaea; color: #111827; font-weight: bold; font-size: 16px;">Total:</td>
                       <td style="padding-top: 15px; border-top: 1px solid #eaeaea; color: #111827; font-weight: bold; font-size: 18px; text-align: right;">₹${newOrder.total}</td>
@@ -339,31 +406,19 @@ export const verifyPayment = async (req: Request, res: Response) => {
   }
 };
 
-// Calculate Shipping (Public Endpoint)
+// Calculate Shipping (Public Endpoint): the full checkout quote for a cart and fulfilment choice
 export const calculateShipping = async (req: Request, res: Response) => {
+  const { items } = req.body;
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ success: false, message: 'No items to price' });
+  }
+  const selection = selectionFrom(req.body, false);
+  if (typeof selection === 'string') return res.status(400).json({ success: false, message: selection });
   try {
-    const { items } = req.body;
-
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      // Delegate so the empty-cart shape can never drift from the real one.
-      return res.status(200).json({
-        success: true,
-        data: calculateShippingPure([])
-      });
-    }
-
-    const result = await calculateShippingForItems(items);
-
-    return res.status(200).json({
-      success: true,
-      data: result
-    });
+    const result = await calculateShippingForItems(items, selection);
+    return res.status(200).json({ success: true, data: result });
   } catch (error: any) {
-    console.error('Error calculating shipping:', error);
-    return res.status(500).json({
-      success: false,
-      message: error.message || 'Error calculating shipping'
-    });
+    return pricingError(res, error);
   }
 };
 
@@ -508,10 +563,7 @@ export const sendOrderStatusEmail = async (order: any, orderStatus: string) => {
                       <td style="padding-bottom: 10px; color: #10b981; font-weight: bold; font-size: 14px; text-align: right;">-₹${order.discount}</td>
                     </tr>
                     ` : ''}
-                    <tr>
-                      <td style="padding-bottom: 15px; color: #6b7280; font-size: 14px;">Shipping:</td>
-                      <td style="padding-bottom: 15px; color: #111827; font-weight: bold; font-size: 14px; text-align: right;">${order.shippingFee > 0 ? `₹${order.shippingFee}` : 'Free'}</td>
-                    </tr>
+                    ${chargeRows(order)}
                     <tr>
                       <td style="padding-top: 15px; border-top: 1px solid #eaeaea; color: #111827; font-weight: bold; font-size: 16px;">Total:</td>
                       <td style="padding-top: 15px; border-top: 1px solid #eaeaea; color: #111827; font-weight: bold; font-size: 18px; text-align: right;">₹${order.total}</td>

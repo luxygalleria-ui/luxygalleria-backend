@@ -7,6 +7,8 @@ exports.calculateShippingForItems = exports.MAX_QTY_PER_LINE = exports.calculate
 const mongoose_1 = __importDefault(require("mongoose"));
 const Product_1 = require("../models/Product");
 const Settings_1 = require("../models/Settings");
+const checkoutSettings_1 = require("./checkoutSettings");
+const orderPricing_1 = require("./orderPricing");
 exports.DEFAULT_SHIPPING_CONFIG = {
     WEIGHT_THRESHOLD_KG: 0.5,
     SHIPPING_BELOW_THRESHOLD: 40,
@@ -22,39 +24,10 @@ const num = (value, fallback) => {
     return Number.isFinite(n) && n >= 0 ? n : fallback;
 };
 /**
- * Resolves the shipping config, newest source wins:
- * admin Settings (DB) -> environment -> built-in defaults.
- *
- * The admin panel stores the weight threshold in grams; everything here is kg.
+ * Resolves the pre-zone shipping config, newest source wins: admin Settings (DB) -> environment -> built-in defaults.
+ * A failed settings read throws: charging environment defaults instead of the admin's rates would be a wrong charge.
  */
-const resolveShippingConfig = async () => {
-    const fromEnv = {
-        WEIGHT_THRESHOLD_KG: num(process.env.WEIGHT_THRESHOLD_KG, exports.DEFAULT_SHIPPING_CONFIG.WEIGHT_THRESHOLD_KG),
-        SHIPPING_BELOW_THRESHOLD: num(process.env.SHIPPING_BELOW_THRESHOLD, exports.DEFAULT_SHIPPING_CONFIG.SHIPPING_BELOW_THRESHOLD),
-        SHIPPING_ABOVE_THRESHOLD: num(process.env.SHIPPING_ABOVE_THRESHOLD, exports.DEFAULT_SHIPPING_CONFIG.SHIPPING_ABOVE_THRESHOLD),
-        BASE_WEIGHT_KG: num(process.env.BASE_WEIGHT_KG, exports.DEFAULT_SHIPPING_CONFIG.BASE_WEIGHT_KG),
-        EXTRA_SHIPPING_PER_KG: num(process.env.EXTRA_SHIPPING_PER_KG, exports.DEFAULT_SHIPPING_CONFIG.EXTRA_SHIPPING_PER_KG),
-        FREE_SHIPPING_THRESHOLD: num(process.env.FREE_SHIPPING_THRESHOLD, exports.DEFAULT_SHIPPING_CONFIG.FREE_SHIPPING_THRESHOLD),
-        FALLBACK_ITEM_WEIGHT_KG: num(process.env.FALLBACK_ITEM_WEIGHT_KG, exports.DEFAULT_SHIPPING_CONFIG.FALLBACK_ITEM_WEIGHT_KG),
-    };
-    try {
-        const settings = await Settings_1.Settings.findOne().lean();
-        if (!settings)
-            return fromEnv;
-        return {
-            ...fromEnv,
-            WEIGHT_THRESHOLD_KG: num(settings.shippingWeightThreshold, fromEnv.WEIGHT_THRESHOLD_KG * 1000) / 1000,
-            SHIPPING_BELOW_THRESHOLD: num(settings.shippingBelow500g, fromEnv.SHIPPING_BELOW_THRESHOLD),
-            SHIPPING_ABOVE_THRESHOLD: num(settings.shippingAbove500g, fromEnv.SHIPPING_ABOVE_THRESHOLD),
-            FREE_SHIPPING_THRESHOLD: num(settings.freeShippingThreshold, fromEnv.FREE_SHIPPING_THRESHOLD),
-        };
-    }
-    catch (err) {
-        // Never fail a checkout because the settings lookup broke.
-        console.error('Failed to load shipping settings, falling back to env:', err);
-        return fromEnv;
-    }
-};
+const resolveShippingConfig = async () => (0, checkoutSettings_1.legacyShippingConfig)(await Settings_1.Settings.findOne().lean());
 exports.resolveShippingConfig = resolveShippingConfig;
 /**
  * Dynamically parses weight from a volume/size string (e.g. "500G", "1kg", "250ml", "1L").
@@ -128,12 +101,11 @@ const calculateShippingPure = (items, config = exports.DEFAULT_SHIPPING_CONFIG) 
 exports.calculateShippingPure = calculateShippingPure;
 exports.MAX_QTY_PER_LINE = 100;
 /**
- * Calculates shipping for a list of cart items.
- * Fetches prices and weights directly from the database for security, then
- * defers to calculateShippingPure so there is one copy of the formula.
+ * Prices a cart for checkout: prices, weights and product flags come from the database only (never the client),
+ * settings are read fresh, and priceOrder applies shipping, packaging, pickup and tax rules.
  */
-const calculateShippingForItems = async (items) => {
-    const config = await (0, exports.resolveShippingConfig)();
+const calculateShippingForItems = async (items, selection = {}) => {
+    const { settings, fallbackItemWeightKg } = await (0, checkoutSettings_1.loadCheckoutSettings)();
     const resolved = [];
     for (const item of items) {
         // Whole units only: fractional quantities would let a buyer pay for 0.01 of an item.
@@ -179,9 +151,11 @@ const calculateShippingForItems = async (items) => {
             quantity: item.quantity,
             stock: Number(variant.stock) || 0,
             name: product.name,
+            requiresSpecialPackaging: product.requiresSpecialPackaging === true,
+            taxRate: typeof product.taxRate === 'number' ? product.taxRate : null,
         });
     }
-    return { ...(0, exports.calculateShippingPure)(resolved, config), lines: resolved };
+    return { ...(0, orderPricing_1.priceOrder)(resolved, settings, selection, { fallbackItemWeightKg }), lines: resolved };
 };
 exports.calculateShippingForItems = calculateShippingForItems;
 //# sourceMappingURL=shippingCalculator.js.map

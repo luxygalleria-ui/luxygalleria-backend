@@ -9,7 +9,10 @@ const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
 const seedBanners = async () => {
     try {
-        const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/luxy-galleria';
+        const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/luxy-galleria'; // same order as config/env.ts
+        // Demo seed that wipes collections: never run it against a shared or production database
+        if (!/^mongodb:\/\/(localhost|127\.0\.0\.1)[:/]/.test(mongoUri))
+            throw new Error('Seed scripts only run against a local MongoDB (localhost/127.0.0.1)');
         await mongoose_1.default.connect(mongoUri);
         console.log('✅ Connected to MongoDB');
         // Clear old banners
@@ -20,8 +23,8 @@ const seedBanners = async () => {
             {
                 title: 'Refreshing Drinks Collection',
                 description: 'Enjoy our premium selection of fresh and delicious drinks',
-                image: 'https://images.unsplash.com/photo-1589985643985-33b5f0ee2a1d?w=1200&h=400&fit=crop',
-                mobileImage: 'https://images.unsplash.com/photo-1589985643985-33b5f0ee2a1d?w=600&h=400&fit=crop',
+                image: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=1200&h=400&fit=crop',
+                mobileImage: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=600&h=400&fit=crop',
                 status: 'ACTIVE',
             },
             {
@@ -34,8 +37,8 @@ const seedBanners = async () => {
             {
                 title: 'Special Combo Offers',
                 description: 'Get the best deals on your favorite drinks and sweets',
-                image: 'https://images.unsplash.com/photo-1555939594-58d7cb561ffa?w=1200&h=400&fit=crop',
-                mobileImage: 'https://images.unsplash.com/photo-1555939594-58d7cb561ffa?w=600&h=400&fit=crop',
+                image: 'https://images.unsplash.com/photo-1621939514649-280e2ee25f60?w=1200&h=400&fit=crop',
+                mobileImage: 'https://images.unsplash.com/photo-1621939514649-280e2ee25f60?w=600&h=400&fit=crop',
                 status: 'ACTIVE',
             },
         ];

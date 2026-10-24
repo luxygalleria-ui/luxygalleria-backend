@@ -50,6 +50,11 @@ const settingsSchema = new mongoose_1.Schema({
     giftingSubtitle: { type: String, default: 'Curated picks, ready to be wrapped.' },
     newArrivalsTitle: { type: String, default: 'New Arrivals' },
     newArrivalsSubtitle: { type: String, default: 'The latest additions to the collection.' },
+    // No defaults on purpose: an unsaved section keeps today's behaviour (see effectiveCheckoutSettings)
+    shipping: { type: mongoose_1.Schema.Types.Mixed },
+    pickup: { type: mongoose_1.Schema.Types.Mixed },
+    chocolate: { type: mongoose_1.Schema.Types.Mixed },
+    tax: { type: mongoose_1.Schema.Types.Mixed },
 }, { timestamps: true });
 exports.Settings = mongoose_1.default.model('Settings', settingsSchema);
 //# sourceMappingURL=Settings.js.map

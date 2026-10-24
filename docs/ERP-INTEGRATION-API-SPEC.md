@@ -2,87 +2,138 @@
 
 | | |
 |---|---|
-| Version | 1.1 (implementation and auth diagnostics) |
-| Date | 21 October 2026 |
-| Audience | ERP development team; Luxy Galleria backend team |
-| Production host | `https://api.luxygalleria.com` (supplied by the project owner) |
-| API prefix | `/api/v1/erp` |
-| Source | `luxy-backend` — `src/routes/erpRoutes.ts`, `src/controllers/erpController.ts`, `src/middlewares/erpAuth.ts` |
-| Tests | `src/tests/erp.test.ts` (`npm run test:erp`) |
+| Version | 2.0 |
+| Date | 23 October 2026 |
+| Audience | ERP development team |
+| API base URL | `https://api.luxygalleria.com/api/v1` |
+| ERP API prefix | `/api/v1/erp` |
+| Postman package | `postman/Luxy-Galleria-ERP-API.postman_collection.json`, `postman/Luxy-Galleria-ERP-Production.postman_environment.json` (Section 11) |
+| Quick start | `docs/ERP-DEVELOPER-HANDOVER.md` |
+| Source of truth | `luxy-backend`: `src/routes/erpRoutes.ts`, `src/controllers/erpController.ts`, `src/middlewares/erpAuth.ts` |
 
-## Status at a glance
-
-| Label | Meaning |
-|---|---|
-| ✅ **Implemented and locally tested** | Code exists in `luxy-backend` and passes the automated tests against a local throwaway MongoDB |
-| 🟡 **Implemented but not yet tested** | Code exists; no automated test covers it yet |
-| 🟦 **Requires ERP-team confirmation** | A contract or business rule we propose and the ERP team must accept or change |
-| 🚀 **Requires production verification** | Deployment or behavior has not been independently verified against production |
-
-> A production request has reached ERP authentication and returned `401 Invalid ERP credentials`. This confirms that at least the requested route and auth middleware are deployed; successful ERP authentication, database access, and the other production routes have not been independently verified here.
-
-| # | Capability | Method | Full URL | Status |
-|---|---|---|---|---|
-| 1 | Stock Update | `PUT` | `https://api.luxygalleria.com/api/v1/erp/stock/{sku}` | ✅ 🚀 |
-| 2 | Item Add / Upsert | `POST` | `https://api.luxygalleria.com/api/v1/erp/items` | ✅ 🚀 |
-| 3 | Item Edit | `PATCH` | `https://api.luxygalleria.com/api/v1/erp/items/{sku}` | ✅ 🚀 |
-| 4 | Order Checking | `GET` | `https://api.luxygalleria.com/api/v1/erp/orders` | ✅ 🚀 |
-| 5 | Order Details | `GET` | `https://api.luxygalleria.com/api/v1/erp/orders/{orderId}` | ✅ 🚀 |
-| 6 | Order Status Changing (ERP callback) | `POST` | `https://api.luxygalleria.com/api/v1/erp/webhooks/order-status` | ✅ 🚀 |
-| 7 | Image Upload | `POST` | `https://api.luxygalleria.com/api/v1/erp/images` | ✅ 🚀 |
-| — | Website → ERP order push | `POST` (to ERP) | ERP-provided | ❌ **Not implemented** — waiting for the ERP sales-order API (Section 10) 🟦 |
-
-The admin ERP workbench also uses two read-only catalogue routes: `GET /api/v1/erp/items` and `GET /api/v1/erp/items/{sku}`. These do not change the established orders list response or pagination. They are ERP workbench support routes in addition to the seven integration operations listed above.
+Every request field, rule and response in this document comes from the backend source code. Every response example was captured from that code running on a local test server with a throwaway database (23 October 2026), unless it is marked otherwise. Items that cannot be confirmed from source or tests are marked **NEEDS CONFIRMATION**.
 
 ---
 
-## 1. Authentication (all seven endpoints)
+## Contents
 
-HMAC request signing is implemented in `src/middlewares/erpAuth.ts` and exercised by the local ERP integration suite. The integration contract remains subject to ERP-team confirmation where noted.
+1. Overview and current status
+2. Authentication
+3. Common conventions
+4. Stock Update — `PUT /erp/stock/{sku}`
+5. Item Add / Upsert — `POST /erp/items`
+6. Item Edit — `PATCH /erp/items/{sku}`
+7. Order Checking — `GET /erp/orders`
+8. Order Details — `GET /erp/orders/{orderId}`
+9. Order Status Callback — `POST /erp/webhooks/order-status`
+10. Image Upload — `POST /erp/images`
+11. Postman package
+12. Website–ERP data mapping
+13. Not implemented: website → ERP order push and customer sync
+14. Information required from the ERP team
+15. Test evidence
+16. Known limitations and open items
 
-Every request carries three headers:
+---
+
+## 1. Overview and current status
+
+### 1.1 Integration directions
+
+| Direction | Data | Endpoints | Status |
+|---|---|---|---|
+| ERP → Website | Products/variants, prices, stock, images, order fulfilment status | Sections 4, 5, 6, 9, 10 | Implemented |
+| ERP reads Website | Orders and order details (including customer contact and shipping address) | Sections 7, 8 | Implemented |
+| Website → ERP | Automatic new-order (sales order) push | — | **NOT IMPLEMENTED** (Section 13) |
+| Customers | Customer master synchronization | — | **NOT IMPLEMENTED** (Section 13) |
+
+The website is the system of record for orders. The ERP is intended to be the system of record for items, prices and stock (**NEEDS CONFIRMATION**, Section 14).
+
+### 1.2 Endpoint status
+
+Status labels: **VERIFIED** — a real request succeeded in that environment. **FAILED** — a real request returned an error. **NOT TESTED** — no real request evidence. **NOT IMPLEMENTED** — no code exists.
+
+| # | Function | Method | Full URL | Local test server | Production |
+|---|---|---|---|---|---|
+| 1 | Stock Update | `PUT` | `https://api.luxygalleria.com/api/v1/erp/stock/{sku}` | VERIFIED | NOT TESTED |
+| 2 | Item Add / Upsert | `POST` | `https://api.luxygalleria.com/api/v1/erp/items` | VERIFIED | FAILED (`401 Invalid ERP credentials`, earlier team test; see 2.6) |
+| 3 | Item Edit | `PATCH` | `https://api.luxygalleria.com/api/v1/erp/items/{sku}` | VERIFIED | NOT TESTED |
+| 4 | Order Checking | `GET` | `https://api.luxygalleria.com/api/v1/erp/orders` | VERIFIED | `200` reported by an earlier team test; not independently re-run |
+| 5 | Order Details | `GET` | `https://api.luxygalleria.com/api/v1/erp/orders/{orderId}` | VERIFIED | `200` reported by an earlier team test; not independently re-run |
+| 6 | Order Status Callback | `POST` | `https://api.luxygalleria.com/api/v1/erp/webhooks/order-status` | VERIFIED | NOT TESTED |
+| 7 | Image Upload | `POST` | `https://api.luxygalleria.com/api/v1/erp/images` | Signing and validation VERIFIED; storing an image NOT TESTED (storage disabled on the test server) | NOT TESTED |
+
+All seven production routes are deployed and enforce authentication. An unsigned request to each returns `401` (checked 22 and 23 October 2026). Section 15 lists all evidence.
+
+### 1.3 Environments
+
+| Environment | Base URL | Notes |
+|---|---|---|
+| Production | `https://api.luxygalleria.com/api/v1` | Live store data. Write requests affect the storefront and customers. |
+| Staging / sandbox | **NEEDS CONFIRMATION** | No separate staging service exists yet. Until one does, production writes must use an approved test SKU and test order (Section 11.5). |
+
+Health check (no authentication): `GET https://api.luxygalleria.com/api/v1/health` → `200 {"success":true,"message":"Backend is running","timestamp":"…"}`.
+
+---
+
+## 2. Authentication
+
+All seven endpoints use HMAC-SHA256 request signing with a key ID and a shared secret. No other credential is accepted: admin and customer logins or JWTs do not work on `/api/v1/erp/*`, and ERP keys work nowhere else.
+
+### 2.1 Credentials
+
+| Item | Description |
+|---|---|
+| Key ID | Public identifier, for example `erp-prod-1`. Matched exactly, case-sensitive. |
+| Secret | 32+ characters (Luxy Galleria issues a 64-character hex value). Never sent over the wire, only used to compute signatures. |
+
+Luxy Galleria issues the key ID and secret to the ERP team's named technical contact through a one-time secret link or password manager. The secret is never sent by email, chat or ticket, and the key ID is sent separately. Store the secret in your platform's secret manager. Rotate it immediately if exposure is suspected: the server accepts two keys at once, so rotation needs no downtime.
+
+### 2.2 Required headers
 
 | Header | Value |
 |---|---|
-| `X-ERP-Key-Id` | Key identifier issued by Luxy Galleria, e.g. `erp-prod-1` |
-| `X-ERP-Timestamp` | Current Unix time in **seconds**. Must be within **±300 s** of server time. |
-| `X-ERP-Signature` | Lowercase hex `HMAC-SHA256(secret, stringToSign)` |
+| `X-ERP-Key-Id` | Your key ID |
+| `X-ERP-Timestamp` | Current Unix time in **whole seconds** (for example `1792222200`). Must be within **±300 seconds** of server time. Milliseconds are rejected. |
+| `X-ERP-Signature` | 64-character hex HMAC-SHA256 (Section 2.3). Compared case-insensitively; send lowercase. |
+| `Content-Type` | `application/json` on JSON requests (a `charset=utf-8` parameter is fine). `multipart/form-data` with boundary on Image Upload. |
+
+### 2.3 Signature algorithm
 
 ```
-stringToSign = <X-ERP-Timestamp> + "." + <HTTP METHOD> + "." + <path and query exactly as sent> + "." + <hex SHA-256 of body>
+bodyHash     = lowercase hex( SHA-256( body bytes ) )
+stringToSign = X-ERP-Timestamp + "." + METHOD + "." + pathWithQuery + "." + bodyHash
+signature    = lowercase hex( HMAC-SHA256( key = secret as UTF-8 bytes, message = stringToSign as UTF-8 bytes ) )
 ```
 
-- **path and query exactly as sent:** for example `/api/v1/erp/orders?limit=50&status=shipped`, including any percent-encoding, and without the host.
-- **body:**
-  - JSON endpoints: the exact raw bytes sent.
-  - `GET` requests: empty, so the hash is `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
-  - `POST /images`: the raw bytes of the uploaded file.
+| Part | Exact rule |
+|---|---|
+| `X-ERP-Timestamp` | The same string sent in the header |
+| `METHOD` | Uppercase HTTP method: `GET`, `PUT`, `POST`, `PATCH` |
+| `pathWithQuery` | The request path and query string exactly as sent, without scheme or host. It includes `/api/v1` and any percent-encoding, and keeps the query parameters in the order sent. Example: `/api/v1/erp/orders?page=1&limit=10`. |
+| body bytes, JSON requests | The exact bytes of the request body as sent. The server hashes the raw bytes before parsing, so whitespace and key order matter, and pretty-printed JSON is fine if you sign the same text. Encode as UTF-8. |
+| body bytes, `GET` | Empty. `bodyHash` = `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| body bytes, Image Upload | The raw bytes of the uploaded **file**, not the multipart envelope |
 
-**Rules**
+If a JSON request is sent without `Content-Type: application/json`, the server does not read its body. It then hashes an empty body, and the request fails with `401 Invalid X-ERP-Signature`.
 
-- The `X-ERP-Key-Id` header must exactly match a configured key ID, including letter case. The key ID is not a secret.
-- **Sign every attempt with a fresh timestamp.** An identical signature seen again within 10 minutes is rejected as a replay.
-- Admin or customer logins and JWTs are **not accepted** on these routes. ERP keys grant access to nothing outside `/api/v1/erp/*`.
-- If no ERP keys are configured on the server, every ERP route returns `503` (fail closed).
-- **Rate limit:** 600 requests per minute per IP on ERP routes, separate from the website's limit. Exceeding it returns `429` with a `Retry-After` header.
-- **HTTPS only.**
-
-**Test vector** (fake secret; use it to check your signing code)
+**Test vector** (fake secret; check your implementation against it):
 
 | Input | Value |
 |---|---|
 | secret | `test_secret_0123456789abcdef0123456789ab` |
 | timestamp | `1792222200` |
-| method / path | `PUT` `/api/v1/erp/stock/YOUR_SKU` |
+| method / pathWithQuery | `PUT` / `/api/v1/erp/stock/YOUR_SKU` |
 | body | `{"quantity":25,"asOf":"2026-10-17T09:30:00Z"}` |
+| stringToSign | `1792222200.PUT./api/v1/erp/stock/YOUR_SKU.<sha256 hex of body>` |
 | **signature** | `063c8145c1ab838827f3f78197594d0c1cee60e1d23f1be8e55b711d81d2c116` |
 
-**Shell helper used by the curl examples** (placeholders only):
+Reference implementations: the collection pre-request script (Section 11), `docs/erp-signing-client.mjs` (Node.js; `node docs/erp-signing-client.mjs --verify-vector` checks the vector offline), and this shell helper:
 
 ```bash
 BASE=https://api.luxygalleria.com
 KEY_ID=YOUR_ERP_KEY_ID
-SECRET=YOUR_ERP_SECRET          # never commit or paste into tickets
+SECRET=YOUR_ERP_SECRET   # load from a secret store; never commit or paste into tickets
 
 # usage: sign METHOD PATH_WITH_QUERY BODY_FILE_OR_EMPTY  -> sets TS and SIG
 sign() {
@@ -93,206 +144,259 @@ sign() {
 }
 ```
 
-**Node.js signing client:** [`docs/erp-signing-client.mjs`](erp-signing-client.mjs) reads `ERP_KEY_ID`, `ERP_SECRET`, and optionally `ERP_API_BASE_URL` from its environment. The default API base is `https://api.luxygalleria.com/api/v1`. It constructs the URL first, signs that URL's exact path and query, and sends the same uppercase method. JSON bodies are signed and sent as the same `Buffer`; image uploads sign the image bytes while sending a multipart request. The script prints only the HTTP status, not API response data or credentials.
+### 2.4 Replay protection
 
-Offline signing check (no credentials or network request required):
+- The server remembers every accepted signature for **10 minutes** and rejects a repeat with `401 Replayed request…`.
+- Sign every attempt, including retries, with a fresh timestamp. A retry then has a new signature and is accepted. The idempotency rules in Sections 4–10 make repeated writes safe.
+- The replay memory is held in the server process. It does not survive a server restart. The timestamp window still limits any replay to 5 minutes.
 
-```bash
-node docs/erp-signing-client.mjs --verify-vector
-```
+### 2.5 Check order and authentication errors
 
-After setting the client environment variables in a secure local shell or secret manager, these production checks are non-destructive:
+The server checks, in order:
 
-```bash
-ERP_API_BASE_URL=https://api.luxygalleria.com/api/v1 node docs/erp-signing-client.mjs get
-ERP_API_BASE_URL=https://api.luxygalleria.com/api/v1 node docs/erp-signing-client.mjs json-validation
-```
+1. ERP keys are configured.
+2. The key ID is known.
+3. The timestamp is within the window.
+4. *Image Upload only:* the multipart upload is read and its size and format limits are applied.
+5. The signature matches.
+6. The signature is not a replay.
 
-Expected: `get` returns HTTP 200 and only reads one order page; `json-validation` sends `{}` to item validation, expects HTTP 400, and creates or changes no data. The `upload` mode writes an image to Cloudinary; use staging only.
+| HTTP | `message` | `errors[0].code` | Cause |
+|---|---|---|---|
+| 401 | `Invalid ERP credentials` | `UNAUTHENTICATED` | `X-ERP-Key-Id` missing or not a configured key ID |
+| 401 | `X-ERP-Timestamp missing or more than 300s from server time` | `UNAUTHENTICATED` | Header missing, not an integer, in milliseconds, or clock skew > 300 s |
+| 401 | `Invalid X-ERP-Signature` | `UNAUTHENTICATED` | Wrong secret, or method/path/query/body differs from what was signed, or wrong `Content-Type` |
+| 401 | `Replayed request: sign every attempt with a fresh timestamp` | `UNAUTHENTICATED` | Identical signed request sent again |
+| 503 | `ERP integration is not configured` | `UNAVAILABLE` | Server has no ERP keys (fails closed) |
+| 429 | `Too many ERP requests, retry after the Retry-After interval` | `RATE_LIMITED` | More than 600 requests per minute from one IP address (Section 3.5) |
 
-**Authentication errors**
+### 2.6 Troubleshooting `401 Invalid ERP credentials`
 
-| HTTP | `message` | `errors[0].code` |
-|---|---|---|
-| 401 | `Invalid ERP credentials` | `UNAUTHENTICATED` |
-| 401 | `X-ERP-Timestamp missing or more than 300s from server time` | `UNAUTHENTICATED` |
-| 401 | `Invalid X-ERP-Signature` | `UNAUTHENTICATED` |
-| 401 | `Replayed request: sign every attempt with a fresh timestamp` | `UNAUTHENTICATED` |
-| 503 | `ERP integration is not configured` | `UNAVAILABLE` |
-| 429 | `Too many ERP requests, retry after the Retry-After interval` | `RATE_LIMITED` |
+This response means the server did not receive a key ID it knows. A wrong body, path, method or secret never produces it; those give `Invalid X-ERP-Signature`. Check in this order:
 
-### Diagnosing `Invalid ERP credentials`
+1. **The request was not signed.** An unsigned request gets exactly this response. In Postman this happens when no environment is selected, `erpKeyId` or `erpSecret` is empty, or the pre-request script raised an error. Postman then still sends the request, without the `X-ERP-*` headers. The collection detects this: its test *request was signed by the collection pre-request script* fails, and the Postman Console shows the script error.
+2. **A different key ID was sent** from the one that worked for other requests. The key check is identical for every endpoint and method. Compare the `X-ERP-Key-Id` actually sent (Postman Console → request headers).
+3. **The server's key configuration changed**, for example after a key rotation. Ask Luxy Galleria to confirm that your key ID is configured.
 
-The middleware returns this message when the supplied key ID is absent from the parsed `ERP_API_KEYS` key map. The configuration is read at request time as comma-separated `keyId:secret` pairs; key IDs and secrets are trimmed, and secrets shorter than 32 characters are ignored. If no valid pairs remain, the response is `503 ERP integration is not configured` instead. A stale timestamp, signature mismatch, or replay has a different 401 message.
+---
 
-Therefore, a production `401 Invalid ERP credentials` indicates a key-ID/configuration mismatch in the normal request flow, not a body, path, method, timestamp, or HMAC mismatch. Verify in the production secret manager that `ERP_API_KEYS` contains the exact ID sent in `X-ERP-Key-Id`, with a secret of at least 32 characters. Do not print or paste the variable value. This repository cannot verify the live secret-manager value.
+## 3. Common conventions
 
-## 2. Common conventions
+### 3.1 Response envelope
 
-**Success**
+Success:
 
 ```json
 { "success": true, "message": "…", "data": { } }
 ```
 
-**Error**
+Error:
 
 ```json
 { "success": false, "message": "Validation failed", "errors": [{ "field": "quantity", "code": "VALIDATION_ERROR", "message": "Number must be greater than or equal to 0" }] }
 ```
 
-**Error codes:** `VALIDATION_ERROR` (400), `UNAUTHENTICATED` (401), `NOT_FOUND` (404), `DUPLICATE_SKU` / `CONFLICT` / `STALE_UPDATE` / `INVALID_TRANSITION` (409), `PAYLOAD_TOO_LARGE` (413), `RATE_LIMITED` (429), `UPSTREAM_ERROR` (502), `UNAVAILABLE` (503).
+`errors` is an array of `{ code, field?, message? }`. Some errors carry extra keys, such as `currentAsOf` on `STALE_UPDATE`. Order Checking adds a top-level `pagination` object next to `data`.
 
-**Retries.** Every write below is safe to repeat (see each endpoint's *Idempotency* note).
+### 3.2 Error codes
 
-- **Retry** `429`, `5xx` and network timeouts with exponential backoff (for example 30 s, 2 min, 10 min, 1 h), re-signing each attempt.
-- **Do not retry** `400`, `401`, `404` or `409` without fixing the request.
-- An `Idempotency-Key` header is not required. 🟦 Tell us if your platform needs one.
+| Code | HTTP | Meaning |
+|---|---|---|
+| `VALIDATION_ERROR` | 400 | Request does not meet the schema or a business rule |
+| `UNAUTHENTICATED` | 401 | Authentication failed (Section 2.5) |
+| `NOT_FOUND` | 404 | SKU or order does not exist |
+| `DUPLICATE_SKU` | 409 | The SKU exists on more than one website variant; Luxy Galleria must fix the data |
+| `CONFLICT` | 409 | Request conflicts with current data (SKUs of two products, `erpOrderId` mismatch, concurrent change) |
+| `STALE_UPDATE` | 409 | A newer stock figure was already applied |
+| `INVALID_TRANSITION` | 409 | Order status change not allowed |
+| `PAYLOAD_TOO_LARGE` | 413 | Image over 15 MB |
+| `RATE_LIMITED` | 429 | Rate limit exceeded |
+| `UPSTREAM_ERROR` | 502 | Image storage provider failed |
+| `UNAVAILABLE` | 503 | ERP keys or image storage not configured on the server |
 
-**Request rules**
+### 3.3 Errors raised before authentication
 
-- JSON bodies use `Content-Type: application/json` and may be up to 1 MB.
-- Unknown fields are **rejected** on stock and item requests (strict validation). On the webhook they are ignored.
-- Text values are sanitised: `<script>…</script>`, `javascript:` and `on…=` patterns are removed.
-- **SKU matching is exact** (case-sensitive) after trimming spaces. A SKU found on more than one website variant returns `409 DUPLICATE_SKU` until the data is fixed (Section 9).
+These come from the shared request parser or router, so they do not use ERP codes. Derived from source; not captured.
+
+| Situation | Response |
+|---|---|
+| JSON body is not valid JSON | `400`, `success: false`, `message` = the parser's error text, no `errors` array |
+| JSON body over 1 MB | `413`, `message: "request entity too large"`, no `errors` array |
+| Unknown path under `/api/v1/erp/` | `404`, `message: "Route not found - <path>"`, `errors: null` |
+
+### 3.4 Request rules
+
+- JSON bodies: UTF-8, `Content-Type: application/json`, at most 1 MB.
+- Stock and item requests use **strict** validation: an unknown field returns `400` (`Unrecognized key(s) in object: '…'`). The Order Status Callback ignores unknown fields.
+- Text values are sanitised before storage: `<script>…</script>` blocks, `javascript:` and `on<word>=` patterns are removed.
+- Keys that start with `$` or contain `.` are rewritten (NoSQL-injection protection).
+- **SKU matching is exact** (case-sensitive) after trimming surrounding spaces. Percent-encode SKUs in URL paths when they contain characters other than letters, digits, `-`, `_`, `.` and `~`.
+- Money values are INR as numbers, for example `499` or `499.5`.
+- Dates are ISO 8601 with a timezone, such as `2026-10-17T09:30:00Z` or `2026-10-17T15:00:00+05:30`. Responses use UTC with milliseconds.
+
+### 3.5 Rate limit
+
+600 requests per minute per client IP address across all ERP endpoints. Responses carry the standard `RateLimit-*` headers; a `429` adds `Retry-After`. There is no bulk endpoint, so send one request per SKU (**NEEDS CONFIRMATION** whether volumes require a bulk endpoint).
+
+### 3.6 Retries and idempotency
+
+- **Retry** `429`, `502`, `503` and network timeouts with exponential backoff (for example 30 s, 2 min, 10 min, 1 h). Re-sign each attempt.
+- **Do not retry** `400`, `401`, `404` or `409` until the request or data is fixed.
+- Every write is safe to repeat; see the *Idempotency* note on each endpoint. An `Idempotency-Key` header is not used.
 
 ---
 
-## 3. Stock Update — `PUT /api/v1/erp/stock/{sku}`
+## 4. Stock Update — `PUT /erp/stock/{sku}`
 
-✅ Implemented and locally tested · 🚀 not yet deployed · 🟦 reconciliation rule to be confirmed
+| | |
+|---|---|
+| Direction | ERP → Website |
+| Full URL | `https://api.luxygalleria.com/api/v1/erp/stock/{sku}` |
+| Purpose | Set the **absolute** sellable quantity of one product variant (not an adjustment) |
+| Headers | Section 2.2, `Content-Type: application/json` |
+| Postman | *3. Stock Update* |
 
-**Purpose:** set the **absolute sellable quantity** of one product variant. This is not an adjustment.
+**Path parameter**
 
-**Full URL:** `https://api.luxygalleria.com/api/v1/erp/stock/{sku}`
-
-| Path parameter | Type | Rules |
+| Name | Type | Rules |
 |---|---|---|
-| `sku` | string | URL-encoded; must match exactly one website variant |
+| `sku` | string | Variant SKU, URL-encoded; must match exactly one website variant |
 
-| Body field | Type | Required | Rules |
+**Body** (strict)
+
+| Field | Type | Required | Rules |
 |---|---|---|---|
 | `quantity` | integer | Yes | 0 – 1,000,000. Absolute sellable units. |
-| `asOf` | string | Yes | ISO 8601 with timezone, e.g. `2026-10-17T09:30:00Z`. The ERP time the figure was taken. No more than 5 minutes in the future. |
+| `asOf` | string | Yes | ISO 8601 with timezone. The ERP time the figure was taken. At most 5 minutes in the future. |
 
 **Behaviour**
 
-- **Stale updates are refused.** The update is applied only if `asOf` is newer than the last applied `asOf` for that variant. An older one returns `409 STALE_UPDATE`. The same `asOf` again returns `200` with `applied: false`.
-- **Website orders since your snapshot stay reserved.** Website orders placed after `asOf` (and not cancelled) are not yet in your figure. The website subtracts them:
+- **Website orders since your snapshot stay reserved.** Orders created on the website after `asOf`, not cancelled, and containing this variant are subtracted:
   - stored stock = `max(0, quantity − pendingOrderQuantity)`
-  - both numbers are returned in the response
-  - 🟦 This is a provisional rule. Confirm it, or tell us your figure already accounts for website orders.
-- **Only this variant's stock is written,** in one atomic update. The product's total stock is recomputed. Prices, images and other variants are untouched.
-- Checkout continues to reduce stock with its own atomic, conditional decrement.
-- No product is ever created by this endpoint. An unknown SKU returns `404`.
+  - **NEEDS CONFIRMATION**: whether your figure already excludes website orders.
+- **Out-of-order updates are refused.**
+  - The update applies only if `asOf` is newer than the last applied `asOf` for the variant.
+  - The same `asOf` again returns `200` with `applied: false` and changes nothing.
+  - An older `asOf` returns `409 STALE_UPDATE`.
+- Only this variant's stock is written, atomically. The product's total stock is recomputed as the sum of its variants. Prices, images and other variants are untouched.
+- Website checkout continues to decrement stock as it sells.
+- This endpoint never creates a product or variant.
 
 **Request**
 
 ```json
-{ "quantity": 25, "asOf": "2026-10-17T09:30:00Z" }
+{ "quantity": 25, "asOf": "2026-10-23T04:27:41Z" }
 ```
 
-**Success `200`**
+**Success `200` — applied**
 
 ```json
 {
   "success": true,
   "message": "Stock updated",
   "data": {
-    "sku": "YOUR_SKU",
-    "productId": "YOUR_PRODUCT_ID",
-    "variantId": "YOUR_VARIANT_ID",
-    "asOf": "2026-10-17T09:30:00.000Z",
-    "previousQuantity": 12,
+    "sku": "SKU-001",
+    "productId": "6adae279d6f61832746849b1",
+    "variantId": "6adae279d6f61832746849b2",
+    "asOf": "2026-10-23T04:27:41.000Z",
+    "previousQuantity": 10,
     "quantity": 25,
     "erpQuantity": 25,
     "pendingOrderQuantity": 0,
     "applied": true,
-    "updatedAt": "2026-10-17T09:30:02.114Z"
+    "updatedAt": "2026-10-23T04:28:41.865Z"
   }
 }
 ```
 
-**Same update delivered again `200`:** `"message": "Stock already at this update"`, `"applied": false`, with the current quantity.
+`quantity` is the stored stock; `erpQuantity` is the figure you sent.
+
+**Success `200` — same `asOf` delivered again**
+
+```json
+{
+  "success": true,
+  "message": "Stock already at this update",
+  "data": {
+    "sku": "SKU-001",
+    "productId": "6adae279d6f61832746849b1",
+    "variantId": "6adae279d6f61832746849b2",
+    "asOf": "2026-10-23T04:27:41.000Z",
+    "previousQuantity": 25,
+    "quantity": 25,
+    "applied": false,
+    "updatedAt": "2026-10-23T04:28:41.870Z"
+  }
+}
+```
 
 **Errors**
 
-| HTTP | Example |
-|---|---|
-| 400 | `{ "success": false, "message": "Validation failed", "errors": [{ "field": "quantity", "code": "VALIDATION_ERROR", "message": "Expected integer, received float" }] }` |
-| 400 | `{ "success": false, "message": "asOf is in the future", "errors": [{ "code": "VALIDATION_ERROR", "field": "asOf" }] }` |
-| 404 | `{ "success": false, "message": "SKU not found: YOUR_SKU", "errors": [{ "code": "NOT_FOUND", "field": "sku" }] }` |
-| 409 | `{ "success": false, "message": "A newer stock update has already been applied", "errors": [{ "code": "STALE_UPDATE", "field": "asOf", "currentAsOf": "2026-10-17T09:35:00.000Z" }] }` |
-| 409 | `{ "success": false, "message": "SKU YOUR_SKU is used by 2 website variants; fix the duplicate before syncing", "errors": [{ "code": "DUPLICATE_SKU", "field": "sku" }] }` |
+| HTTP | When | Response |
+|---|---|---|
+| 400 | Fractional quantity | `{"success":false,"message":"Validation failed","errors":[{"field":"quantity","code":"VALIDATION_ERROR","message":"Expected integer, received float"}]}` |
+| 400 | Negative quantity | `{"success":false,"message":"Validation failed","errors":[{"field":"quantity","code":"VALIDATION_ERROR","message":"Number must be greater than or equal to 0"}]}` |
+| 400 | Missing `asOf` | `{"success":false,"message":"Validation failed","errors":[{"field":"asOf","code":"VALIDATION_ERROR","message":"Required"}]}` |
+| 400 | `asOf` not ISO 8601 with timezone | `{"success":false,"message":"Validation failed","errors":[{"field":"asOf","code":"VALIDATION_ERROR","message":"must be an ISO 8601 timestamp, e.g. 2026-10-17T10:00:00Z"}]}` |
+| 400 | `asOf` > 5 min in the future | `{"success":false,"message":"asOf is in the future","errors":[{"code":"VALIDATION_ERROR","field":"asOf"}]}` |
+| 400 | Unknown field | `{"success":false,"message":"Validation failed","errors":[{"code":"VALIDATION_ERROR","message":"Unrecognized key(s) in object: 'warehouse'"}]}` |
+| 404 | Unknown SKU | `{"success":false,"message":"SKU not found: NOPE","errors":[{"code":"NOT_FOUND","field":"sku"}]}` |
+| 409 | Older `asOf` | `{"success":false,"message":"A newer stock update has already been applied","errors":[{"code":"STALE_UPDATE","field":"asOf","currentAsOf":"2026-10-23T04:27:41.000Z"}]}` |
+| 409 | SKU on two variants | `{"success":false,"message":"SKU DUP-SKU is used by 2 website variants; fix the duplicate before syncing","errors":[{"code":"DUPLICATE_SKU","field":"sku"}]}` |
 
 **Idempotency:** repeating a request with the same `asOf` changes nothing.
 
-**Bulk:** not implemented. Send one request per SKU (600/min). 🟦 A bulk endpoint can be added if your volumes need it.
-
 ```bash
-P=/api/v1/erp/stock/YOUR_SKU
-printf '%s' '{"quantity":25,"asOf":"2026-10-17T09:30:00Z"}' > body.json
+P=/api/v1/erp/stock/SKU-001
+printf '%s' '{"quantity":25,"asOf":"2026-10-23T04:27:41Z"}' > body.json
 sign PUT "$P" body.json
 curl -sS -X PUT "$BASE$P" -H "Content-Type: application/json" \
-  -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" -H "X-ERP-Signature: $SIG" \
-  --data-binary @body.json
+  -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" -H "X-ERP-Signature: $SIG" --data-binary @body.json
 ```
-
-**Source:** `erpController.ts` → `updateStock`. **Tests:** "Stock update" section of `erp.test.ts`.
-
-## ERP Workbench Catalogue Reads
-
-The admin workbench uses these authenticated, read-only routes to find variants and verify writes:
-
-| Method and path | Result |
-|---|---|
-| `GET /api/v1/erp/items?page=1&limit=50&search=SKU` | Existing products with real variants and pagination. Search matches product name or SKU. |
-| `GET /api/v1/erp/items/{sku}` | One product and the exact variant identified by the SKU. |
-
-`sku` is optional on the existing variant schema and is not globally unique-indexed. The list returns `null` for an unset SKU; exact lookup/update returns `404` when absent and `409 DUPLICATE_SKU` when more than one variant has that SKU. Use the variant SKU, not a product or order ID, for stock and variant edits.
-
-After `PUT /stock/{sku}`, read `GET /items/{sku}` and compare `data.variant.stock` with the stock endpoint's returned `data.quantity`. Stock sync accounts for website orders created after the supplied `asOf` snapshot, so that stored quantity can be lower than the raw ERP count.
 
 ---
 
-## 4. Item Add / Upsert — `POST /api/v1/erp/items`
+## 5. Item Add / Upsert — `POST /erp/items`
 
-✅ Implemented and locally tested · 🚀 not yet deployed
+| | |
+|---|---|
+| Direction | ERP → Website |
+| Full URL | `https://api.luxygalleria.com/api/v1/erp/items` |
+| Purpose | Create a product with its variants, or update the product that already carries these SKUs |
+| Headers | Section 2.2, `Content-Type: application/json` |
+| Postman | *1. Item Add / Upsert* |
 
-**Purpose:** create a product with its variants, or update the product that already carries these SKUs.
+**Body** (strict)
 
-**Full URL:** `https://api.luxygalleria.com/api/v1/erp/items`
-
-| Body field | Type | Required | Rules / mapping |
+| Field | Type | Required | Rules |
 |---|---|---|---|
 | `name` | string | On create | 1–200 characters |
 | `description` | string | On create | 1–5000 characters |
-| `category` | string | On create | Name (case-insensitive) or id of an **existing** website category |
-| `brand` | string | No | Name of an existing brand |
-| `brandId` | string | No | 24-hex id of an existing brand (takes precedence over `brand`) |
+| `category` | string | On create | Name (case-insensitive) or 24-hex id of an **existing** website category |
+| `brand` | string | No | Name (case-insensitive) of an existing brand |
+| `brandId` | string | No | 24-hex id of an existing brand; takes precedence over `brand` |
 | `imageUrls` | string[] | No | Up to 10 `https://` URLs. **Replaces** the product's image list when sent; untouched when omitted. |
-| `variants` | array | **Yes** | 1–50 entries; each SKU at most once |
+| `variants` | object[] | **Yes** | 1–50 entries; each `sku` at most once |
 | `variants[].sku` | string | **Yes** | 1–64 characters; the matching key |
-| `variants[].size` / `volume` | string | No | e.g. `"30ml"`. Default `"Standard"` for new variants. |
-| `variants[].flavor` | string | No | Default `"Default"` |
-| `variants[].offerPrice` | number | For new variants | Selling price, ≥ 0 |
-| `variants[].actualPrice` | number | For new variants | MRP; must be ≥ `offerPrice` |
-| `variants[].stock` | integer | No | **Used only when the variant is created.** Existing variants change stock only via Section 3. |
-| `variants[].weight` | number | No | kg; if omitted on create, parsed from `size` (e.g. `"500g"` → 0.5) |
+| `variants[].size` or `variants[].volume` | string | No | 1–50 characters, e.g. `"30ml"`. Both name the same value; `size` wins if both are sent. New variants default to `"Standard"`. |
+| `variants[].flavor` | string | No | 1–50 characters; new variants default to `"Default"` |
+| `variants[].offerPrice` | number | For new variants | Selling price, 0–10,000,000 |
+| `variants[].actualPrice` | number | For new variants | MRP, 0–10,000,000; must be ≥ `offerPrice` |
+| `variants[].stock` | integer | No | 0–1,000,000. **Applied only when the variant is created** (default 0). Existing variants change stock only through Stock Update. |
+| `variants[].weight` | number | No | Kilograms, 0–1000. If omitted on create, it is parsed from the size (e.g. `"500g"` → 0.5, `"30ml"` → 0.03), otherwise 0. |
 | `variants[].image` | string | No | `https://` URL |
 
 **Matching rules**
 
 | Situation | Result |
 |---|---|
-| No SKU in the request exists on the website | A new product is created → `201` |
-| The SKUs belong to one existing product | That product is updated → `200` |
-| On update | Only supplied fields change. Existing variants not in the request are kept. New SKUs are added as new variants. |
-| SKUs belong to two different website products | `409 CONFLICT` |
+| No SKU in the request exists on the website | New product created → `201`, `action: "created"` |
+| All existing SKUs belong to one product | That product is updated → `200`, `action: "updated"`. Only supplied fields change, variants not in the request are kept, and new SKUs are added as new variants. |
+| SKUs belong to two different products | `409 CONFLICT` |
 | A SKU exists on two website variants | `409 DUPLICATE_SKU` |
-| Unknown category or brand | `400` (categories and brands are not auto-created 🟦) |
+| Unknown category or brand | `400`. Categories and brands are never auto-created (**NEEDS CONFIRMATION** whether they should be). |
 
-**Request**
+**Request — create**
 
 ```json
 {
@@ -300,43 +404,73 @@ After `PUT /stock/{sku}`, read `GET /items/{sku}` and compare `data.variant.stoc
   "description": "Hydrating face serum",
   "category": "Skincare",
   "brand": "Lumina",
-  "imageUrls": ["https://images.example-erp.com/YOUR_SKU/main.jpg"],
+  "imageUrls": ["https://images.example.com/SKU-001/main.jpg"],
   "variants": [
-    { "sku": "YOUR_SKU", "size": "30ml", "offerPrice": 499, "actualPrice": 599, "stock": 10, "weight": 0.05 }
+    { "sku": "SKU-001", "size": "30ml", "offerPrice": 499, "actualPrice": 599, "stock": 10, "weight": 0.05 }
   ]
 }
 ```
 
-**Success `201` (created) / `200` (updated)**
+**Success `201` — created**
 
 ```json
 {
   "success": true,
   "message": "Item created",
   "data": {
-    "productId": "YOUR_PRODUCT_ID",
+    "productId": "6adae279d6f61832746849b1",
     "action": "created",
     "variants": [
-      {
-        "sku": "YOUR_SKU", "variantId": "YOUR_VARIANT_ID", "size": "30ml", "flavor": "Default",
-        "offerPrice": 499, "actualPrice": 599, "stock": 10, "weight": 0.05, "image": null, "action": "created"
-      }
+      { "sku": "SKU-001", "variantId": "6adae279d6f61832746849b2", "size": "30ml", "flavor": "Default", "offerPrice": 499, "actualPrice": 599, "stock": 10, "weight": 0.05, "image": null, "action": "created" }
     ]
   }
 }
 ```
 
+**Request — update an existing SKU and add a variant**
+
+```json
+{ "name": "Rose Serum", "variants": [ { "sku": "SKU-001", "offerPrice": 479 }, { "sku": "SKU-002", "size": "50ml", "offerPrice": 699, "actualPrice": 799 } ] }
+```
+
+**Success `200` — updated**
+
+```json
+{
+  "success": true,
+  "message": "Item updated",
+  "data": {
+    "productId": "6adae279d6f61832746849b1",
+    "action": "updated",
+    "variants": [
+      { "sku": "SKU-001", "variantId": "6adae279d6f61832746849b2", "size": "30ml", "flavor": "Default", "offerPrice": 479, "actualPrice": 599, "stock": 10, "weight": 0.05, "image": null, "action": "updated" },
+      { "sku": "SKU-002", "variantId": "6adae279d6f61832746849b8", "size": "50ml", "flavor": "Default", "offerPrice": 699, "actualPrice": 799, "stock": 0, "weight": 0.05, "image": null, "action": "created" }
+    ]
+  }
+}
+```
+
+`data.variants` lists only the SKUs in the request. `SKU-002` was sent without `weight`, so its weight was parsed from `"50ml"` (0.05 kg).
+
 **Errors**
 
-| HTTP | Example |
-|---|---|
-| 400 | Missing on create: `{ "message": "Validation failed", "errors": [{ "field": "name", "code": "VALIDATION_ERROR", "message": "required when creating an item" }] }` |
-| 400 | Unknown field: `{ "errors": [{ "code": "VALIDATION_ERROR", "message": "Unrecognized key(s) in object: 'color'" }] }` |
-| 400 | `offerPrice cannot be higher than actualPrice (MRP)`; `Unknown category: Nope`; `Each SKU may appear only once per request` |
-| 409 | `These SKUs belong to different website products; send them separately` (`CONFLICT`) |
-| 409 | `DUPLICATE_SKU` (see Section 3) |
+| HTTP | When | Response |
+|---|---|---|
+| 400 | Empty body | `{"success":false,"message":"Validation failed","errors":[{"field":"variants","code":"VALIDATION_ERROR","message":"Required"}]}` |
+| 400 | Create without `name`/`description`/`category` | `{"success":false,"message":"Validation failed","errors":[{"field":"name","code":"VALIDATION_ERROR","message":"required when creating an item"}, …]}` (one entry per missing field) |
+| 400 | Unknown field | `{"success":false,"message":"Validation failed","errors":[{"code":"VALIDATION_ERROR","message":"Unrecognized key(s) in object: 'color'"}]}` |
+| 400 | Non-https URL | `{"success":false,"message":"Validation failed","errors":[{"field":"imageUrls.0","code":"VALIDATION_ERROR","message":"must be an https URL"}]}` |
+| 400 | New variant without prices | `{"success":false,"message":"offerPrice and actualPrice are required for a new variant","errors":[{"code":"VALIDATION_ERROR","field":"variants.0"}]}` |
+| 400 | `offerPrice` > `actualPrice` | `{"success":false,"message":"offerPrice cannot be higher than actualPrice (MRP)","errors":[{"code":"VALIDATION_ERROR","field":"variants.0.offerPrice"}]}` |
+| 400 | Unknown category | `{"success":false,"message":"Unknown category: Nope","errors":[{"code":"VALIDATION_ERROR","field":"category"}]}` |
+| 400 | Unknown brand | `{"success":false,"message":"Unknown brand","errors":[{"code":"VALIDATION_ERROR","field":"brand"}]}` |
+| 400 | Same SKU twice in one request | `{"success":false,"message":"Each SKU may appear only once per request","errors":[{"code":"VALIDATION_ERROR","field":"variants"}]}` |
+| 409 | SKUs of two products | `{"success":false,"message":"These SKUs belong to different website products; send them separately","errors":[{"code":"CONFLICT","field":"variants"}]}` |
+| 409 | SKU on two variants | `{"success":false,"message":"SKU DUP-SKU is used by 2 website variants; fix the duplicate before syncing","errors":[{"code":"DUPLICATE_SKU","field":"sku"}]}` |
 
-**Idempotency:** repeating the request updates the same product; it never creates a duplicate.
+**Idempotency:** repeating the request updates the same product and never creates a duplicate.
+
+⚠️ **Production:** the website has no inactive or draft product flag, so a created product is immediately visible on the storefront.
 
 ```bash
 P=/api/v1/erp/items
@@ -345,42 +479,35 @@ curl -sS -X POST "$BASE$P" -H "Content-Type: application/json" \
   -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" -H "X-ERP-Signature: $SIG" --data-binary @item.json
 ```
 
-**Source:** `erpController.ts` → `upsertItem`. **Tests:** "Item add / upsert" section.
-
 ---
 
-## 5. Item Edit — `PATCH /api/v1/erp/items/{sku}`
+## 6. Item Edit — `PATCH /erp/items/{sku}`
 
-✅ Implemented and locally tested · 🚀 not yet deployed
+| | |
+|---|---|
+| Direction | ERP → Website |
+| Full URL | `https://api.luxygalleria.com/api/v1/erp/items/{sku}` |
+| Purpose | Change only the supplied fields of the variant `sku` and of its product |
+| Headers | Section 2.2, `Content-Type: application/json` |
+| Postman | *2. Item Edit* |
 
-**Purpose:** change only the supplied fields of the variant `sku` and its product.
+**Path parameter:** `sku` — as in Section 4.
 
-**Full URL:** `https://api.luxygalleria.com/api/v1/erp/items/{sku}`
-
-**Allowed fields** (at least one; anything else → `400`):
+**Body** (strict; at least one field; types and rules as in Section 5)
 
 | Level | Fields |
 |---|---|
 | Product | `name`, `description`, `category`, `brand`, `brandId`, `imageUrls` (replaces the list) |
 | Variant | `size` / `volume`, `flavor`, `offerPrice`, `actualPrice`, `weight`, `image` |
 
-Types and rules are the same as Section 4.
+Not allowed: `stock` (use Stock Update), `sku` (changing a SKU is not supported; **NEEDS CONFIRMATION** whether SKUs can change in the ERP), `variants`.
 
-**Not allowed**
-
-- `stock` — use Section 3.
-- `sku` — changing a SKU is not supported 🟦.
-
-**Guarantees**
-
-- Omitted fields, other variants, images and stock are untouched.
-- The variant id never changes.
-- No product is created; an unknown SKU returns `404`.
+**Guarantees:** omitted fields, other variants and stock are untouched. The variant id never changes. No product is created.
 
 **Request**
 
 ```json
-{ "offerPrice": 449, "name": "Rose Serum — New Pack" }
+{ "offerPrice": 449, "name": "Rose Serum - New Pack" }
 ```
 
 **Success `200`**
@@ -390,63 +517,68 @@ Types and rules are the same as Section 4.
   "success": true,
   "message": "Item updated",
   "data": {
-    "productId": "YOUR_PRODUCT_ID",
-    "name": "Rose Serum — New Pack",
+    "productId": "6adae279d6f61832746849b1",
+    "name": "Rose Serum - New Pack",
     "category": "Skincare",
-    "images": ["https://images.example-erp.com/YOUR_SKU/main.jpg"],
+    "images": ["https://images.example.com/SKU-001/main.jpg"],
     "updatedFields": ["offerPrice", "name"],
-    "variant": {
-      "sku": "YOUR_SKU", "variantId": "YOUR_VARIANT_ID", "size": "30ml", "flavor": "Default",
-      "offerPrice": 449, "actualPrice": 599, "stock": 25, "weight": 0.05, "image": null
-    }
+    "variant": { "sku": "SKU-001", "variantId": "6adae279d6f61832746849b2", "size": "30ml", "flavor": "Default", "offerPrice": 449, "actualPrice": 599, "stock": 10, "weight": 0.05, "image": null }
   }
 }
 ```
 
-**Errors:**
-- `400` — empty body, unknown or disallowed field (including `stock`), price above MRP, unknown category/brand.
-- `404` — SKU not found.
-- `409` — `DUPLICATE_SKU`.
+`updatedFields` lists the fields you sent, in the order you sent them.
 
-**Idempotency:** naturally repeatable; the same body gives the same result.
+**Errors**
+
+| HTTP | When | Response |
+|---|---|---|
+| 400 | Empty body | `{"success":false,"message":"Validation failed","errors":[{"code":"VALIDATION_ERROR","message":"send at least one field to change"}]}` |
+| 400 | `stock` or another disallowed field | `{"success":false,"message":"Validation failed","errors":[{"code":"VALIDATION_ERROR","message":"Unrecognized key(s) in object: 'stock'"}, …]}` |
+| 400 | Price above MRP | `{"success":false,"message":"offerPrice cannot be higher than actualPrice (MRP)","errors":[{"code":"VALIDATION_ERROR","field":"offerPrice"}]}` |
+| 400 | Unknown category/brand | As in Section 5 |
+| 404 | Unknown SKU | `{"success":false,"message":"SKU not found: NOPE","errors":[{"code":"NOT_FOUND","field":"sku"}]}` |
+| 409 | SKU on two variants | `DUPLICATE_SKU`, as in Section 4 |
+
+**Idempotency:** the same body always gives the same result.
 
 ```bash
-P=/api/v1/erp/items/YOUR_SKU
+P=/api/v1/erp/items/SKU-001
 printf '%s' '{"offerPrice":449}' > patch.json
 sign PATCH "$P" patch.json
 curl -sS -X PATCH "$BASE$P" -H "Content-Type: application/json" \
   -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" -H "X-ERP-Signature: $SIG" --data-binary @patch.json
 ```
 
-**Source:** `erpController.ts` → `patchItem`. **Tests:** "Item edit" section.
-
 ---
 
-## 6. Order Checking — `GET /api/v1/erp/orders`
+## 7. Order Checking — `GET /erp/orders`
 
-✅ Implemented and locally tested · 🚀 not yet deployed
+| | |
+|---|---|
+| Direction | ERP reads Website |
+| Full URL | `https://api.luxygalleria.com/api/v1/erp/orders` |
+| Purpose | List orders page by page, oldest change first, for incremental sync |
+| Headers | Section 2.2 (no body; sign an empty body) |
+| Postman | *4. Order Checking (list)* |
 
-**Purpose:** list orders page by page, oldest change first, for incremental sync.
+**Query parameters** (unknown parameters → `400`)
 
-**Full URL:** `https://api.luxygalleria.com/api/v1/erp/orders`
-
-| Query parameter | Type | Default | Rules |
+| Name | Type | Default | Rules |
 |---|---|---|---|
 | `page` | integer | 1 | ≥ 1 |
 | `limit` | integer | 50 | 1–100 |
 | `status` | string | — | `processing` \| `shipped` \| `delivered` \| `cancelled` |
 | `paymentStatus` | string | — | `pending` \| `completed` \| `failed` \| `refunded` |
-| `updatedSince` | ISO 8601 | — | Orders with `updatedAt >= updatedSince` |
+| `updatedSince` | string | — | ISO 8601 with timezone; returns orders with `updatedAt >= updatedSince` |
 
-Unknown query parameters → `400`.
+**Sync rules**
 
-**Order and incremental sync**
+- Sorted by `updatedAt`, then `orderId`, ascending (stable paging).
+- Keep the newest `updatedAt` received and pass it as `updatedSince` next time. The boundary order is returned again, so de-duplicate by `orderId`.
+- The website saves an order only after the customer's payment is verified. Orders therefore normally have `paymentStatus: "completed"`.
 
-- Results are sorted by `updatedAt`, then `orderId` (stable).
-- To sync incrementally, keep the newest `updatedAt` you received and pass it as `updatedSince` next time. You will see that last order again, so de-duplicate by `orderId`.
-- Only orders that have been paid and saved by the website exist; checkout saves an order after payment verification.
-
-**Success `200`**
+**Success `200`** (`?page=1&limit=2`)
 
 ```json
 {
@@ -454,9 +586,9 @@ Unknown query parameters → `400`.
   "message": "Orders fetched",
   "data": [
     {
-      "orderId": "YOUR_ORDER_ID",
-      "createdAt": "2026-10-17T08:00:00.000Z",
-      "updatedAt": "2026-10-17T08:00:05.000Z",
+      "orderId": "6adae2739dd483d873e04a65",
+      "createdAt": "2026-10-23T04:28:35.725Z",
+      "updatedAt": "2026-10-23T04:28:35.725Z",
       "orderStatus": "processing",
       "paymentStatus": "completed",
       "currency": "INR",
@@ -464,24 +596,36 @@ Unknown query parameters → `400`.
       "discount": 0,
       "shippingFee": 40,
       "total": 1038,
-      "customer": { "customerId": "YOUR_CUSTOMER_ID", "name": "Customer Name", "email": "customer@example.com" },
+      "customer": { "customerId": "6adae2739dd483d873e04a62", "name": "Customer Name", "email": "customer@example.com" },
       "items": [
-        { "productId": "YOUR_PRODUCT_ID", "variantId": "YOUR_VARIANT_ID", "sku": "YOUR_SKU", "name": "Rose Serum", "size": "30ml", "quantity": 2, "unitPrice": 499, "lineTotal": 998 }
+        { "productId": "6adae2739dd483d873e04a63", "variantId": "6adae2739dd483d873e04a64", "sku": null, "name": null, "size": "30ml", "quantity": 2, "unitPrice": 499, "lineTotal": 998 }
       ],
       "erp": { "erpOrderId": null, "trackingNumber": null }
     }
   ],
-  "pagination": { "page": 1, "limit": 50, "total": 1, "pages": 1 }
+  "pagination": { "page": 1, "limit": 2, "total": 2, "pages": 1 }
 }
 ```
 
+(One of the two returned orders shown.)
+
 **Field notes**
 
-- `items[].sku` is the variant's **current** SKU, looked up when you call. It is `null` if the variant has no SKU or was deleted.
-- `currency` is always `INR`; the store charges only INR and does not store it per order.
+- `items[].sku` and `items[].name` are looked up from the product **when you call**; the order does not store them. They are `null` when the product or variant has been deleted or has no SKU, as in this captured example.
+- `currency` is always `INR`.
 - `discount` is currently always `0`.
+- `erp.*` is filled by the Order Status Callback.
 
-**Errors:** `400` (for example `limit=500`, `status=lost`, a bad date, or an unknown parameter), `401`.
+**Errors**
+
+| HTTP | When | Response |
+|---|---|---|
+| 400 | `limit=500` | `{"success":false,"message":"Validation failed","errors":[{"field":"limit","code":"VALIDATION_ERROR","message":"Number must be less than or equal to 100"}]}` |
+| 400 | `status=lost` | `{"success":false,"message":"Validation failed","errors":[{"field":"status","code":"VALIDATION_ERROR","message":"Invalid enum value. Expected 'processing' \| 'shipped' \| 'delivered' \| 'cancelled', received 'lost'"}]}` |
+| 400 | `updatedSince=yesterday` | `{"success":false,"message":"Validation failed","errors":[{"field":"updatedSince","code":"VALIDATION_ERROR","message":"must be an ISO 8601 timestamp, e.g. 2026-10-17T10:00:00Z"}]}` |
+| 400 | Unknown parameter | `{"success":false,"message":"Validation failed","errors":[{"code":"VALIDATION_ERROR","message":"Unrecognized key(s) in object: 'foo'"}]}` |
+
+Read-only.
 
 ```bash
 P='/api/v1/erp/orders?updatedSince=2026-10-17T00:00:00Z&limit=50'
@@ -489,161 +633,184 @@ sign GET "$P" ""
 curl -sS "$BASE$P" -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" -H "X-ERP-Signature: $SIG"
 ```
 
-**Source:** `erpController.ts` → `listOrders`. **Tests:** "Orders" section.
-
 ---
 
-## 7. Order Details — `GET /api/v1/erp/orders/{orderId}`
+## 8. Order Details — `GET /erp/orders/{orderId}`
 
-✅ Implemented and locally tested · 🚀 not yet deployed
+| | |
+|---|---|
+| Direction | ERP reads Website |
+| Full URL | `https://api.luxygalleria.com/api/v1/erp/orders/{orderId}` |
+| Purpose | One order by its website order id, with shipping and payment details |
+| Headers | Section 2.2 (no body) |
+| Postman | *5. Order Details* |
 
-**Purpose:** return one order by its website order id (24 hex characters).
+**Path parameter:** `orderId` — 24 hexadecimal characters (from Order Checking).
 
-**Full URL:** `https://api.luxygalleria.com/api/v1/erp/orders/{orderId}`
-
-**Success `200`** — every field in Section 6, plus:
+**Success `200`** — all fields of Section 7, plus `customer.phone`, `shippingAddress`, `payment` and `statusUpdatedAt`:
 
 ```json
 {
   "success": true,
   "message": "Order fetched",
   "data": {
-    "orderId": "YOUR_ORDER_ID",
+    "orderId": "6adae2739dd483d873e04a65",
+    "createdAt": "2026-10-23T04:28:35.725Z",
+    "updatedAt": "2026-10-23T04:28:35.725Z",
     "orderStatus": "processing",
     "paymentStatus": "completed",
     "currency": "INR",
-    "subtotal": 998, "discount": 0, "shippingFee": 40, "total": 1038,
-    "customer": { "customerId": "YOUR_CUSTOMER_ID", "name": "Customer Name", "email": "customer@example.com", "phone": "CUSTOMER_PHONE" },
-    "shippingAddress": { "street": "Street", "city": "City", "state": "State", "zipCode": "000000", "country": "India" },
+    "subtotal": 998,
+    "discount": 0,
+    "shippingFee": 40,
+    "total": 1038,
+    "customer": { "customerId": "6adae2739dd483d873e04a62", "name": "Customer Name", "email": "customer@example.com", "phone": "9999999999" },
     "items": [
-      { "productId": "YOUR_PRODUCT_ID", "variantId": "YOUR_VARIANT_ID", "sku": "YOUR_SKU", "name": "Rose Serum", "size": "30ml", "quantity": 2, "unitPrice": 499, "lineTotal": 998 }
+      { "productId": "6adae2739dd483d873e04a63", "variantId": "6adae2739dd483d873e04a64", "sku": null, "name": null, "size": "30ml", "quantity": 2, "unitPrice": 499, "lineTotal": 998 }
     ],
-    "payment": { "method": "razorpay", "status": "completed", "gatewayOrderId": "GATEWAY_ORDER_REF", "gatewayPaymentId": "GATEWAY_PAYMENT_REF" },
     "erp": { "erpOrderId": null, "trackingNumber": null },
-    "statusUpdatedAt": null,
-    "createdAt": "2026-10-17T08:00:00.000Z",
-    "updatedAt": "2026-10-17T08:00:05.000Z"
+    "shippingAddress": { "street": "Street", "city": "City", "state": "State", "zipCode": "000000", "country": "India" },
+    "payment": { "method": "razorpay", "status": "completed", "gatewayOrderId": "order_TEST…", "gatewayPaymentId": "pay_TEST" },
+    "statusUpdatedAt": null
   }
 }
 ```
 
-**Not returned, because the website does not hold this data** (fields are not invented):
+`statusUpdatedAt` is the `occurredAt` of the last Order Status Callback that was applied or unchanged; `null` before any.
 
-- tax / GST / HSN amounts
+**Not returned, because the website does not store it:**
+- tax, GST and HSN amounts
 - billing address
-- recipient name and phone
+- recipient name and phone (separate from the customer account)
 - apartment and landmark
 - customer GSTIN
-- order number
+- a human-readable order number
 
-🟦 Tell us which of these your sales-order requires.
+**NEEDS CONFIRMATION:** which of these your sales order requires. The payment signature and any passwords or tokens are never returned.
 
-The payment signature, passwords and tokens are never returned.
+**Errors**
 
-**Errors:**
-- `400` `orderId must be a 24-character hex id`.
-- `404` `Order not found`.
+| HTTP | When | Response |
+|---|---|---|
+| 400 | Malformed id | `{"success":false,"message":"orderId must be a 24-character hex id","errors":[{"code":"VALIDATION_ERROR","field":"orderId"}]}` |
+| 404 | Unknown id | `{"success":false,"message":"Order not found","errors":[{"code":"NOT_FOUND","field":"orderId"}]}` |
+
+Read-only.
 
 ```bash
-P=/api/v1/erp/orders/YOUR_ORDER_ID
+P=/api/v1/erp/orders/6adae2739dd483d873e04a65
 sign GET "$P" ""
 curl -sS "$BASE$P" -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" -H "X-ERP-Signature: $SIG"
 ```
 
-**Source:** `erpController.ts` → `getOrder`. **Tests:** "Orders" section.
-
 ---
 
-## 8. Order Status Changing — `POST /api/v1/erp/webhooks/order-status`
+## 9. Order Status Callback — `POST /erp/webhooks/order-status`
 
-✅ Implemented and locally tested · 🚀 not yet deployed · 🟦 status list and transitions to be confirmed
+| | |
+|---|---|
+| Direction | ERP → Website |
+| Full URL | `https://api.luxygalleria.com/api/v1/erp/webhooks/order-status` |
+| Purpose | The ERP reports that an order's fulfilment status changed |
+| Headers | Section 2.2, `Content-Type: application/json` |
+| Postman | *7. Order Status Callback* |
 
-**Purpose:** the ERP tells the website that an order's fulfilment status changed.
+**Body** (unknown fields are ignored)
 
-**Full URL:** `https://api.luxygalleria.com/api/v1/erp/webhooks/order-status`
-
-| Body field | Type | Required | Rules |
+| Field | Type | Required | Rules |
 |---|---|---|---|
-| `eventId` | string | Yes | 1–100 characters, unique per event; redelivery of the same id is ignored |
+| `eventId` | string | Yes | 1–100 characters, unique per event. Redelivery of the same id is acknowledged without effect. |
 | `orderId` | string | Yes | Website order id (24 hex) |
 | `status` | string | Yes | `processing` \| `shipped` \| `delivered` \| `cancelled` |
-| `occurredAt` | string | Yes | ISO 8601 with timezone; when it happened in the ERP |
-| `erpOrderId` | string | No | Stored the first time. A different value later → `409`. |
-| `trackingNumber` | string | No | Stored with the status |
+| `occurredAt` | string | Yes | ISO 8601 with timezone; when the change happened in the ERP |
+| `erpOrderId` | string | No | 1–100 characters. Stored the first time; a different value later → `409`. |
+| `trackingNumber` | string | No | 1–100 characters. Stored with an applied or unchanged status. |
 
-Other fields are ignored.
-
-**Allowed transitions**
+**Allowed transitions** (**NEEDS CONFIRMATION**: your status list and how it maps to these four)
 
 | From | To |
 |---|---|
 | `processing` | `shipped`, `delivered`, `cancelled` |
 | `shipped` | `delivered`, `cancelled` |
-| `delivered`, `cancelled` | Final — no change allowed |
+| `delivered`, `cancelled` | None (final) |
 
-**Outcomes**
+**Processing order and outcomes**
 
-| Situation | Response |
-|---|---|
-| Valid forward move | `200`, `outcome: "applied"`; the customer is emailed **once** |
-| Same status as now | `200`, `outcome: "unchanged"` (tracking number / ERP id still saved; no email) |
-| `occurredAt` not newer than the last applied event | `200`, `outcome: "stale"`; nothing changes, so an older event can never revert a newer state |
-| Same `eventId` again | `200`, `duplicate: true`; no side effects |
-| Backward or from a final state | `409 INVALID_TRANSITION`; not recorded, so you can send a corrected event |
-| Unknown order | `404` |
-| Order changed concurrently | `409 CONFLICT`; retry the event |
+| Step | Situation | Response |
+|---|---|---|
+| 1 | Body invalid | `400` |
+| 2 | `eventId` already processed | `200`, `duplicate: true`, the original `outcome`; no side effects |
+| 3 | Order not found | `404` |
+| 4 | `erpOrderId` differs from the one already stored | `409 CONFLICT` |
+| 5 | `occurredAt` not newer than the last applied event | `200`, `outcome: "stale"`; status, tracking and `statusUpdatedAt` unchanged (a new `erpOrderId` is still stored) |
+| 6 | Same status as now | `200`, `outcome: "unchanged"`; tracking number and `statusUpdatedAt` updated; no email |
+| 7 | Allowed transition | `200`, `outcome: "applied"`; status, tracking and `statusUpdatedAt` updated; **the customer is emailed once** |
+| 7 | Transition not allowed | `409 INVALID_TRANSITION`; nothing recorded, so a corrected event can be sent with the same `eventId` |
+| — | Order changed concurrently | `409 CONFLICT`, `Order changed while processing this event; retry it` |
 
-**What this endpoint does not do**
+`stale`, `unchanged` and `applied` events are recorded by `eventId`.
 
-- **Refunds:** none. Cancelling does not refund the payment; refunds remain a manual Razorpay action 🟦.
-- **Stock:** not restored. The ERP owns stock and should send the corrected quantity through Section 3 🟦.
-- The cancellation email uses the website's existing text, which tells the customer a refund will be initiated if they were charged.
+**What this endpoint does not do:**
+- **Refunds:** cancelling does not refund the payment; refunds remain a manual Razorpay action.
+- **Stock:** cancelling does not restore stock; send the corrected figure through Stock Update.
+- **NEEDS CONFIRMATION:** who owns refunds and restocking. The cancellation email uses the website's existing text, which tells the customer a refund will be initiated if they were charged.
 
 **Request**
 
 ```json
 {
-  "eventId": "EVENT-001",
-  "orderId": "YOUR_ORDER_ID",
-  "erpOrderId": "ERP_ORDER_ID",
+  "eventId": "EVT-1",
+  "orderId": "6adae2739dd483d873e04a65",
+  "erpOrderId": "SO-1001",
   "status": "shipped",
   "trackingNumber": "TRACK-001",
-  "occurredAt": "2026-10-17T10:00:00Z"
+  "occurredAt": "2026-10-23T04:18:41Z"
 }
 ```
 
-**Success `200`**
+**Success `200` — applied**
 
 ```json
 {
   "success": true,
   "message": "Status updated",
-  "data": {
-    "eventId": "EVENT-001",
-    "orderId": "YOUR_ORDER_ID",
-    "previousStatus": "processing",
-    "orderStatus": "shipped",
-    "applied": true,
-    "outcome": "applied",
-    "duplicate": false
-  }
+  "data": { "eventId": "EVT-1", "orderId": "6adae2739dd483d873e04a65", "previousStatus": "processing", "orderStatus": "shipped", "applied": true, "outcome": "applied", "duplicate": false }
 }
 ```
 
-**Duplicate `200`:** `{ "success": true, "message": "Event already processed", "data": { "eventId": "EVENT-001", "duplicate": true, "outcome": "applied" } }`
+**Success `200` — duplicate `eventId`**
+
+```json
+{ "success": true, "message": "Event already processed", "data": { "eventId": "EVT-1", "duplicate": true, "outcome": "applied" } }
+```
+
+**Success `200` — unchanged or stale**
+
+```json
+{
+  "success": true,
+  "message": "Event recorded; status not changed",
+  "data": { "eventId": "EVT-3", "orderId": "6adae2739dd483d873e04a65", "previousStatus": "shipped", "orderStatus": "shipped", "applied": false, "outcome": "stale", "duplicate": false }
+}
+```
 
 **Errors**
 
-| HTTP | Example |
-|---|---|
-| 400 | `{ "message": "Validation failed", "errors": [{ "field": "status", "code": "VALIDATION_ERROR", "message": "Invalid enum value. Expected 'processing' \| 'shipped' \| 'delivered' \| 'cancelled', received 'lost'" }] }` |
-| 404 | `{ "message": "Order not found", "errors": [{ "code": "NOT_FOUND", "field": "orderId" }] }` |
-| 409 | `{ "message": "Order cannot move from shipped to processing", "errors": [{ "code": "INVALID_TRANSITION", "field": "status" }] }` |
+| HTTP | When | Response |
+|---|---|---|
+| 400 | Missing fields | `{"success":false,"message":"Validation failed","errors":[{"field":"eventId","code":"VALIDATION_ERROR","message":"Required"},{"field":"status",…},{"field":"occurredAt",…}]}` |
+| 400 | Bad status | `{"success":false,"message":"Validation failed","errors":[{"field":"status","code":"VALIDATION_ERROR","message":"Invalid enum value. Expected 'processing' \| 'shipped' \| 'delivered' \| 'cancelled', received 'lost'"}]}` |
+| 404 | Unknown order | `{"success":false,"message":"Order not found","errors":[{"code":"NOT_FOUND","field":"orderId"}]}` |
+| 409 | Backward | `{"success":false,"message":"Order cannot move from shipped to processing","errors":[{"code":"INVALID_TRANSITION","field":"status"}]}` |
+| 409 | From a final state | `{"success":false,"message":"Order cannot move from cancelled to shipped","errors":[{"code":"INVALID_TRANSITION","field":"status"}]}` |
+| 409 | `erpOrderId` mismatch | `{"success":false,"message":"erpOrderId does not match the ERP order already linked to this order","errors":[{"code":"CONFLICT","field":"erpOrderId"}]}` |
 
-**Delivery and retry**
+**Delivery and retry:**
+- Treat any non-`2xx` response or a timeout as failed.
+- Retry with backoff using the **same `eventId`**, re-signing each attempt.
+- Timeout value: **NEEDS CONFIRMATION**. A typical response takes well under one second.
 
-- Treat any non-`2xx` response or timeout as failed.
-- Retry with backoff and the **same `eventId`**, re-signing each attempt.
+⚠️ **Production:** an applied change is visible to the customer and sends them an email.
 
 ```bash
 P=/api/v1/erp/webhooks/order-status
@@ -652,180 +819,310 @@ curl -sS -X POST "$BASE$P" -H "Content-Type: application/json" \
   -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" -H "X-ERP-Signature: $SIG" --data-binary @event.json
 ```
 
-**Source:** `erpController.ts` → `orderStatusWebhook`; event log `src/models/ErpEvent.ts`; email `paymentController.ts` → `sendOrderStatusEmail`. **Tests:** "Order-status webhook" section.
-
 ---
 
-## 9. Image Upload — `POST /api/v1/erp/images`
+## 10. Image Upload — `POST /erp/images`
 
-✅ Implemented and locally tested (storage stubbed in tests) · 🚀 real Cloudinary upload to be verified after deployment
-
-**Purpose:** upload one product image and get back a hosted URL. Then use that URL in `imageUrls` or `variants[].image` (Sections 4–5).
-
-**Simpler alternative:** if your images already have public `https://` URLs, send those directly in the item APIs and skip this endpoint.
-
-**Full URL:** `https://api.luxygalleria.com/api/v1/erp/images`
-
-| Item | Value |
+| | |
 |---|---|
-| Content-Type | `multipart/form-data` |
-| File field | `image` — exactly one file, no other form fields |
-| Formats | JPG/JPEG, PNG, WEBP. Extension, declared content type **and** actual file bytes must agree. |
-| Max size | 15 MB |
-| Signature body | SHA-256 of the **file bytes** (not the multipart envelope) |
-| Storage | Cloudinary, folder `luxygalleria_products`. Never server disk. |
+| Direction | ERP → Website |
+| Full URL | `https://api.luxygalleria.com/api/v1/erp/images` |
+| Purpose | Upload one product image and receive a hosted `https://` URL to use in `imageUrls` or `variants[].image` (Sections 5–6) |
+| Headers | Section 2.2; `Content-Type: multipart/form-data; boundary=…` (set by your HTTP client) |
+| Postman | *6. Image Upload* |
 
-**Success `201`**
+If your images already have public `https://` URLs, you can send those directly in the item endpoints and skip this one.
+
+**Multipart body**
+
+| Item | Rule |
+|---|---|
+| Field name | `image`: exactly one file, and no other fields |
+| Formats | JPG/JPEG, PNG, WEBP. The file extension, the part's content type (`image/jpeg`, `image/png`, `image/webp`) **and** the actual file bytes must all agree. |
+| Maximum size | 15 MB |
+| Signed body | SHA-256 of the **file bytes** only (Section 2.3) |
+| Storage | The website's Cloudinary account, folder `luxygalleria_products` |
+
+**Success `201`** (shape from source and the automated test with storage stubbed; a real stored-image response has not been captured)
 
 ```json
-{
-  "success": true,
-  "message": "Image uploaded",
-  "data": { "url": "https://res.cloudinary.com/<cloud>/image/upload/v1/luxygalleria_products/<id>.png", "bytes": 48213, "contentType": "image/png" }
-}
+{ "success": true, "message": "Image uploaded", "data": { "url": "https://res.cloudinary.com/…", "bytes": 48213, "contentType": "image/png" } }
 ```
+
+`url` is the Cloudinary `secure_url` (**NEEDS CONFIRMATION**: exact URL format, until a real upload is verified).
 
 **Errors**
 
-| HTTP | When |
-|---|---|
-| 400 | No file; wrong field name; extra fields; wrong type; bytes do not match the extension or content type |
-| 401 | Bad signature (checked before anything is stored) |
-| 413 | Larger than 15 MB |
-| 502 | Cloudinary failed — retry |
-| 503 | Image storage not configured on the server |
+Multipart errors (`400` and `413`) are returned **before** the signature is checked. A request with an invalid signature is never stored.
+
+| HTTP | When | Response |
+|---|---|---|
+| 400 | No file | `{"success":false,"message":"Send the image as multipart/form-data in the field \"image\"","errors":[{"code":"VALIDATION_ERROR","field":"image"}]}` |
+| 400 | Wrong field name, extra field or file | `{"success":false,"message":"Send exactly one file in the multipart field \"image\" (Unexpected file field)","errors":[{"code":"VALIDATION_ERROR","field":"image"}]}` (text in brackets varies) |
+| 400 | Not an image, or bytes do not match extension/content type | `{"success":false,"message":"Only JPG, PNG or WEBP images are allowed, with matching file extension and content type","errors":[{"code":"VALIDATION_ERROR","field":"image"}]}` |
+| 401 | Signature not over these file bytes | `{"success":false,"message":"Invalid X-ERP-Signature","errors":[{"code":"UNAUTHENTICATED"}]}` |
+| 413 | Over 15 MB | `{"success":false,"message":"Image is larger than 15 MB","errors":[{"code":"PAYLOAD_TOO_LARGE","field":"image"}]}` |
+| 502 | Storage provider failed (from source) | `{"success":false,"message":"Image storage failed; retry later","errors":[{"code":"UPSTREAM_ERROR"}]}` |
+| 503 | Storage not configured | `{"success":false,"message":"Image storage is not configured","errors":[{"code":"UNAVAILABLE"}]}` |
 
 **Idempotency:** each successful call stores a new image. Retrying after a timeout may leave an unused copy, which is harmless.
 
 ```bash
 P=/api/v1/erp/images
-sign POST "$P" ./rose.png
+sign POST "$P" ./rose.png          # hashes the file bytes
 curl -sS -X POST "$BASE$P" -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" -H "X-ERP-Signature: $SIG" \
   -F "image=@./rose.png;type=image/png"
 ```
 
-**Source:** `erpController.ts` → `readImage`, `uploadImage`, `imageStore`. **Tests:** "Image upload" section.
+---
+
+## 11. Postman package
+
+### 11.1 Files
+
+| File | Contents |
+|---|---|
+| `postman/Luxy-Galleria-ERP-API.postman_collection.json` | Postman Collection v2.1 with the seven requests in a runnable order, automatic signing, and test assertions |
+| `postman/Luxy-Galleria-ERP-Production.postman_environment.json` | Environment template. Credentials and IDs are blank. |
+
+| Postman request | Function | Section |
+|---|---|---|
+| 1. Item Add / Upsert | Item Add / Upsert | 5 |
+| 2. Item Edit | Item Edit | 6 |
+| 3. Stock Update | Stock Update | 4 |
+| 4. Order Checking (list) | Order Checking | 7 |
+| 5. Order Details | Order Details | 8 |
+| 6. Image Upload | Image Upload | 10 |
+| 7. Order Status Callback | Order Status Callback | 9 |
+
+The run order puts Item Add first, because Item Edit and Stock Update need its SKU to exist.
+
+### 11.2 Setup and secrets
+
+1. Postman → **Import** → select both files.
+2. Select the environment **Luxy Galleria ERP - Production** (environment selector, top right).
+3. Enter `erpKeyId` and `erpSecret` in the **Current value** column only. Postman keeps Current values local by default; Initial values are shared with anyone who can see the environment in a workspace. `erpSecret` is a *secret*-type variable and is masked on screen. Postman Vault is an alternative if your organisation uses it. Never export the environment with the secret filled in, and never paste it into a request, a script or a shared collection.
+4. Make sure the computer clock is correct (within 5 minutes).
+
+### 11.3 Variables
+
+| Variable | Default | Used by |
+|---|---|---|
+| `baseUrl` | `https://api.luxygalleria.com/api/v1` | All requests (no trailing slash) |
+| `erpKeyId`, `erpSecret` | blank | Signing |
+| `itemSku` | `ERP-TEST-SKU-001` | Item Add, Item Edit, Stock Update |
+| `categoryName` | `Chocolates` | Item Add; must be an existing website category |
+| `stockQuantity` | `10` | Stock Update |
+| `orderId` | blank | Order Details, Order Status Callback. Copy it from Order Checking; the collection never fills it automatically. |
+| `orderStatus` | `shipped` | Order Status Callback |
+| `trackingNumber` | `TEST-TRACK-001` | Order Status Callback |
+| `eventId` | blank | Order Status Callback. Blank = a new id per send. Set a fixed value to test redelivery. |
+| `imageSha256` | blank | Image Upload (Section 11.4) |
+
+The collection-level pre-request script signs every request as in Section 2.3. It sets `{{nowIso}}`, and `{{eventId}}` when that is blank, **before** hashing, so the signed bytes equal the sent bytes. Do not put Postman dynamic variables such as `{{$guid}}` or `{{$timestamp}}` in a request body: Postman resolves them again at send time, and the signature no longer matches.
+
+### 11.4 Image Upload in Postman
+
+1. Open *6. Image Upload* → **Body** → `form-data`, key `image` (type **File**) → **Select Files** → choose a JPG, PNG or WEBP file of 15 MB or less. Add no other fields.
+2. Compute the file's SHA-256 and paste the 64-character hex value into `imageSha256`:
+   - macOS / Linux: `shasum -a 256 /path/to/image.png`
+   - Windows: `certutil -hashfile C:\path\to\image.png SHA256`
+3. Send.
+
+Postman scripts cannot read the selected file, so the file hash is supplied this way. If `imageSha256` does not match the selected file, the response is `401 Invalid X-ERP-Signature`. Update it whenever you select a different file.
+
+This procedure was verified on the local test server: the correct hash passed the signature check, and a wrong hash returned `401`. Storing an image has **not** been verified, because storage was disabled on the test server.
+
+### 11.5 Tests and safe use
+
+Each request runs four tests:
+
+- the request was signed;
+- the response uses the standard envelope;
+- the HTTP status is the documented success status;
+- `data` matches the documented JSON schema.
+
+A failing status test writes the server's `message` to the Postman Console.
+
+| Request | Effect in production |
+|---|---|
+| 4, 5 | Read-only |
+| 1 | Creates a product **visible on the storefront** (no draft flag) |
+| 2, 3 | Change that SKU's price and stock |
+| 6 | Stores an image in the website's Cloudinary account |
+| 7 | Changes a real order's status and **emails the customer** |
+
+Run requests 1–3, 6 and 7 in production only with a test SKU and test order that Luxy Galleria has approved for the purpose.
+
+Command line (optional):
+
+```bash
+npx newman run Luxy-Galleria-ERP-API.postman_collection.json -e Luxy-Galleria-ERP-Production.postman_environment.json \
+  --env-var erpKeyId=… --env-var erpSecret=… --folder "4. Order Checking (list)"
+```
+
+Newman cannot open a file picker. For Image Upload, set the form-data `src` to a file path in a local copy of the collection.
 
 ---
 
-## 10. Website → ERP order push
+## 12. Website–ERP data mapping
 
-❌ **Not implemented — waiting for the ERP sales-order API** 🟦
+### 12.1 Items (ERP → Website)
 
-**Today:** the ERP can pull orders with Sections 6–7.
+| ERP field | Website field | Notes |
+|---|---|---|
+| `variants[].sku` | `Product.variants[].sku` | Matching key; exact, case-sensitive. Must be unique across the site; duplicates return `409`. |
+| `name`, `description` | `Product.name`, `Product.description` | |
+| `category` | `Product.category` (name) + `Product.categoryId` | Must already exist |
+| `brand` / `brandId` | `Product.brandId` | Must already exist |
+| `imageUrls[]` | `Product.images[]` | Replaces the list |
+| `variants[].size` / `volume` | `variants[].size` and `variants[].volume` | Both set to the same value |
+| `variants[].flavor` | `variants[].flavor` | |
+| `variants[].offerPrice` | `variants[].offerPrice` and `variants[].price` | Selling price, INR |
+| `variants[].actualPrice` | `variants[].actualPrice` and `variants[].oldPrice` | MRP, INR |
+| `variants[].weight` | `variants[].weight` | kg (used for shipping) |
+| `variants[].image` | `variants[].image` | |
+| — | `variants[]._id` | Returned as `variantId`; stable |
+| — | `Product._id` | Returned as `productId`; stable |
 
-**Planned automatic push** (not to be reported complete until a real sandbox test succeeds):
+### 12.2 Stock (ERP → Website)
 
-- **Trigger:** right after the website saves a paid order (`paymentController.ts` → `verifyPayment`, at `newOrder.save()`), handled by a background worker so checkout never waits on the ERP.
-- **Delivery:** our website `orderId` is sent as your external reference, so a retried push can't create a duplicate order. Retries use backoff.
-- **Tracking:** the ERP order id is stored on the order. Sync status, attempts and last error are tracked and visible to admins.
+| ERP field | Website field |
+|---|---|
+| `quantity` | `variants[].stock` = `max(0, quantity − pendingOrderQuantity)` |
+| `asOf` | `variants[].stockAsOf` |
+| — | `Product.stock` = sum of variant stock |
 
-**Not built yet, deliberately.** There is no ERP URL, payload, credentials or sync-status fields. They depend on your API. Orders created before the push goes live can be found later through Section 6.
+### 12.3 Images (ERP → Website)
 
-**Needed from you:**
-- sales-order create endpoint and payload schema
-- sample response with your order id
-- how duplicates of our reference are handled
-- authentication method
-- sandbox URL and credentials
-- rate limits and error codes
+`POST /erp/images` → Cloudinary folder `luxygalleria_products` → returned `data.url` → send it in `imageUrls` or `variants[].image`.
+
+### 12.4 Orders (ERP reads Website)
+
+| API field | Website source |
+|---|---|
+| `orderId` | `Order._id`. Use it as the external reference on the ERP sales order. |
+| `orderStatus`, `paymentStatus` | `Order.orderStatus`, `Order.paymentStatus` |
+| `subtotal`, `discount`, `shippingFee`, `total` | Same-named `Order` fields (INR) |
+| `currency` | Constant `INR` |
+| `items[].productId`, `variantId`, `quantity`, `unitPrice`, `lineTotal`, `size` | `Order.items[]`: `product`, `variantId`, `quantity`, `price`, `subtotal`, `size` |
+| `items[].sku`, `items[].name` | Current product data, looked up when called |
+| `shippingAddress.*` | `Order.shippingAddress` (street, city, state, zipCode, country). `null` for store-pickup orders. |
+| `fulfillment.method` | `Order.fulfillmentMethod`: `delivery` or `pickup`. Orders placed before this field existed report `delivery`. |
+| `fulfillment.shippingMethod`, `fulfillment.zone` | `Order.shippingMethod` (`land`/`air`), `Order.shippingZone` (`kerala`/`outsideKerala`); `null` for pickup and for older orders |
+| `fulfillment.pickup` | `Order.pickupDetails` store name and address (pickup orders only, else `null`) |
+| `charges.pickupFee`, `charges.specialPackagingFee` | Same-named `Order` fields (INR); `0` when not charged. Already included in `total`. |
+| `charges.tax` | `Order.tax` (`pricesIncludeTax`, `taxableValue`, `taxAmount`) when GST display was enabled for the order, else `null` |
+| `items[].taxRate`, `items[].taxAmount` | `Order.items[]` GST rate (%) and amount; `null` when not recorded |
+| `payment.method`, `status`, `gatewayOrderId`, `gatewayPaymentId` | `paymentMethod`, `paymentStatus`, `razorpayOrderId`, `razorpayPaymentId` |
+| `erp.erpOrderId`, `erp.trackingNumber`, `statusUpdatedAt` | Written by the Order Status Callback |
+
+### 12.5 Customers (inside orders only)
+
+| API field | Website source | Returned by |
+|---|---|---|
+| `customer.customerId` | `User._id` | Orders list and details |
+| `customer.name`, `customer.email` | `User.name`, `User.email` | Orders list and details |
+| `customer.phone` | `User.phone` | Order details only |
 
 ---
 
-## 11. Deployment, configuration and verification (Luxy Galleria)
+## 13. Not implemented: website → ERP order push and customer sync
 
-**Environment variable (Hostinger production environment)** — names only; never share values in documents or chat.
+The current source contains no code that sends orders or customers to the ERP. The ERP must pull orders with Sections 7–8.
 
-| Name | Value format |
+**Website → ERP order push (NOT IMPLEMENTED).** The planned design, not yet built:
+
+- When the website saves a paid order, a background job sends it to the ERP's sales-order API, using the website `orderId` as the external reference.
+- Retries use backoff and must not create duplicates.
+- The returned ERP order id is stored on the order.
+- Sync status and errors are visible to Luxy Galleria admins.
+
+Building it requires the information in Section 14, items 1–3 and 6. Orders placed before the push goes live remain available through Order Checking.
+
+**Customer synchronization (NOT IMPLEMENTED).** No endpoint creates, updates or lists customers. Customer name, email and phone reach the ERP only inside orders (Section 12.5).
+
+---
+
+## 14. Information required from the ERP team
+
+| # | Topic | What we need |
+|---|---|---|
+| 1 | Sales Order Create API | Endpoint URL (sandbox and production), request payload schema, required fields (tax/GST/HSN, billing address, order number, etc.), and a sample success response with your order id |
+| 2 | Authentication | How the website must authenticate to your API (method, credentials, rotation), and confirmation that the HMAC scheme in Section 2 is acceptable for your calls to us. If you need IP allow-listing, your outbound IP addresses. |
+| 3 | Idempotency and duplicates | How your API treats a repeated order with the same external reference (`orderId`), and whether you need an `Idempotency-Key` header |
+| 4 | Product, SKU and stock ownership | SKU format, uniqueness and case rules, and whether SKUs can change. Whether the ERP is the master for items, prices and stock, so that admin-panel editing can be locked. Whether your stock figure already excludes website orders (Section 4), and warehouse/unit rules. Whether categories and brands should be auto-created. |
+| 5 | Order and payment statuses | Your status list and its mapping to `processing` / `shipped` / `delivered` / `cancelled`; your transition rules; ownership of cancellation, refunds and restocking; whether payment status changes must flow either way |
+| 6 | Retry, timeout, errors, reconciliation | Your timeouts, error codes and rate limits; expected retry behaviour on both sides; how and how often orders and stock are reconciled; expected volumes (is a bulk stock endpoint needed?) |
+| 7 | Customer data and privacy | Which customer fields you need and why; whether a customer master sync is required; retention, access control and data-protection obligations for the personal data you receive (name, email, phone, address) |
+
+---
+
+## 15. Test evidence
+
+Each category is reported separately. No signed request has been sent to production by Luxy Galleria's review, and no production data has been read or changed by it.
+
+### 15.1 Automated local tests
+
+`npm run test:erp` (`src/tests/erp.test.ts`) against a throwaway local MongoDB with email and image storage disabled: **33 passed, 0 failed** (22 and 23 October 2026). Covers authentication, item upsert/edit, stock rules, order listing/details, the status callback, and image validation with storage stubbed.
+
+### 15.2 Local Postman / Newman
+
+The exported collection was run with Newman against a local server on a throwaway database (22 October 2026; final exported files re-run on 23 October 2026 with the same result):
+
+- Requests 1–5 and 7 returned their documented success status, and all their tests passed.
+- The database state was checked: one product created, then updated in place on re-runs (no duplicates); the price edit applied; stock set with `stockAsOf`; the order moved processing → shipped → delivered, with events recorded.
+- Image Upload passed the signature check and stopped at the disabled storage (`503`). A wrong `imageSha256` returned `401 Invalid X-ERP-Signature`.
+- With blank credentials, the *request was signed* test failed as designed.
+
+### 15.3 Local response capture
+
+On 23 October 2026, 62 signed requests covering the success and error cases of all seven endpoints were sent to a local server on a throwaway database. The response examples in Sections 4–10 are from this run. Additional wire-format checks:
+
+| Check | Result |
 |---|---|
-| `ERP_API_KEYS` | `keyId:secret` pairs, comma-separated, e.g. `erp-prod-1:<64 hex chars>`. Generate with `openssl rand -hex 32`. Use a different key for sandbox/staging. During a rotation, list old and new keys, then remove the old one. |
-| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Already used by admin uploads; required for Section 9 |
+| JSON sent with `Content-Type: text/plain` | `401 Invalid X-ERP-Signature` |
+| `Content-Type: application/json; charset=utf-8` | `200` |
+| Uppercase hex signature | `200` |
+| Timestamp in milliseconds | `401 X-ERP-Timestamp…` |
+| Pretty-printed JSON, signed as sent | `200` |
 
-**Exact key parser behavior**
+### 15.4 Previously observed production responses (earlier Postman tests by the project team)
 
-- The application splits `ERP_API_KEYS` on literal commas. Each entry uses its first colon as the key-ID/secret separator; colons after that are part of the secret. Commas cannot be part of a key ID or secret.
-- Leading/trailing whitespace around each entry, key ID, and secret is trimmed. IDs are matched case-sensitively. Secrets shorter than 32 characters are ignored.
-- Use a generated hex secret (`openssl rand -hex 32`) to avoid dotenv/shell special-character and quoting surprises. Quoting a dotenv value does not make commas safe: the parser still splits on commas after dotenv loads it.
-- After building the current source with `npm run build`, run `npm run diagnose:erp-keys` from `/opt/luxygalleria-migration/backend` to print only parsed key IDs and a validity boolean. Example shape: `{"valid":true,"keyIds":["erp-prod-1"]}`. Invalid configuration exits nonzero. It never prints secret values or hashes. Do not add logging around `process.env.ERP_API_KEYS`.
+| Request | Result | Notes |
+|---|---|---|
+| Order Checking | `200` | Reported; request details not available for review |
+| Order Details | `200` | Reported; request details not available for review |
+| Item Add | `401 Invalid ERP credentials` | Most likely an unsigned request or a different key ID (Section 2.6). Not yet re-tested. |
 
-**Secure credential exchange**
+### 15.5 Production checks without credentials (22–23 October 2026)
 
-1. Luxy Galleria generates the secret.
-2. It is shared with the ERP team's named technical contact through a one-time secret link or password manager — never email, chat or tickets.
-3. The key id is sent separately.
-4. Rotate immediately if exposure is suspected, and at least yearly.
+| Request | Result | Meaning |
+|---|---|---|
+| `GET /api/v1/health` | `200` | Service reachable |
+| Unsigned request to each of the seven routes | `401 Invalid ERP credentials` | Routes deployed; authentication enforced; ERP keys are configured (otherwise `503`) |
 
-**Safe deploy steps**
+### 15.6 Blocked or untested
 
-1. Run `npm run test:erp` against the dedicated local test database and `npm run build`. Do not run data seeding or SKU scripts as part of an auth deployment.
-2. Review and commit the backend source, documentation, sample client, and build output required by the deployment process (`node dist/server.js` is the configured start command).
-3. Deploy through the normal reviewed production release process. Do not change production environment values as part of this code change.
-4. On Hostinger, privately verify the configured `ERP_API_KEYS` entry has the same key ID as the ERP client's `X-ERP-Key-Id` and a secret of at least 32 characters. The `diagnose:erp-keys` command reports accepted IDs without revealing secrets. Never print, paste, or log the variable value. If the IDs differ, coordinate a credential update/rotation with the ERP owner as a separate approved operation; keep both IDs during an agreed rotation window, then remove the retired key.
-5. Use the non-destructive signed GET and JSON-validation checks above. Do not use the upload mode against production because a successful upload writes to Cloudinary.
+| Item | Status | Blocker |
+|---|---|---|
+| Signed production read (Order Checking, Order Details) | NOT TESTED in this review | Needs the production key ID and secret on the tester's side |
+| Production writes (Item Add, Item Edit, Stock Update, Order Status Callback) | NOT TESTED | Needs an approved test plan with a test SKU and test order, or a staging service |
+| Real image storage (any environment) | NOT TESTED | Needs Cloudinary configured on the target server and an approved test |
+| Website → ERP order push, customer sync | NOT IMPLEMENTED | Section 13 |
 
-**Admin workbench (Vercel)**
+---
 
-The browser UI is `/dashboard/erp` in the existing admin app. Its same-origin Next.js Route Handler validates the admin session and role, then signs allow-listed ERP requests server-side. In the admin Vercel project's server environment, configure `ERP_KEY_ID`, `ERP_SECRET`, and `ERP_API_BASE_URL=https://api.luxygalleria.com/api/v1`. These variables must not use a `NEXT_PUBLIC_` prefix. `ERP_KEY_ID` must match one key ID in Hostinger's `ERP_API_KEYS`; `ERP_SECRET` is that key's corresponding secret. Redeploy the admin app after adding variables.
+## 16. Known limitations and open items
 
-The production admin URL listed by the project is `https://luxygalleria-admin.vercel.app/dashboard/erp`; verify the assigned domain in the Vercel project before sharing it. The admin app setup and deployment notes are in `luxy-admin/docs/ERP-INTEGRATION.md`.
-
-**Production smoke test** — none of these changes data:
-
-| Check | Expected |
-|---|---|
-| `GET /api/v1/health` | `200` |
-| Unsigned request to each of the seven routes | `401` — proves the route is deployed and closed. `503` means `ERP_API_KEYS` is not set. `404` means the old build is still running. |
-| Signed `GET /api/v1/erp/orders?limit=1` | `200` |
-| Signed `GET /api/v1/erp/orders/{an id from the list}` | `200` |
-| Signed `PUT /stock/SMOKE-DOES-NOT-EXIST` | `404` (lookup only) |
-| Signed `POST /items` with `{}` | `400` (validation) |
-| Signed `PATCH /items/SMOKE-DOES-NOT-EXIST` | `404` (lookup only) |
-| Signed webhook for order id `000000000000000000000000` | `404` (no event is recorded) |
-| Signed `/images` with a text file | `400` (nothing is stored) |
-
-**Write tests in production.** Run them only on a dedicated test SKU or test order, or preferably on a staging service with its own database. The website has no "inactive product" flag yet, so a test product created in production would be visible on the storefront.
-
-**Before stock sync goes live**
-
-1. Run `npm run check-skus` against production. It is read-only and lists variants without SKUs and SKUs used more than once.
-2. Backfill or fix those SKUs in the admin panel.
-3. After the data is clean, a unique index on `variants.sku` can be added (see the `ponytail:` note in `src/models/Product.ts`).
-
-**Known limits and follow-ups**
-
-| Item | Status |
-|---|---|
-| Admin panel can still edit price and stock, which conflicts with the ERP being the source of truth | Lock those fields once the ERP sync is live |
-| Replay cache is in memory | Correct for one Render instance; must be shared if the API runs on several instances |
-| ERP audit log | One JSON line per ERP request (`"event":"ERP_API"`: key id, method, path, status, duration) on stdout → Render logs. No bodies or customer data. |
-| Website orders exist only if the customer's browser completes `/payments/verify` after paying | A Razorpay webhook is still needed before the order push is fully reliable |
-| Tax/GST/HSN, billing address, recipient name/phone, order number | Not held by the website; add only once the ERP's requirements are known |
-
-## 12. Information still needed from the ERP team 🟦
-
-1. Confirmation of the HMAC scheme in Section 1, or your required alternative; your outbound IP addresses.
-2. SKU rules: uniqueness, case, format, whether codes can change.
-3. Stock semantics: does your figure already exclude website orders (Section 3 reconciliation rule)? Units and warehouses?
-4. Whether categories and brands should be auto-created from your item data.
-5. Your status list and its mapping to `processing` / `shipped` / `delivered` / `cancelled`; cancellation, refund and restock ownership.
-6. Sales-order API for the website → ERP push (Section 10), with a sandbox.
-7. Required order fields the website does not hold today (Section 7).
-8. Expected volumes (bulk stock endpoint?) and whether you need an `Idempotency-Key` header.
-
-## 13. Source files and tests
-
-| File | Role |
-|---|---|
-| `src/routes/erpRoutes.ts` | Route table, mounted at `/api/v1/erp` in `src/routes/index.ts` |
-| `src/middlewares/erpAuth.ts` | HMAC verification, timestamp window, replay cache, audit log |
-| `src/middlewares/rateLimiter.ts` | `erpLimiter`; the website limiter skips `/api/v1/erp/*` |
-| `src/controllers/erpController.ts` | All seven handlers and validation |
-| `src/models/ErpEvent.ts` | Webhook event log (unique `eventId`) |
-| `src/models/Product.ts` | `variants[].stockAsOf`; index on `variants.sku` |
-| `src/models/Order.ts` | `erpOrderId`, `trackingNumber`, `statusUpdatedAt`; index on `updatedAt` |
-| `src/controllers/paymentController.ts` | `sendOrderStatusEmail` (shared by admin and webhook) |
-| `src/app.ts` | Captures raw JSON bytes for signature checks |
-| `src/scripts/checkSkus.ts` | Read-only SKU report (`npm run check-skus`) |
-| `src/tests/erp.test.ts` | ERP integration tests (`npm run test:erp`, local throwaway MongoDB) |
-| `.env.example` | Variable names, including `ERP_API_KEYS` |
-| `src/scripts/diagnoseErpKeys.ts` | Prints only accepted ERP key IDs and a configuration-valid flag |
+| # | Item | Status |
+|---|---|---|
+| 1 | Production Item Add returned `401 Invalid ERP credentials` | Re-test with the Postman collection and check its *request was signed* test (Section 2.6) |
+| 2 | No staging environment | **NEEDS CONFIRMATION** — Luxy Galleria to decide on a staging service or approve production test records |
+| 3 | No draft/inactive product flag; created items are public at once | Limitation |
+| 4 | Admin panel can still edit price and stock | To be locked once the ERP is confirmed as master (Section 14, item 4) |
+| 5 | SKUs are not yet guaranteed unique in website data | Duplicates are refused with `409 DUPLICATE_SKU`; Luxy Galleria will clean the data before stock sync goes live |
+| 6 | Orders exist only after the customer's browser completes payment verification | A payment-gateway webhook is planned before the order push |
+| 7 | Tax/GST/HSN, billing address, recipient name/phone, order number are not stored | Add once your requirements are known (Section 8) |
+| 8 | No bulk stock endpoint; 600 requests/minute | **NEEDS CONFIRMATION** of volumes |
+| 9 | Business rules marked **NEEDS CONFIRMATION** above | Awaiting the ERP team (Section 14) |

@@ -34,6 +34,9 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+function isDelivery() {
+    return this.fulfillmentMethod !== 'pickup';
+}
 const OrderSchema = new mongoose_1.Schema({
     user: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
     items: [
@@ -45,14 +48,29 @@ const OrderSchema = new mongoose_1.Schema({
             size: { type: String },
             image: { type: String },
             subtotal: { type: Number },
+            taxRate: { type: Number },
+            taxAmount: { type: Number },
         },
     ],
+    // No defaults: existing orders keep exactly the fields they were saved with
+    fulfillmentMethod: { type: String, enum: ['delivery', 'pickup'] },
+    shippingMethod: { type: String, enum: ['land', 'air'] },
+    shippingZone: { type: String, enum: ['kerala', 'outsideKerala'] },
+    pickupDetails: {
+        storeName: { type: String }, address: { type: String }, openingHours: { type: String }, phone: { type: String }, instructions: { type: String },
+    },
+    pickupFee: { type: Number },
+    specialPackagingFee: { type: Number },
+    tax: {
+        enabled: { type: Boolean }, pricesIncludeTax: { type: Boolean }, taxableValue: { type: Number }, taxAmount: { type: Number }, addedToTotal: { type: Number },
+    },
+    // Required for home delivery; a store-pickup order has no delivery address
     shippingAddress: {
-        street: { type: String, required: true },
-        city: { type: String, required: true },
-        state: { type: String, required: true },
-        zipCode: { type: String, required: true },
-        country: { type: String, required: true },
+        street: { type: String, required: isDelivery },
+        city: { type: String, required: isDelivery },
+        state: { type: String, required: isDelivery },
+        zipCode: { type: String, required: isDelivery },
+        country: { type: String, required: isDelivery },
     },
     subtotal: { type: Number, required: true },
     discount: { type: Number, default: 0 },

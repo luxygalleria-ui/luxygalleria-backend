@@ -107,7 +107,8 @@ else {
 // API Routes
 app.use('/api/v1', routes_1.default);
 const path_1 = __importDefault(require("path"));
-app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '../uploads')));
+// Public product images, shown by the storefront and admin on other origins (helmet defaults to same-origin)
+app.use('/uploads', (req, res, next) => { res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); next(); }, express_1.default.static(path_1.default.join(__dirname, '../uploads')));
 // 404 Handler
 app.use(notFoundHandler_1.notFoundHandler);
 // Global Error Handler

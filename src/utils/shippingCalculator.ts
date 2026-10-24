@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import { Product } from '../models/Product';
 import { Settings } from '../models/Settings';
+import { legacyShippingConfig, loadCheckoutSettings } from './checkoutSettings';
+import { priceOrder, Selection, OrderQuote } from './orderPricing';
 
 export interface ShippingCalculationResult {
   subtotal: number;
@@ -52,39 +54,10 @@ const num = (value: unknown, fallback: number): number => {
 };
 
 /**
- * Resolves the shipping config, newest source wins:
- * admin Settings (DB) -> environment -> built-in defaults.
- *
- * The admin panel stores the weight threshold in grams; everything here is kg.
+ * Resolves the pre-zone shipping config, newest source wins: admin Settings (DB) -> environment -> built-in defaults.
+ * A failed settings read throws: charging environment defaults instead of the admin's rates would be a wrong charge.
  */
-export const resolveShippingConfig = async (): Promise<ShippingConfig> => {
-  const fromEnv: ShippingConfig = {
-    WEIGHT_THRESHOLD_KG: num(process.env.WEIGHT_THRESHOLD_KG, DEFAULT_SHIPPING_CONFIG.WEIGHT_THRESHOLD_KG),
-    SHIPPING_BELOW_THRESHOLD: num(process.env.SHIPPING_BELOW_THRESHOLD, DEFAULT_SHIPPING_CONFIG.SHIPPING_BELOW_THRESHOLD),
-    SHIPPING_ABOVE_THRESHOLD: num(process.env.SHIPPING_ABOVE_THRESHOLD, DEFAULT_SHIPPING_CONFIG.SHIPPING_ABOVE_THRESHOLD),
-    BASE_WEIGHT_KG: num(process.env.BASE_WEIGHT_KG, DEFAULT_SHIPPING_CONFIG.BASE_WEIGHT_KG),
-    EXTRA_SHIPPING_PER_KG: num(process.env.EXTRA_SHIPPING_PER_KG, DEFAULT_SHIPPING_CONFIG.EXTRA_SHIPPING_PER_KG),
-    FREE_SHIPPING_THRESHOLD: num(process.env.FREE_SHIPPING_THRESHOLD, DEFAULT_SHIPPING_CONFIG.FREE_SHIPPING_THRESHOLD),
-    FALLBACK_ITEM_WEIGHT_KG: num(process.env.FALLBACK_ITEM_WEIGHT_KG, DEFAULT_SHIPPING_CONFIG.FALLBACK_ITEM_WEIGHT_KG),
-  };
-
-  try {
-    const settings = await Settings.findOne().lean();
-    if (!settings) return fromEnv;
-
-    return {
-      ...fromEnv,
-      WEIGHT_THRESHOLD_KG: num(settings.shippingWeightThreshold, fromEnv.WEIGHT_THRESHOLD_KG * 1000) / 1000,
-      SHIPPING_BELOW_THRESHOLD: num(settings.shippingBelow500g, fromEnv.SHIPPING_BELOW_THRESHOLD),
-      SHIPPING_ABOVE_THRESHOLD: num(settings.shippingAbove500g, fromEnv.SHIPPING_ABOVE_THRESHOLD),
-      FREE_SHIPPING_THRESHOLD: num(settings.freeShippingThreshold, fromEnv.FREE_SHIPPING_THRESHOLD),
-    };
-  } catch (err) {
-    // Never fail a checkout because the settings lookup broke.
-    console.error('Failed to load shipping settings, falling back to env:', err);
-    return fromEnv;
-  }
-};
+export const resolveShippingConfig = async (): Promise<ShippingConfig> => legacyShippingConfig(await Settings.findOne().lean());
 
 /**
  * Dynamically parses weight from a volume/size string (e.g. "500G", "1kg", "250ml", "1L").
@@ -174,19 +147,21 @@ export interface ResolvedLine {
   quantity: number;
   stock: number;
   name: string;
+  requiresSpecialPackaging: boolean;
+  taxRate: number | null;
 }
 
 export const MAX_QTY_PER_LINE = 100;
 
 /**
- * Calculates shipping for a list of cart items.
- * Fetches prices and weights directly from the database for security, then
- * defers to calculateShippingPure so there is one copy of the formula.
+ * Prices a cart for checkout: prices, weights and product flags come from the database only (never the client),
+ * settings are read fresh, and priceOrder applies shipping, packaging, pickup and tax rules.
  */
 export const calculateShippingForItems = async (
-  items: InputItem[]
-): Promise<ShippingCalculationResult & { lines: ResolvedLine[] }> => {
-  const config = await resolveShippingConfig();
+  items: InputItem[],
+  selection: Selection = {}
+): Promise<OrderQuote & { lines: ResolvedLine[] }> => {
+  const { settings, fallbackItemWeightKg } = await loadCheckoutSettings();
   const resolved: ResolvedLine[] = [];
 
   for (const item of items) {
@@ -237,8 +212,10 @@ export const calculateShippingForItems = async (
       quantity: item.quantity,
       stock: Number(variant.stock) || 0,
       name: product.name,
+      requiresSpecialPackaging: product.requiresSpecialPackaging === true,
+      taxRate: typeof product.taxRate === 'number' ? product.taxRate : null,
     });
   }
 
-  return { ...calculateShippingPure(resolved, config), lines: resolved };
+  return { ...priceOrder(resolved, settings, selection, { fallbackItemWeightKg }), lines: resolved };
 };

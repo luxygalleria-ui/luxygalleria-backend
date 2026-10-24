@@ -21,6 +21,10 @@ const isCloudinaryConfigured = process.env.CLOUDINARY_CLOUD_NAME &&
     process.env.CLOUDINARY_API_SECRET &&
     process.env.CLOUDINARY_CLOUD_NAME !== 'dummy_cloud' &&
     process.env.CLOUDINARY_API_KEY !== 'dummy_api_key';
+// Startup line so the effective cloud (read once at boot; a later .env edit needs a restart) shows in the process logs. Cloud name is public.
+console.log(isCloudinaryConfigured
+    ? `🖼️  Image uploads: Cloudinary cloud "${process.env.CLOUDINARY_CLOUD_NAME}"`
+    : '⚠️  Image uploads: Cloudinary NOT configured (CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET) — saving to local disk');
 let storage;
 if (isCloudinaryConfigured) {
     // Use Cloudinary storage when properly configured
@@ -41,7 +45,7 @@ else {
     if (!fs_1.default.existsSync(uploadsDir)) {
         fs_1.default.mkdirSync(uploadsDir, { recursive: true });
     }
-    storage = multer_1.default.diskStorage({
+    const disk = multer_1.default.diskStorage({
         destination: (req, file, cb) => {
             cb(null, uploadsDir);
         },
@@ -50,6 +54,11 @@ else {
             cb(null, file.fieldname + '-' + uniqueSuffix + path_1.default.extname(file.originalname));
         },
     });
+    // Controllers save file.path as the image URL: report the public /uploads/<name> path, not the server's filesystem path
+    storage = {
+        _handleFile: (req, file, cb) => disk._handleFile(req, file, (err, info) => cb(err, info && { ...info, path: `/uploads/${info.filename}` })),
+        _removeFile: (req, file, cb) => disk._removeFile(req, { ...file, path: path_1.default.join(uploadsDir, file.filename) }, cb),
+    };
 }
 const ALLOWED_IMAGE_EXT = ['.jpg', '.jpeg', '.png', '.webp'];
 exports.upload = (0, multer_1.default)({
