@@ -92,23 +92,39 @@ const computeTax = (lines, discount, t) => {
     };
 };
 exports.computeTax = computeTax;
+/** Weight used for a line: its stored weight, else the explicitly configured fallback (FALLBACK_ITEM_WEIGHT_KG), else none. */
+const lineWeightKg = (l, fallbackKg) => (Number(l.weight) > 0 ? Number(l.weight) : fallbackKg);
 /** Chocolate packaging: charged once per order on the combined weight of all such items, never per product. */
-const specialPackagingFee = (lines, s) => {
+const specialPackagingFee = (lines, s, fallbackKg = 0) => {
     const special = specialLines(lines, s);
     if (!special.length)
         return { applied: false, weightG: 0, steps: 0, fee: 0 };
-    const weightG = Math.round(special.reduce((a, l) => a + (Number(l.weight) || 0) * l.quantity * 1000, 0));
+    const weightG = Math.round(special.reduce((a, l) => a + lineWeightKg(l, fallbackKg) * l.quantity * 1000, 0));
     if (s.chocolate.basis === 'flat_per_order')
         return { applied: true, weightG, steps: 1, fee: s.chocolate.feeAmount };
-    // Every started step counts; an item with no recorded weight still counts as one step
-    const steps = Math.max(1, Math.ceil(weightG / s.chocolate.unitGrams));
+    // Every started step counts (250 g -> 1, 260 g -> 2). Lines without a weight never reach here for delivery (see priceOrder).
+    const steps = Math.ceil(weightG / s.chocolate.unitGrams);
     return { applied: true, weightG, steps, fee: (0, exports.round2)(steps * s.chocolate.feeAmount) };
 };
 exports.specialPackagingFee = specialPackagingFee;
 const priceOrder = (lines, s, sel = {}, opts = {}) => {
     const knownZone = (0, checkoutSettings_1.zoneOfState)(sel.state);
     const zone = knownZone ?? 'kerala';
+    const fallbackKg = opts.fallbackItemWeightKg ?? 0;
     const options = (0, exports.checkoutOptions)(lines, s, zone, opts.now);
+    // Delivery is priced by weight: without a weight for every item there is no correct charge, so delivery is not offered
+    // (store pickup still is). Never assume a weight unless FALLBACK_ITEM_WEIGHT_KG is explicitly configured.
+    const noWeight = lines.filter((l) => !(lineWeightKg(l, fallbackKg) > 0)).map((l) => l.name);
+    const weightReason = noWeight.length
+        ? `Delivery charge cannot be calculated: no weight is set for ${[...new Set(noWeight)].join(', ')}. Choose store pickup or contact the store.`
+        : '';
+    if (weightReason) {
+        for (const o of options)
+            if (o.fulfillment === 'delivery' && o.allowed) {
+                o.allowed = false;
+                o.reason = weightReason;
+            }
+    }
     // Explicit choice must be allowed; otherwise the first allowed delivery method, then pickup
     let chosen;
     if (sel.fulfillment === 'pickup')
@@ -120,18 +136,20 @@ const priceOrder = (lines, s, sel = {}, opts = {}) => {
         chosen = options.find((o) => o.fulfillment === 'delivery' && o.allowed) ?? options.find((o) => o.fulfillment === 'delivery' && o.offered) ?? options[0];
     else
         chosen = options.find((o) => o.allowed);
-    if (!chosen)
-        throw new CheckoutRuleError('No delivery or pickup option is available for this order', 'NO_OPTION', options);
-    if (!chosen.allowed)
-        throw new CheckoutRuleError(chosen.reason || 'This option is not available', 'OPTION_UNAVAILABLE', options);
+    if (!chosen) {
+        throw new CheckoutRuleError(weightReason || 'No delivery or pickup option is available for this order', weightReason ? 'WEIGHT_MISSING' : 'NO_OPTION', options);
+    }
+    if (!chosen.allowed) {
+        throw new CheckoutRuleError(chosen.reason || 'This option is not available', chosen.reason === weightReason && weightReason ? 'WEIGHT_MISSING' : 'OPTION_UNAVAILABLE', options);
+    }
     const subtotal = (0, exports.round2)(lines.reduce((a, l) => a + l.price * l.quantity, 0));
     const discount = (0, exports.round2)(Math.min(Math.max(Number(sel.discount) || 0, 0), subtotal));
     const isPickup = chosen.fulfillment === 'pickup';
     const ship = isPickup
         ? { totalWeight: (0, shippingCalculator_1.calculateShippingPure)(lines).totalWeight, baseShipping: 0, extraWeightCharge: 0, shipping: 0, freeShippingApplied: false }
-        : (0, shippingCalculator_1.calculateShippingPure)(lines, rateConfig(s.shipping.zones[zone][chosen.shippingMethod], opts.fallbackItemWeightKg ?? 0));
+        : (0, shippingCalculator_1.calculateShippingPure)(lines, rateConfig(s.shipping.zones[zone][chosen.shippingMethod], fallbackKg));
     // Packaging protects goods in transit: pickup orders are not charged for it
-    const packaging = isPickup ? { applied: false, weightG: 0, steps: 0, fee: 0 } : (0, exports.specialPackagingFee)(lines, s);
+    const packaging = isPickup ? { applied: false, weightG: 0, steps: 0, fee: 0 } : (0, exports.specialPackagingFee)(lines, s, fallbackKg);
     const pickupFee = isPickup ? s.pickup.charge : 0;
     const tax = (0, exports.computeTax)(lines, discount, s.tax);
     const grandTotal = (0, exports.round2)(subtotal - discount + tax.addedToTotal + ship.shipping + packaging.fee + pickupFee);

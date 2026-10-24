@@ -181,8 +181,6 @@ export const calculateShippingForItems = async (
     let itemPrice = 0;
     let itemWeight = 0;
 
-    const parsedVariantWeight = parseWeightFromVolume(item.size || '');
-
     let variant: any = null;
     if (item.variantId && product.variants && product.variants.length > 0) {
       variant = product.variants.find((v: any) => v._id && v._id.toString() === item.variantId?.toString());
@@ -193,7 +191,8 @@ export const calculateShippingForItems = async (
 
     if (variant) {
       itemPrice = variant.offerPrice || variant.price || 0;
-      itemWeight = (variant.weight && variant.weight > 0) ? variant.weight : (parsedVariantWeight || product.weight || 0);
+      // Weight from the stored variant only (its weight, else its own volume label, else the product); never the client's size text
+      itemWeight = (variant.weight && variant.weight > 0) ? variant.weight : (parseWeightFromVolume(variant.volume || '') || product.weight || 0);
     } else if (product.variants && product.variants.length > 0) {
       const defaultVariant = product.variants[0];
       variant = defaultVariant;
@@ -202,6 +201,11 @@ export const calculateShippingForItems = async (
       itemWeight = (defaultVariant.weight && defaultVariant.weight > 0) ? defaultVariant.weight : (parsedDefaultWeight || product.weight || 0);
     } else {
       throw new Error(`Product ${product.name} has no variants configured`);
+    }
+
+    // A missing or zero price would sell the item for free: refuse instead
+    if (!(Number.isFinite(itemPrice) && itemPrice > 0)) {
+      throw new Error(`${product.name} is not available for purchase right now (no valid price)`);
     }
 
     resolved.push({

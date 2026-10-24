@@ -66,7 +66,7 @@ const pure = async () => {
     console.log('Pricing (pure):');
     await test('legacy settings (nothing saved): quote equals the existing formula for every cart', () => {
         const s = (0, checkoutSettings_1.defaultCheckoutSettings)(shippingCalculator_1.DEFAULT_SHIPPING_CONFIG);
-        for (const lines of [[line({})], [line({ weight: 0.5 })], [line({ weight: 1.6, quantity: 2 })], [line({ price: 99.5, weight: 0, quantity: 3 })]]) {
+        for (const lines of [[line({})], [line({ weight: 0.5 })], [line({ weight: 1.6, quantity: 2 })], [line({ price: 99.5, weight: 0.12, quantity: 3 })]]) {
             const legacy = (0, shippingCalculator_1.calculateShippingPure)(lines);
             const q = (0, orderPricing_1.priceOrder)(lines, s, { fulfillment: 'delivery', state: 'Kerala' });
             assert_1.default.deepStrictEqual([q.shipping, q.grandTotal, q.baseShipping, q.extraWeightCharge], [legacy.shipping, legacy.grandTotal, legacy.baseShipping, legacy.extraWeightCharge]);
@@ -125,7 +125,7 @@ const pure = async () => {
         assert_1.default.strictEqual(fee([choc(260)]), 20, 'every started step counts');
         assert_1.default.strictEqual(fee([choc(100), choc(100, { product: 'q' })]), 10, 'two 100 g bars: one 250 g step, not two fees');
         assert_1.default.strictEqual(fee([choc(250, { quantity: 3 })]), 30);
-        assert_1.default.strictEqual(fee([choc(0)]), 10, 'no recorded weight still counts as one step');
+        rejects(() => fee([choc(0)]), 'WEIGHT_MISSING'); // no weight: not guessed as one step
         s.chocolate.unitGrams = 500;
         s.chocolate.feeAmount = 15;
         assert_1.default.strictEqual(fee([choc(750)]), 30);
@@ -182,6 +182,32 @@ const pure = async () => {
         assert_1.default.ok(q.tax.lines.every((l) => Math.round(l.taxAmount * 100) === l.taxAmount * 100), 'each line rounded to paise');
         assert_1.default.strictEqual(q.grandTotal, Math.round((q.subtotal - q.discount + q.tax.taxAmount + q.shipping + q.specialPackagingFee + q.pickupFee) * 100) / 100);
         assert_1.default.strictEqual((0, orderPricing_1.priceOrder)([line({})], fixture(), { fulfillment: 'pickup', discount: 1e6 }).discount, 300, 'discount never exceeds the subtotal');
+    });
+    await test('required examples: ₹59 × 5 = ₹295, 50 g × 5 = 250 g, confirmed ₹10 / 250 g packaging charged exactly once', () => {
+        const dairyMilk = (quantity, over = {}) => line({ name: 'Dairy Milk 50g', price: 59, weight: 0.05, quantity, ...over });
+        // Production today: chocolate shipping off, nothing flagged -> no packaging line; 250 g is at/above a 200 g threshold
+        const prod = (0, checkoutSettings_1.defaultCheckoutSettings)({ ...shippingCalculator_1.DEFAULT_SHIPPING_CONFIG, WEIGHT_THRESHOLD_KG: 0.2 });
+        let q = (0, orderPricing_1.priceOrder)([dairyMilk(5)], prod, { fulfillment: 'delivery', state: 'Kerala' });
+        assert_1.default.deepStrictEqual([q.subtotal, q.totalWeight, q.specialPackagingFee, q.shipping, q.grandTotal], [295, 0.25, 0, 80, 375]);
+        // Confirmed rule enabled and the product marked: one ₹10 step for the combined 250 g, not one per bar
+        const s = withChocolate(fixture());
+        q = (0, orderPricing_1.priceOrder)([dairyMilk(5, { requiresSpecialPackaging: true })], s, { fulfillment: 'delivery', state: 'Kerala' });
+        assert_1.default.deepStrictEqual([q.subtotal, q.totalWeight, q.specialPackaging.weightG, q.specialPackaging.steps, q.specialPackagingFee], [295, 0.25, 250, 1, 10]);
+        assert_1.default.strictEqual(q.grandTotal, 295 + q.shipping + 10, 'subtotal, shipping and packaging stay separate and add once');
+        assert_1.default.strictEqual((0, orderPricing_1.priceOrder)([dairyMilk(6, { requiresSpecialPackaging: true })], s, { fulfillment: 'delivery', state: 'Kerala' }).specialPackagingFee, 20, '300 g = 2 started steps');
+        const mixed = (0, orderPricing_1.priceOrder)([dairyMilk(5, { requiresSpecialPackaging: true }), line({ name: 'Juice', price: 199, weight: 0.2, quantity: 2 })], s, { fulfillment: 'delivery', state: 'Kerala' });
+        assert_1.default.deepStrictEqual([mixed.subtotal, mixed.totalWeight, mixed.specialPackagingFee], [295 + 398, 0.65, 10], 'juice adds weight for shipping, not packaging');
+    });
+    await test('missing weight: delivery refused with the product named (never guessed); pickup and an explicit fallback still work', () => {
+        const s = fixture();
+        const e = rejects(() => (0, orderPricing_1.priceOrder)([line({ name: 'Frooti', weight: 0 }), line({})], s, { fulfillment: 'delivery', state: 'Kerala' }), 'WEIGHT_MISSING');
+        assert_1.default.match(e.message, /no weight is set for Frooti/);
+        assert_1.default.ok(e.options.filter((o) => o.fulfillment === 'delivery').every((o) => !o.allowed), 'no delivery option offered');
+        assert_1.default.strictEqual((0, orderPricing_1.priceOrder)([line({ weight: 0 })], fixture(), {}).fulfillmentMethod, 'pickup', 'no choice made: the available option (pickup) is quoted');
+        assert_1.default.strictEqual((0, orderPricing_1.priceOrder)([line({ weight: 0 })], s, { fulfillment: 'pickup' }).grandTotal, 300);
+        assert_1.default.strictEqual((0, orderPricing_1.priceOrder)([line({ weight: 0 })], s, { fulfillment: 'delivery', state: 'Kerala' }, { fallbackItemWeightKg: 0.6 }).shipping, 80, 'FALLBACK_ITEM_WEIGHT_KG is an explicit setting');
+        s.pickup.enabled = false;
+        rejects(() => (0, orderPricing_1.priceOrder)([line({ weight: 0 })], s, {}), 'WEIGHT_MISSING');
     });
     await test('public settings: only customer-facing data', () => {
         const p = (0, checkoutSettings_1.publicCheckoutSettings)(withChocolate(fixture()));
@@ -319,6 +345,36 @@ const api = async () => {
             assert_1.default.strictEqual((await call('PUT', '/settings/checkout/tax', { ...tax, pricesIncludeTax: true }, superT)).status, 200);
             const inc = await call('POST', '/payments/calculate-shipping', { items: [item(product)], fulfillment: { method: 'pickup' } });
             assert_1.default.deepStrictEqual([inc.json.data.grandTotal, inc.json.data.tax.taxAmount], [300, 14.29], 'inclusive: GST extracted, not added');
+        });
+        await test('10. quote, payment amount and saved order carry the same breakdown; bad quantities and prices refused', async () => {
+            const milk = await Product_1.Product.create({ name: 'Dairy Milk', category: 'Chocolates', description: 'Bar', requiresSpecialPackaging: true,
+                variants: [{ volume: '50g', price: 59, offerPrice: 59, actualPrice: 65, stock: 50, weight: 0.05 }], stock: 50 });
+            const body = { items: [item(milk, 5), item(product)], shippingAddress: kerala, fulfillment: { method: 'delivery', shippingMethod: 'land' } };
+            const quote = (await call('POST', '/payments/calculate-shipping', body)).json.data;
+            assert_1.default.deepStrictEqual([quote.subtotal, quote.totalWeight, quote.specialPackagingFee], [295 + 300, 0.45, 10]);
+            const created = await call('POST', '/payments/create-order', { ...body, total: quote.grandTotal }, custT);
+            assert_1.default.strictEqual(created.status, 200, JSON.stringify(created.json));
+            assert_1.default.strictEqual(created.json.data.razorpayOrder.amount, Math.round(quote.grandTotal * 100), 'charged amount = quoted total');
+            const verified = await call('POST', '/payments/verify', { ...body, razorpay_order_id: created.json.data.razorpayOrder.id, razorpay_payment_id: 'mock_payment' }, custT);
+            const o = await Order_1.default.findById(verified.json.data._id).lean();
+            assert_1.default.deepStrictEqual([o.subtotal, o.shippingFee, o.specialPackagingFee, o.discount, o.total], [quote.subtotal, quote.shipping, quote.specialPackagingFee, quote.discount, quote.grandTotal]);
+            assert_1.default.deepStrictEqual(o.items.map((i) => [i.price, i.quantity, i.subtotal]), [[59, 5, 295], [300, 1, 300]]);
+            for (const quantity of [0, -1, 2.5, 101, '3']) {
+                const r = await call('POST', '/payments/calculate-shipping', { items: [{ ...item(milk), quantity }], shippingAddress: kerala });
+                assert_1.default.strictEqual(r.status, 400, `quantity ${quantity}`);
+            }
+            const free = await Product_1.Product.create({ name: 'Unpriced', category: 'X', description: 'x', variants: [{ volume: '100g', price: 0, offerPrice: 0, actualPrice: 0, stock: 5, weight: 0.1 }] });
+            const r = await call('POST', '/payments/calculate-shipping', { items: [item(free)], shippingAddress: kerala });
+            assert_1.default.strictEqual(r.status, 400);
+            assert_1.default.match(r.json.message, /no valid price/);
+            const noWeight = await Product_1.Product.create({ name: 'Frooti', category: 'Juices', description: 'x', variants: [{ volume: 'Standard', price: 123, offerPrice: 123, actualPrice: 123, stock: 5, weight: 0 }] });
+            const nw = await call('POST', '/payments/calculate-shipping', { items: [item(noWeight)], shippingAddress: kerala, fulfillment: { method: 'delivery' } });
+            assert_1.default.deepStrictEqual([nw.status, nw.json.code], [400, 'WEIGHT_MISSING']);
+            assert_1.default.match(nw.json.message, /Frooti/);
+            // Weight comes from the stored variant, not the size text the browser sends
+            const sized = await call('POST', '/payments/calculate-shipping', { items: [{ ...item(product), size: '1g' }], shippingAddress: kerala });
+            assert_1.default.strictEqual(sized.json.data.totalWeight, 0.2);
+            await Product_1.Product.deleteMany({ _id: { $in: [milk._id, free._id, noWeight._id] } });
         });
         await test('12b. existing order, products, banners, login and settings still work', async () => {
             const before = await Order_1.default.collection.findOne({ _id: legacyOrder.insertedId });
