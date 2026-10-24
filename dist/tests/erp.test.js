@@ -5,7 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 /**
  * ERP integration API tests (/api/v1/erp/*).
- * Needs a local MongoDB; uses a throwaway database and never calls Cloudinary, SendGrid or Razorpay.
+ * Needs a local MongoDB (127.0.0.1:27017); uses the throwaway database luxy_erp_test only — never MONGO_URI.
+ * Never sends email, uploads images or calls Razorpay.
  * Run: npm run test:erp
  */
 const assert_1 = __importDefault(require("assert"));
@@ -15,7 +16,7 @@ const TEST_DB = 'mongodb://127.0.0.1:27017/luxy_erp_test';
 const KEY_ID = 'erp-test';
 const SECRET = 'test_erp_secret_0123456789abcdef0123456789';
 process.env.NODE_ENV = 'development'; // keeps rate limiters off
-process.env.SENDGRID_API_KEY = '';
+process.env.SENDGRID_API_KEY = ''; // not a requirement: blanks any key .env holds so the test can never send real email
 process.env.CLOUDINARY_CLOUD_NAME = '';
 process.env.CLOUDINARY_API_KEY = '';
 process.env.CLOUDINARY_API_SECRET = '';
@@ -79,9 +80,38 @@ const upload = async (file, name, type, o = {}) => {
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32, 1)]);
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(32, 1)]);
 const iso = (msFromNow) => new Date(Date.now() + msFromNow).toISOString();
+/** Throws unless uri is a plain local MongoDB (no credentials) and its database name ends in _test. */
+const assertLocalTestDb = (uri) => {
+    let u;
+    try {
+        u = new URL(uri);
+    }
+    catch {
+        throw new Error(`refusing to run: test database URI is not a valid mongodb:// URI`);
+    }
+    const db = u.pathname.replace(/^\//, '');
+    const local = ['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname);
+    if (u.protocol !== 'mongodb:' || u.username || u.password || !local || !/^[A-Za-z0-9_-]+_test$/.test(db)) {
+        throw new Error(`refusing to run: tests only use a local MongoDB database whose name ends in "_test" (got host "${u.hostname}", database "${db}")`);
+    }
+};
+/** Before any destructive call: the live connection must still be the local test database. */
+const assertConnectedToTestDb = () => {
+    const c = mongoose_1.default.connection;
+    if (c.readyState !== 1 || c.name !== 'luxy_erp_test' || !['127.0.0.1', 'localhost', '::1'].includes(c.host)) {
+        throw new Error(`refusing to drop: connected to "${c.host}/${c.name}", not the local luxy_erp_test database`);
+    }
+};
 const run = async () => {
-    assert_1.default.ok(TEST_DB.includes('127.0.0.1') && TEST_DB.endsWith('_test'), 'refusing to run against a non-test database');
-    await mongoose_1.default.connect(TEST_DB);
+    assertLocalTestDb(TEST_DB);
+    try {
+        await mongoose_1.default.connect(TEST_DB, { serverSelectionTimeoutMS: 5000 });
+    }
+    catch (err) {
+        throw new Error(`cannot reach the local MongoDB at ${new URL(TEST_DB).host} (${err?.name || 'error'}). Start the local MongoDB service ` +
+            '(e.g. "brew services start mongodb-community@7.0") and run the test again. The test never connects anywhere else.');
+    }
+    assertConnectedToTestDb();
     await mongoose_1.default.connection.db.dropDatabase();
     await Promise.all([Order_1.default.init(), ErpEvent_1.ErpEvent.init(), Product_1.Product.init()]);
     const server = app_1.default.listen(0);
@@ -456,7 +486,7 @@ const run = async () => {
         assert_1.default.strictEqual(res.status, 401);
     });
     server.close();
-    assert_1.default.strictEqual(mongoose_1.default.connection.name, 'luxy_erp_test');
+    assertConnectedToTestDb();
     await mongoose_1.default.connection.db.dropDatabase();
     await mongoose_1.default.disconnect();
     console.log(`\n=== Summary: ${passed} passed, 0 failed ===`);
@@ -465,8 +495,10 @@ const run = async () => {
 run().catch(async (err) => {
     console.error('\n❌ FAILED:', err);
     try {
-        if (mongoose_1.default.connection.name === 'luxy_erp_test')
+        if (mongoose_1.default.connection.readyState === 1) {
+            assertConnectedToTestDb();
             await mongoose_1.default.connection.db.dropDatabase();
+        }
         await mongoose_1.default.disconnect();
     }
     catch { /* ignore */ }

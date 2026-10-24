@@ -11,7 +11,8 @@ const initSendGrid = () => {
         mail_1.default.setApiKey(process.env.SENDGRID_API_KEY);
     }
     else {
-        console.warn('⚠️ SENDGRID_API_KEY is not configured');
+        // SendGrid is optional: without a key, emails are written to the server log (see sendEmail below)
+        console.info('ℹ️  Email: no SendGrid key set; emails are logged to the console instead of being sent');
     }
 };
 // Initialize early
