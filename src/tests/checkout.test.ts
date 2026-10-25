@@ -339,6 +339,24 @@ const api = async () => {
       assert.deepStrictEqual(s.json.data.saved, { shipping: false, pickup: false, chocolate: false, tax: false });
     });
 
+    await test('tax settings API contract: default load, valid save, field-level refusals, GST off leaves totals alone', async () => {
+      const loaded = (await call('GET', '/settings/checkout', undefined, superT)).json.data;
+      assert.deepStrictEqual([loaded.settings.tax, loaded.saved.tax], [{ enabled: false, pricesIncludeTax: true, showPriceLabel: true }, false], 'documented default when nothing is saved');
+      const before = (await call('POST', '/payments/calculate-shipping', { items: [item(product)], shippingAddress: kerala })).json.data;
+      const off = await call('PUT', '/settings/checkout/tax', { enabled: false, pricesIncludeTax: true, showPriceLabel: false }, superT);
+      assert.strictEqual(off.status, 200, JSON.stringify(off.json)); assert.strictEqual(off.json.data.saved.tax, true);
+      const bad = await call('PUT', '/settings/checkout/tax', { enabled: 'yes', pricesIncludeTax: true, showPriceLabel: true }, superT);
+      assert.deepStrictEqual([bad.status, bad.json.errors[0].field], [400, 'enabled']);
+      assert.strictEqual((await call('PUT', '/settings/checkout/tax', { enabled: false, pricesIncludeTax: true }, superT)).status, 400, 'missing field');
+      assert.strictEqual((await call('PUT', '/settings/checkout/tax', { enabled: false, pricesIncludeTax: true, showPriceLabel: true, rate: 18 }, superT)).status, 400, 'unknown field (no store-wide rate)');
+      const blocked = await call('PUT', '/settings/checkout/tax', { enabled: true, pricesIncludeTax: true, showPriceLabel: true }, superT);
+      assert.deepStrictEqual([blocked.status, blocked.json.errors[0].field], [400, 'enabled']); assert.match(blocked.json.message, /confirmed rate on every product/);
+      const hsn = await call('PUT', '/settings/checkout/products', { updates: [{ id: String(product._id), hsnCode: '12ab' }] }, superT);
+      assert.deepStrictEqual([hsn.status, hsn.json.errors[0].field], [400, 'updates.0.hsnCode']);
+      const after = (await call('POST', '/payments/calculate-shipping', { items: [item(product)], shippingAddress: kerala })).json.data;
+      assert.deepStrictEqual([after.grandTotal, after.tax.enabled, after.tax.taxAmount], [before.grandTotal, false, 0], 'GST off: totals unchanged');
+    });
+
     await test('11. unauthorised users cannot read or change checkout settings; validation is strict', async () => {
       const ship = (await call('GET', '/settings/checkout', undefined, adminT)).json.data.settings.shipping;
       assert.strictEqual((await call('PUT', '/settings/checkout/shipping', ship)).status, 401);
