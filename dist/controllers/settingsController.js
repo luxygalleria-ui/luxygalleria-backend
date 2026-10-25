@@ -83,13 +83,22 @@ exports.updateCheckoutSection = (0, asyncHandler_1.asyncHandler)(async (req, res
     const value = parsed.data;
     const current = await (0, checkoutSettings_1.loadCheckoutSettings)();
     const next = { ...current.settings, [section]: value };
+    // "Deliver here" with every method switched off would show customers at that destination no way to order
+    if (section === 'shipping') {
+        const names = { kerala: 'Kerala', outsideKerala: 'Outside Kerala' };
+        const dead = Object.keys(names).filter((z) => next.shipping.zones[z].enabled && !next.shipping.zones[z].land.enabled && !next.shipping.zones[z].air.enabled);
+        if (dead.length) {
+            return (0, responseHandler_1.errorResponse)(res, 400, `${dead.map((z) => names[z]).join(' and ')}: delivery is on but no delivery method is enabled. Enable Road or Air, or turn off delivery there.`, dead.map((z) => ({ field: `zones.${z}.enabled`, message: 'Delivery is on but neither Road nor Air is enabled' })));
+        }
+    }
     if (!(0, checkoutSettings_1.fulfilmentAvailable)(next)) {
         return (0, responseHandler_1.errorResponse)(res, 400, 'At least one way to receive orders must stay available (a delivery method or store pickup)', [{ field: section, message: 'Would leave no delivery or pickup option' }]);
     }
-    if (section === 'tax' && next.tax.enabled && !next.tax.pricesIncludeTax) {
+    // GST is shown (inclusive) or charged (exclusive) per product: either way an incomplete set of rates gives wrong figures
+    if (section === 'tax' && next.tax.enabled) {
         const missing = await Product_1.Product.countDocuments({ $or: [{ taxRate: null }, { taxRate: { $exists: false } }] });
         if (missing) {
-            return (0, responseHandler_1.errorResponse)(res, 400, `Tax-exclusive pricing needs a GST rate on every product: ${missing} product(s) have none`, [{ field: 'pricesIncludeTax', message: `${missing} product(s) without a GST rate` }]);
+            return (0, responseHandler_1.errorResponse)(res, 400, `GST needs a confirmed rate on every product before it can be enabled: ${missing} product(s) have none`, [{ field: 'enabled', message: `${missing} product(s) without a GST rate` }]);
         }
     }
     const doc = await Settings_1.Settings.findOneAndUpdate({}, { $set: { [section]: value } }, { new: true, upsert: true, setDefaultsOnInsert: true }).lean();
@@ -121,10 +130,10 @@ exports.updateCheckoutProducts = (0, asyncHandler_1.asyncHandler)(async (req, re
     const touchesTax = updates.some((u) => u.taxRate !== undefined || u.hsnCode !== undefined);
     if (touchesTax && req.user?.role !== 'superadmin')
         return (0, responseHandler_1.errorResponse)(res, 403, 'Only a super admin can change GST rates');
-    // Tax-exclusive pricing cannot have a product without a rate (its total would be wrong)
+    // While GST is enabled every product must keep a rate (see updateCheckoutSection)
     const { settings } = await (0, checkoutSettings_1.loadCheckoutSettings)();
-    if (settings.tax.enabled && !settings.tax.pricesIncludeTax && updates.some((u) => u.taxRate === null)) {
-        return (0, responseHandler_1.errorResponse)(res, 400, 'Prices are tax-exclusive: every product needs a GST rate', [{ field: 'taxRate', message: 'Cannot clear a GST rate while prices are tax-exclusive' }]);
+    if (settings.tax.enabled && updates.some((u) => u.taxRate === null)) {
+        return (0, responseHandler_1.errorResponse)(res, 400, 'GST is enabled: every product needs a GST rate', [{ field: 'taxRate', message: 'Cannot clear a GST rate while GST is enabled' }]);
     }
     const result = await Product_1.Product.bulkWrite(updates.map((u) => {
         const set = {};

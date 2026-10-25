@@ -42,6 +42,18 @@ export interface IOrder extends Document {
   erpOrderId?: string;
   trackingNumber?: string;
   statusUpdatedAt?: Date;
+  /** The checkout session (quote snapshot) this order was created from; absent on older orders. */
+  checkoutSession?: mongoose.Types.ObjectId;
+  /** Set when payment succeeded but the order could not be fulfilled, e.g. stock ran out after the session expired. */
+  fulfillmentIssue?: string;
+  refund?: {
+    status: 'required' | 'requested' | 'pending' | 'processed' | 'failed';
+    amountPaise?: number;
+    razorpayRefundId?: string;
+    reason?: string;
+    lastError?: string;
+    events: { at: Date; by?: string; action: string; outcome?: string; detail?: string }[];
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -108,6 +120,17 @@ const OrderSchema: Schema = new Schema(
     erpOrderId: { type: String },
     trackingNumber: { type: String },
     statusUpdatedAt: { type: Date }, // ERP event time of the last applied status; older events are ignored
+    checkoutSession: { type: Schema.Types.ObjectId, ref: 'CheckoutSession' },
+    fulfillmentIssue: { type: String },
+    // Refund workflow (admin-initiated; see paymentController). Absent = no refund ever needed or requested.
+    refund: {
+      status: { type: String, enum: ['required', 'requested', 'pending', 'processed', 'failed'] },
+      amountPaise: { type: Number },
+      razorpayRefundId: { type: String },
+      reason: { type: String },
+      lastError: { type: String },
+      events: [{ at: { type: Date, default: Date.now }, by: String, action: String, outcome: String, detail: String, _id: false }],
+    },
   },
   { timestamps: true }
 );

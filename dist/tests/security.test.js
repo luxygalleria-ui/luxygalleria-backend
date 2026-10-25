@@ -232,12 +232,16 @@ const run = async () => {
         assert_1.default.strictEqual(r.status, 400);
     });
     await test('legit Razorpay payment creates exactly one order and decrements stock once', async () => {
-        payments.pay_ok = { order_id: 'order_ok', status: 'captured', amount: TOTAL_1 * 100, currency: 'INR' };
+        const before = (await Product_1.Product.findById(pid)).variants[0].stock;
+        // Payments are verified against the server's checkout session, so the Razorpay order must come from create-order
+        const c = await call('POST', '/payments/create-order', { total: TOTAL_1, items: [item(1, 1)], shippingAddress: address }, aliceT);
+        assert_1.default.strictEqual(c.status, 200, JSON.stringify(c.json));
+        const orderOk = c.json.data.razorpayOrder.id;
+        payments.pay_ok = { id: 'pay_ok', order_id: orderOk, status: 'captured', amount: TOTAL_1 * 100, currency: 'INR' };
         const body = {
-            razorpay_order_id: 'order_ok', razorpay_payment_id: 'pay_ok', razorpay_signature: sign('order_ok', 'pay_ok'),
+            razorpay_order_id: orderOk, razorpay_payment_id: 'pay_ok', razorpay_signature: sign(orderOk, 'pay_ok'),
             items: [item(1, 1)], shippingAddress: address, total: TOTAL_1,
         };
-        const before = (await Product_1.Product.findById(pid)).variants[0].stock;
         const r1 = await call('POST', '/payments/verify', body, aliceT);
         assert_1.default.strictEqual(r1.status, 200, JSON.stringify(r1.json));
         assert_1.default.strictEqual(r1.json.data.total, TOTAL_1);

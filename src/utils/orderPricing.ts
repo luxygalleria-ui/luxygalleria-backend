@@ -24,6 +24,8 @@ export interface Selection {
   shippingMethod?: ShippingMethod;
   /** Delivery address state; decides Kerala vs outside Kerala. */
   state?: string;
+  /** Delivery address country; delivery zones cover India only. Absent = not yet known (quote before an address). */
+  country?: string;
   /** ₹ off the subtotal, already validated by the caller. 0 at checkout today (no coupons are applied server-side). */
   discount?: number;
 }
@@ -59,7 +61,9 @@ const rateConfig = (r: ShippingRate, fallbackItemWeightKg: number): ShippingConf
 /** Month 1-12 in the store's time zone. */
 const monthInIndia = (now: Date) => Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', month: 'numeric' }).format(now));
 
-const specialLines = (lines: PricedLine[], s: CheckoutSettings) => (s.chocolate.enabled ? lines.filter((l) => l.requiresSpecialPackaging) : []);
+// Only an enabled AND owner-confirmed rule applies (saving enabled without confirmation is already refused; this guards stored data too)
+const chocolateActive = (s: CheckoutSettings) => s.chocolate.enabled && s.chocolate.rateConfirmed;
+const specialLines = (lines: PricedLine[], s: CheckoutSettings) => (chocolateActive(s) ? lines.filter((l) => l.requiresSpecialPackaging) : []);
 
 /** Every way this cart could be received, with the reason when one is not allowed. */
 export const checkoutOptions = (lines: PricedLine[], s: CheckoutSettings, zone: Zone, now = new Date()): CheckoutOption[] => {
@@ -146,6 +150,10 @@ export const priceOrder = (lines: PricedLine[], s: CheckoutSettings, sel: Select
   if (weightReason) {
     for (const o of options) if (o.fulfillment === 'delivery' && o.allowed) { o.allowed = false; o.reason = weightReason; }
   }
+  // Zones are Kerala and the rest of India: an address abroad has no configured rate, so it is refused, never priced as domestic
+  if (sel.country !== undefined && sel.country.trim() !== '' && !/^\s*(india|in|ind|bharat|republic of india)\s*$/i.test(sel.country)) {
+    for (const o of options) if (o.fulfillment === 'delivery') { o.allowed = false; o.reason = 'We currently deliver within India only'; }
+  }
 
   // Explicit choice must be allowed; otherwise the first allowed delivery method, then pickup
   let chosen: CheckoutOption | undefined;
@@ -158,6 +166,13 @@ export const priceOrder = (lines: PricedLine[], s: CheckoutSettings, sel: Select
     throw new CheckoutRuleError(weightReason || 'No delivery or pickup option is available for this order', weightReason ? 'WEIGHT_MISSING' : 'NO_OPTION', options);
   }
   if (!chosen.allowed) {
+    // A destination with no delivery method at all: say that, rather than naming one method as if another might work
+    const noMethodAtAll = chosen.fulfillment === 'delivery' && s.shipping.zones[zone].enabled && !options.some((o) => o.fulfillment === 'delivery' && o.offered);
+    if (noMethodAtAll) {
+      const where = zone === 'kerala' ? 'Kerala' : 'addresses outside Kerala';
+      const pickupOk = options.some((o) => o.fulfillment === 'pickup' && o.allowed);
+      throw new CheckoutRuleError(`No delivery method is currently available for ${where}. ${pickupOk ? 'Choose store pickup, or contact the store.' : 'Please contact the store.'}`, 'NO_DELIVERY_METHOD', options);
+    }
     throw new CheckoutRuleError(chosen.reason || 'This option is not available', chosen.reason === weightReason && weightReason ? 'WEIGHT_MISSING' : 'OPTION_UNAVAILABLE', options);
   }
 
@@ -189,7 +204,14 @@ export const priceOrder = (lines: PricedLine[], s: CheckoutSettings, sel: Select
     shipping: ship.shipping,
     freeShippingApplied: ship.freeShippingApplied,
     specialPackagingFee: packaging.fee,
-    specialPackaging: { ...packaging, note: packaging.applied || specialLines(lines, s).length ? s.chocolate.customerNote : '' },
+    specialPackaging: {
+      ...packaging,
+      note: packaging.applied || specialLines(lines, s).length ? s.chocolate.customerNote : '',
+      // Cart items the saved rule treats as temperature-sensitive, and that rule, so checkout can explain the charge.
+      // Empty / null while the feature is off or unconfirmed: nothing about it is shown or charged.
+      items: [...new Set(specialLines(lines, s).map((l) => l.name))],
+      rule: chocolateActive(s) ? { basis: s.chocolate.basis, feeAmount: s.chocolate.feeAmount, unitGrams: s.chocolate.unitGrams } : null,
+    },
     pickupFee,
     pickupDetails: isPickup
       ? { storeName: s.pickup.storeName, address: s.pickup.address, openingHours: s.pickup.openingHours, phone: s.pickup.phone, instructions: s.pickup.instructions }

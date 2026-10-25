@@ -7,6 +7,7 @@ const app_1 = __importDefault(require("./app"));
 const db_1 = require("./config/db");
 const env_1 = require("./config/env");
 const seedAdmin_1 = require("./utils/seedAdmin");
+const checkoutSessions_1 = require("./utils/checkoutSessions");
 const startServer = async () => {
     try {
         // Connect to database
@@ -17,6 +18,10 @@ const startServer = async () => {
         app_1.default.listen(env_1.ENV.PORT, () => {
             console.log(`🚀 Server running in ${env_1.ENV.NODE_ENV} mode on port ${env_1.ENV.PORT}`);
         });
+        // Return stock held by abandoned checkouts (also done before each new checkout)
+        setInterval(() => {
+            (0, checkoutSessions_1.expireStaleSessions)().catch((err) => console.error('Expiring checkout sessions failed:', err?.message));
+        }, 5 * 60_000).unref();
     }
     catch (error) {
         console.error('Failed to start server:', error);
