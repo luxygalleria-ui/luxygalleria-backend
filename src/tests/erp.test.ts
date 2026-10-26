@@ -195,6 +195,41 @@ const run = async () => {
     const res = await fetch(origin + full, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ quantity: 999, asOf: iso(0) }) });
     assert.strictEqual(res.status, 401);
   });
+  await test('audit log names the failure category and never contains secrets, signatures or bodies', async () => {
+    const lines: string[] = [];
+    const realLog = console.log;
+    console.log = (...a: unknown[]) => { lines.push(a.map(String).join(' ')); };
+    const full = '/api/v1/erp/orders';
+    const body = JSON.stringify({ quantity: 7, asOf: iso(0) });
+    const sent: string[] = [];
+    const send = async (headers: Record<string, string>, method = 'GET', path = full, b?: string) => {
+      if (headers['X-ERP-Signature']) sent.push(headers['X-ERP-Signature']);
+      return (await fetch(origin + path, { method, headers: { 'Content-Type': 'application/json', ...headers }, body: b })).status;
+    };
+    let statuses: number[];
+    try {
+      const replayHeaders = signHeaders('GET', full, '');
+      statuses = [
+        await send(signHeaders('GET', full, '', { keyId: 'not-a-key' })),
+        await send({ ...signHeaders('GET', full, ''), 'X-ERP-Timestamp': String(Math.floor(Date.now() / 1000) - 3600) }),
+        await send(signHeaders('GET', full, '', { secret: 'wrong_secret_0123456789abcdef0123456789' })),
+        await send(signHeaders('PUT', '/api/v1/erp/stock/ANY', body), 'PUT', '/api/v1/erp/stock/ANY', body.replace('7', '8')),
+        await send(replayHeaders),
+        await send(replayHeaders),
+      ];
+    } finally { console.log = realLog; }
+    assert.deepStrictEqual(statuses, [401, 401, 401, 401, 200, 401]);
+    const audit = lines.filter((l) => l.includes('"event":"ERP_API"')).map((l) => JSON.parse(l));
+    const reasons = audit.map((a) => a.authFailure?.reason ?? null);
+    assert.deepStrictEqual(reasons, ['unknown_key', 'bad_timestamp', 'bad_signature', 'bad_signature', null, 'replay']);
+    assert.deepStrictEqual(audit.map((a) => a.claimedKeyConfigured), [false, true, true, true, true, true]);
+    assert.ok(Math.abs(audit[1].authFailure.skewSeconds - 3600) <= 5, 'clock difference reported');
+    assert.ok(audit.every((a) => a.configuredKeyCount >= 1));
+    const text = lines.join('\n');
+    for (const secretish of [SECRET, 'wrong_secret_0123456789abcdef0123456789', ...sent, body, '"quantity"']) {
+      assert.ok(!text.includes(secretish), `audit log leaked ${secretish.slice(0, 12)}…`);
+    }
+  });
   await test('an admin JWT is not accepted on ERP routes', async () => {
     const res = await fetch(origin + '/api/v1/erp/orders', { headers: { Authorization: `Bearer ${adminToken}` } });
     assert.strictEqual(res.status, 401);
