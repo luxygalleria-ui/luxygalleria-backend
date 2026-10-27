@@ -29,6 +29,8 @@ import { Category } from '../models/Category';
 import { Brand } from '../models/Brand';
 import Order from '../models/Order';
 import { ErpEvent } from '../models/ErpEvent';
+import { CheckoutSession } from '../models/CheckoutSession';
+import { expireStaleSessions, reserveStock } from '../utils/checkoutSessions';
 import { imageStore } from '../controllers/erpController';
 import { getErpKeyConfigurationStatus } from '../middlewares/erpAuth';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -313,6 +315,25 @@ const run = async () => {
     assert.strictEqual(r.status, 409);
     assert.strictEqual(r.json.errors[0].code, 'CONFLICT');
   });
+  await test('an item named like a website product whose variants have no SKU is refused, not created twice', async () => {
+    const legacy = await Product.create({ name: 'Legacy Oud', category: 'Skincare', description: 'Created in the admin', variants: [{ volume: '50ml', price: 900, offerPrice: 900, actualPrice: 900, stock: 2, weight: 0.05 }] });
+    const before = await Product.countDocuments();
+    const r = await erp('POST', '/items', { name: 'legacy oud', description: 'From the ERP', category: 'skincare', variants: [{ sku: 'OUD-50', offerPrice: 900, actualPrice: 900 }] });
+    assert.strictEqual(r.status, 409, JSON.stringify(r.json));
+    assert.deepStrictEqual([r.json.errors[0].code, r.json.errors[0].productId], ['UNMAPPED_PRODUCT', String(legacy._id)]);
+    assert.strictEqual(await Product.countDocuments(), before, 'no duplicate product');
+    // Once the website sets the ERP-approved code on that variant, the ERP updates it in place
+    await Product.updateOne({ _id: legacy._id }, { $set: { 'variants.0.sku': 'OUD-50' } });
+    const ok = await erp('POST', '/items', { name: 'Legacy Oud', variants: [{ sku: 'OUD-50', offerPrice: 950, actualPrice: 950 }] });
+    assert.strictEqual(ok.status, 200, JSON.stringify(ok.json));
+    assert.deepStrictEqual([ok.json.data.productId, ok.json.data.variants[0].variantId], [String(legacy._id), String(legacy.variants[0]._id)]);
+    await Product.deleteOne({ _id: legacy._id });
+    // A spaces-only SKU stored by older code also counts as "no SKU"
+    const blank = await Product.create({ name: 'Blank Oud', category: 'Skincare', description: 'x', variants: [{ volume: '50ml', price: 900, offerPrice: 900, actualPrice: 900, stock: 1, weight: 0.05, sku: '   ' }] });
+    const r2 = await erp('POST', '/items', { name: 'Blank Oud', description: 'From the ERP', category: 'skincare', variants: [{ sku: 'BOUD-50', offerPrice: 900, actualPrice: 900 }] });
+    assert.deepStrictEqual([r2.status, r2.json.errors[0].code], [409, 'UNMAPPED_PRODUCT']);
+    await Product.deleteOne({ _id: blank._id });
+  });
 
   console.log('\nItem edit');
   await test('price-only patch changes only that variant; images, stock and other variants untouched', async () => {
@@ -400,6 +421,72 @@ const run = async () => {
     assert.strictEqual(r.modifiedCount, 1);
     assert.strictEqual((await Product.findById(productId))!.variants[0].stock, 15);
   });
+  await test('units held by open checkouts are subtracted, so an abandoned reservation never inflates stock', async () => {
+    const p = (await Product.findById(productId))!;
+    const [v, other] = p.variants;
+    assert.ok((await reserveStock([{ product: p._id, variantId: v._id, quantity: 4, name: p.name }])).ok);
+    await CheckoutSession.create({
+      user: alice._id, razorpayOrderId: 'order_erp_hold', expiresAt: new Date(Date.now() + 60_000), stockReserved: true,
+      items: [{ product: p._id, variantId: v._id, name: p.name, price: 450, quantity: 4, weight: 0.05, subtotal: 1800 }],
+      fulfillmentMethod: 'delivery', breakdown: { grandTotal: 1800 }, amountPaise: 180000, settingsVersion: 'test',
+    });
+    const r = await erp('PUT', '/stock/ROSE-30', { quantity: 20, asOf: iso(0) });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.json));
+    assert.deepStrictEqual([r.json.data.quantity, r.json.data.reservedQuantity, r.json.data.pendingOrderQuantity], [16, 4, 0]);
+    // The checkout is abandoned: its 4 units return on top of the figure net of them, giving exactly the ERP's 20
+    await CheckoutSession.updateOne({ razorpayOrderId: 'order_erp_hold' }, { $set: { expiresAt: new Date(Date.now() - 1000) } });
+    await expireStaleSessions();
+    const after = (await Product.findById(productId))!;
+    assert.strictEqual(after.variants[0].stock, 20);
+    assert.strictEqual(after.variants[1].stock, other.stock, 'the other variant is untouched');
+    assert.strictEqual(after.stock, 20 + other.stock, 'product total in step');
+    await CheckoutSession.deleteMany({});
+  });
+  await test('the same stock update retried concurrently is applied once; the others change nothing', async () => {
+    const body = { quantity: 12, asOf: iso(0) };
+    const rs = await Promise.all(Array.from({ length: 5 }, () => erp('PUT', '/stock/ROSE-30', body))); // each freshly signed, as ERP retries are
+    assert.ok(rs.every((r) => r.status === 200), rs.map((r) => r.status).join(','));
+    assert.strictEqual(rs.filter((r) => r.json.data.applied).length, 1, 'exactly one applied');
+    const p = (await Product.findById(productId))!;
+    assert.deepStrictEqual([p.variants[0].stock, p.variants[0].stockAsOf!.toISOString()], [12, new Date(body.asOf).toISOString()]);
+  });
+  await test('concurrent updates with different asOf: the newest figure wins whatever the arrival order', async () => {
+    const older = { quantity: 30, asOf: iso(1000) };
+    const newer = { quantity: 25, asOf: iso(2000) };
+    const [a, b] = await Promise.all([erp('PUT', '/stock/ROSE-30', older), erp('PUT', '/stock/ROSE-30', newer)]);
+    assert.strictEqual(b.status, 200, JSON.stringify(b.json));
+    assert.ok(a.status === 200 || (a.status === 409 && a.json.errors[0].code === 'STALE_UPDATE'), JSON.stringify(a.json));
+    const p = (await Product.findById(productId))!;
+    assert.deepStrictEqual([p.variants[0].stock, p.variants[0].stockAsOf!.toISOString()], [25, new Date(newer.asOf).toISOString()]);
+  });
+  await test('stock that keeps changing during an update: 409 CONFLICT after the retries, and the checkouts are never overwritten', async () => {
+    const before = (await Product.findById(productId))!.variants[0];
+    // Every attempt reads the held units; a checkout takes 1 unit right after that read, so each conditional write misses
+    const aggregate = CheckoutSession.aggregate;
+    let checkouts = 0;
+    (CheckoutSession as any).aggregate = function (...args: any[]) {
+      return (async () => {
+        await Product.updateOne({ _id: productId, 'variants._id': before._id }, { $inc: { 'variants.$.stock': -1, stock: -1 } });
+        checkouts++;
+        return aggregate.apply(CheckoutSession, args as any);
+      })();
+    };
+    let r;
+    try {
+      r = await erp('PUT', '/stock/ROSE-30', { quantity: 99, asOf: iso(3000) });
+    } finally {
+      (CheckoutSession as any).aggregate = aggregate;
+    }
+    assert.strictEqual(r.status, 409, JSON.stringify(r.json));
+    assert.deepStrictEqual([r.json.errors[0].code, r.json.message], ['CONFLICT', 'Stock changed repeatedly while applying this update; retry it']);
+    assert.strictEqual(checkouts, 3, 'three attempts, then it gives up');
+    const after = (await Product.findById(productId))!.variants[0];
+    assert.strictEqual(after.stock, before.stock - 3, 'every concurrent checkout decrement kept; the ERP figure was not written');
+    assert.strictEqual(after.stockAsOf!.toISOString(), before.stockAsOf!.toISOString(), 'stockAsOf unchanged');
+    // Retrying the same request once checkouts settle applies it
+    const retry = await erp('PUT', '/stock/ROSE-30', { quantity: 99, asOf: iso(3000) });
+    assert.deepStrictEqual([retry.status, retry.json.data.applied, retry.json.data.quantity], [200, true, 99]);
+  });
 
   console.log('\nOrders');
   const p = (await Product.findById(productId))!;
@@ -445,6 +532,18 @@ const run = async () => {
     assert.ok(!text.includes('sig_secret') && !text.includes('password'), 'no secrets in the payload');
     assert.strictEqual((await erp('GET', '/orders/123')).status, 400);
     assert.strictEqual((await erp('GET', `/orders/${new mongoose.Types.ObjectId()}`)).status, 404);
+  });
+
+  await test('order lines report the SKU and name as sold; older orders fall back to the current SKU', async () => {
+    const sold = await Order.create({
+      user: alice._id, items: [{ product: p._id, variantId: p.variants[0]._id, name: 'Rose Serum (as sold)', sku: 'ROSE-30-OLD', quantity: 1, price: 450, subtotal: 450 }],
+      shippingAddress: { street: '1 St', city: 'Kochi', state: 'Kerala', zipCode: '682001', country: 'India' },
+      subtotal: 450, total: 490, shippingFee: 40, paymentMethod: 'razorpay', paymentStatus: 'completed', razorpayOrderId: 'order_snapshot',
+    });
+    const line = (await erp('GET', `/orders/${sold._id}`)).json.data.items[0];
+    assert.deepStrictEqual([line.sku, line.name, line.variantId], ['ROSE-30-OLD', 'Rose Serum (as sold)', String(p.variants[0]._id)]);
+    assert.strictEqual((await erp('GET', `/orders/${o1._id}`)).json.data.items[0].sku, 'ROSE-30', 'no snapshot: current SKU');
+    await Order.deleteOne({ _id: sold._id });
   });
 
   console.log('\nOrder-status webhook');

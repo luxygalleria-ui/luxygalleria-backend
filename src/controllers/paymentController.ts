@@ -13,7 +13,8 @@ import { calculateShippingForItems } from '../utils/shippingCalculator';
 import { CheckoutRuleError, Selection } from '../utils/orderPricing';
 import { CheckoutSettingsError } from '../utils/checkoutSettings';
 import { CheckoutSession, ICheckoutSession } from '../models/CheckoutSession';
-import { expireStaleSessions, finalizeSession, releaseStock, reserveStock, settingsFingerprint, snapshotFromQuote } from '../utils/checkoutSessions';
+import { expireStaleSessions, finalizeSession, reserveStock, settingsFingerprint, snapshotFromQuote } from '../utils/checkoutSessions';
+import { ORDER_STATUSES, canMoveOrderStatus } from '../utils/orderStatus';
 dotenv.config();
 
 export const razorpayInstance = new Razorpay({
@@ -183,6 +184,28 @@ const sendOrderConfirmationEmail = async (newOrder: any, user: { _id: unknown; n
 
 };
 
+/**
+ * What a customer may see of their own order (order history and checkout responses). An allow-list, so new internal
+ * fields stay private by default: payment ids and signature, ERP references, refund records, internal notes, the
+ * checkout session and the user id never leave the server. Fields absent on an order stay absent.
+ */
+export const customerOrderView = (doc: any) => {
+  const o = typeof doc?.toObject === 'function' ? doc.toObject() : doc;
+  const product = (p: any) => (p && typeof p === 'object' && p.name !== undefined ? { _id: p._id, name: p.name, images: p.images } : null);
+  return {
+    _id: o._id, createdAt: o.createdAt, updatedAt: o.updatedAt,
+    orderStatus: o.orderStatus, paymentStatus: o.paymentStatus, paymentMethod: o.paymentMethod,
+    subtotal: o.subtotal, discount: o.discount, shippingFee: o.shippingFee, total: o.total,
+    fulfillmentMethod: o.fulfillmentMethod, shippingMethod: o.shippingMethod, shippingAddress: o.shippingAddress,
+    pickupDetails: o.pickupDetails, pickupFee: o.pickupFee, specialPackagingFee: o.specialPackagingFee, tax: o.tax,
+    trackingNumber: o.trackingNumber,
+    items: (o.items || []).map((i: any) => ({
+      product: product(i.product), name: i.name, size: i.size, image: i.image,
+      quantity: i.quantity, price: i.price, subtotal: i.subtotal, taxRate: i.taxRate, taxAmount: i.taxAmount,
+    })),
+  };
+};
+
 /** A Razorpay payment pays this session only if it is for its order, in INR, authorised/captured and for exactly its amount. */
 export const paymentMatchesSession = (payment: any, session: Pick<ICheckoutSession, 'razorpayOrderId' | 'amountPaise' | 'currency'>) => {
   const ok = !!payment && payment.order_id === session.razorpayOrderId && ['authorized', 'captured'].includes(payment.status)
@@ -230,40 +253,42 @@ export const createOrder = async (req: Request, res: Response) => {
       });
     }
 
-    // Reserve stock now (atomic, all or nothing) so concurrent checkouts can never sell the same units
     await expireStaleSessions();
-    const reserved = await reserveStock(totals.lines);
-    if (!reserved.ok) {
-      return res.status(400).json({ success: false, code: 'OUT_OF_STOCK', message: `Only ${reserved.available} of ${reserved.name} left in stock` });
-    }
 
     let razorpayOrder;
     let isMock = false;
-    try {
-      if (isMockPaymentMode()) {
-        razorpayOrder = { id: `mock_order_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`, amount: Math.round(totals.grandTotal * 100), currency: 'INR' };
-        isMock = true;
-      } else if (razorpayKeysMissing()) {
-        console.error('Razorpay keys are not configured; refusing to create a payment');
-        await releaseStock(totals.lines);
-        return res.status(503).json({ success: false, message: 'Payments are temporarily unavailable' });
-      } else {
-        razorpayOrder = await razorpayInstance.orders.create({
-          // Charge the server-calculated amount, never the client's number
-          amount: Math.round(totals.grandTotal * 100),
-          currency: 'INR',
-          receipt: `receipt_order_${Date.now()}`,
-          notes: { fulfillment: totals.fulfillmentMethod, shippingMethod: totals.shippingMethod || '' },
-        });
-      }
-      // The immutable quote this payment will be verified against
-      const fp = await settingsFingerprint();
-      await CheckoutSession.create(snapshotFromQuote(totals, items, {
-        user: req.user!._id, razorpayOrderId: razorpayOrder.id, isMock, shippingAddress, settingsVersion: fp.version, settingsUpdatedAt: fp.updatedAt,
-      }));
-    } catch (err) {
-      await releaseStock(totals.lines); // nothing can be paid for: give the units back
-      throw err;
+    if (isMockPaymentMode()) {
+      razorpayOrder = { id: `mock_order_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`, amount: Math.round(totals.grandTotal * 100), currency: 'INR' };
+      isMock = true;
+    } else if (razorpayKeysMissing()) {
+      console.error('Razorpay keys are not configured; refusing to create a payment');
+      return res.status(503).json({ success: false, message: 'Payments are temporarily unavailable' });
+    } else {
+      razorpayOrder = await razorpayInstance.orders.create({
+        // Charge the server-calculated amount, never the client's number
+        amount: Math.round(totals.grandTotal * 100),
+        currency: 'INR',
+        receipt: `receipt_order_${Date.now()}`,
+        notes: { fulfillment: totals.fulfillmentMethod, shippingMethod: totals.shippingMethod || '' },
+      });
+    }
+
+    // The immutable quote this payment will be verified against. It is saved as holding stock BEFORE the stock is taken,
+    // so an ERP stock update (erpController.updateStock) always either counts this hold or sees the stock change and
+    // retries: it can never overwrite a reservation it did not count. A failed reservation briefly under-counts, never over.
+    const fp = await settingsFingerprint();
+    const session = await CheckoutSession.create(snapshotFromQuote(totals, items, {
+      user: req.user!._id, razorpayOrderId: razorpayOrder.id, isMock, shippingAddress, settingsVersion: fp.version, settingsUpdatedAt: fp.updatedAt,
+    }));
+
+    // Reserve stock now (atomic, all or nothing) so concurrent checkouts can never sell the same units
+    const reserved = await reserveStock(totals.lines);
+    if (!reserved.ok) {
+      // Nothing was taken; the unused Razorpay order is never shown to the customer and lapses unpaid
+      await CheckoutSession.updateOne({ _id: session._id }, {
+        $set: { status: 'expired', stockReserved: false }, $push: { events: { at: new Date(), type: 'out-of-stock', detail: reserved.name } },
+      });
+      return res.status(400).json({ success: false, code: 'OUT_OF_STOCK', message: `Only ${reserved.available} of ${reserved.name} left in stock` });
     }
 
     // No order yet — the order is created only after the payment is confirmed against the session
@@ -303,7 +328,7 @@ export const verifyPayment = async (req: Request, res: Response) => {
       .populate('items.product', 'name images variants');
     if (existing) {
       if (existing.user.toString() === req.user._id.toString() && existing.razorpayPaymentId === razorpay_payment_id) {
-        return res.status(200).json({ success: true, message: 'Order already placed for this payment', data: existing });
+        return res.status(200).json({ success: true, message: 'Order already placed for this payment', data: customerOrderView(existing) });
       }
       return res.status(409).json({ success: false, message: 'This payment has already been used' });
     }
@@ -346,13 +371,13 @@ export const verifyPayment = async (req: Request, res: Response) => {
     await order.populate('items.product', 'name images variants');
     if (outcome === 'unfulfillable') {
       return res.status(409).json({
-        success: false, code: 'PAID_OUT_OF_STOCK', data: order,
+        success: false, code: 'PAID_OUT_OF_STOCK', data: customerOrderView(order),
         message: 'Your payment was received, but an item went out of stock while the checkout was open. The order has been cancelled and a full refund will be arranged.',
       });
     }
     if (outcome === 'created') await sendOrderConfirmationEmail(order, req.user as any);
 
-    res.status(200).json({ success: true, message: 'Payment verified and order placed successfully', data: order });
+    res.status(200).json({ success: true, message: 'Payment verified and order placed successfully', data: customerOrderView(order) });
   } catch (error: any) {
     console.error('Error verifying payment:', error);
     res.status(500).json({ success: false, message: 'Error verifying payment' });
@@ -379,11 +404,13 @@ export const calculateShipping = async (req: Request, res: Response) => {
 // Get My Orders
 export const getMyOrders = async (req: Request, res: Response) => {
   try {
+    // Only the signed-in customer's own orders, and only the fields they need
     const orders = await Order.find({ user: req.user?._id })
       .populate('items.product', 'name images')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
-    res.status(200).json({ success: true, data: orders });
+    res.status(200).json({ success: true, data: orders.map(customerOrderView) });
   } catch (error: any) {
     console.error('Error fetching orders:', error);
     res.status(500).json({ success: false, message: error.message || 'Error fetching orders' });
@@ -405,25 +432,39 @@ export const getAllOrders = async (req: Request, res: Response) => {
   }
 };
 
-// Admin: Update Order Status
+// Admin: Update Order Status — same transition rule as the ERP status callback (utils/orderStatus.ts)
 export const updateOrderStatus = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { orderStatus } = req.body;
 
-    if (!['processing', 'shipped', 'delivered', 'cancelled'].includes(orderStatus)) {
+    if (!(ORDER_STATUSES as readonly string[]).includes(orderStatus)) {
       return res.status(400).json({ success: false, message: 'Invalid order status' });
     }
 
-    const order = await Order.findByIdAndUpdate(
-      id,
-      { orderStatus },
-      { new: true, runValidators: true }
-    ).populate('user', 'name email phone')
-      .populate('items.product', 'name images variants');
-
-    if (!order) {
+    const current = await Order.findById(id, { orderStatus: 1 }).lean();
+    if (!current) {
       return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+    const populated = (q: any) => q.populate('user', 'name email phone').populate('items.product', 'name images variants');
+
+    // Same status again (double click, retry): nothing changes and the customer is not emailed twice
+    if (current.orderStatus === orderStatus) {
+      return res.status(200).json({ success: true, message: 'Order status unchanged', data: await populated(Order.findById(id)) });
+    }
+    if (!canMoveOrderStatus(current.orderStatus, orderStatus)) {
+      return res.status(409).json({ success: false, code: 'INVALID_TRANSITION', message: `Order cannot move from ${current.orderStatus} to ${orderStatus}` });
+    }
+
+    // Conditional on the status checked above, so a concurrent ERP callback or second admin is never overwritten.
+    // statusUpdatedAt makes an older ERP event arriving later count as stale, as it would against an ERP change.
+    const order = await populated(Order.findOneAndUpdate(
+      { _id: id, orderStatus: current.orderStatus },
+      { $set: { orderStatus, statusUpdatedAt: new Date() } },
+      { new: true, runValidators: true }
+    ));
+    if (!order) {
+      return res.status(409).json({ success: false, code: 'CONFLICT', message: 'Order status changed while saving; reload and try again' });
     }
 
     await sendOrderStatusEmail(order, orderStatus);
@@ -432,6 +473,50 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Error updating order status:', error);
     res.status(500).json({ success: false, message: error.message || 'Error updating order status' });
+  }
+};
+
+/**
+ * Superadmin only (route-enforced): sets a status the forward-only rule refuses, e.g. undoing a mistaken "delivered".
+ * The audit entry is pushed in the same atomic update as the status, so a correction cannot exist without its record.
+ * Conditional on `fromStatus` (what the superadmin saw), so a newer change by an admin or the ERP is never overwritten.
+ * No email, refund, restock or payment change: a correction fixes a record, it does not run the workflow again.
+ */
+export const correctOrderStatus = async (req: Request, res: Response) => {
+  try {
+    const { orderStatus, fromStatus } = req.body || {};
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+    const statuses = ORDER_STATUSES as readonly string[];
+    if (!/^[a-f\d]{24}$/i.test(req.params.id)) return res.status(400).json({ success: false, code: 'VALIDATION_ERROR', message: 'Invalid order id' });
+    if (!statuses.includes(orderStatus) || !statuses.includes(fromStatus)) {
+      return res.status(400).json({ success: false, code: 'VALIDATION_ERROR', message: 'orderStatus and fromStatus must each be one of: ' + statuses.join(', ') });
+    }
+    if (reason.length < 5 || reason.length > 300) {
+      return res.status(400).json({ success: false, code: 'VALIDATION_ERROR', message: 'A correction reason (5-300 characters) is required' });
+    }
+    if (orderStatus === fromStatus || canMoveOrderStatus(fromStatus, orderStatus)) {
+      return res.status(400).json({ success: false, code: 'NOT_A_CORRECTION', message: `${fromStatus} -> ${orderStatus} is not a correction; use the normal status change` });
+    }
+
+    const now = new Date();
+    const order = await Order.findOneAndUpdate(
+      { _id: req.params.id, orderStatus: fromStatus },
+      {
+        $set: { orderStatus, statusUpdatedAt: now },
+        $push: { statusCorrections: { at: now, by: String(req.user!._id), from: fromStatus, to: orderStatus, reason } },
+      },
+      { new: true, runValidators: true }
+    ).populate('user', 'name email phone').populate('items.product', 'name images variants');
+    if (!order) {
+      const exists = await Order.exists({ _id: req.params.id });
+      return exists
+        ? res.status(409).json({ success: false, code: 'CONFLICT', message: `The order is no longer ${fromStatus}; reload and check before correcting` })
+        : res.status(404).json({ success: false, message: 'Order not found' });
+    }
+    res.status(200).json({ success: true, message: 'Order status corrected', data: order });
+  } catch (error: any) {
+    console.error('Error correcting order status:', error?.message);
+    res.status(500).json({ success: false, message: 'Error correcting order status' });
   }
 };
 

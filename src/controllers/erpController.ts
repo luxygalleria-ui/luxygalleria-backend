@@ -10,6 +10,8 @@ import { Brand } from '../models/Brand';
 import { User } from '../models/User';
 import Order from '../models/Order';
 import { ErpEvent } from '../models/ErpEvent';
+import { CheckoutSession } from '../models/CheckoutSession';
+import { ORDER_STATUSES, canMoveOrderStatus as canMove } from '../utils/orderStatus';
 import { asyncHandler } from '../utils/asyncHandler';
 import { successResponse, errorResponse } from '../utils/responseHandler';
 import { parseWeightFromVolume } from '../utils/shippingCalculator';
@@ -31,7 +33,6 @@ const isoDate = z.string().datetime({ offset: true, message: 'must be an ISO 860
 const sku = z.string().trim().min(1).max(64);
 const money = z.number().finite().min(0).max(10_000_000);
 const httpsUrl = z.string().trim().url().max(2048).refine((u) => u.startsWith('https://'), 'must be an https URL');
-const ORDER_STATUSES = ['processing', 'shipped', 'delivered', 'cancelled'] as const;
 const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'refunded'] as const;
 const itemListSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -207,6 +208,17 @@ export const upsertItem = asyncHandler(async (req: Request, res: Response) => {
     if (missing.length) {
       return errorResponse(res, 400, 'Validation failed', missing.map((field) => ({ field, code: 'VALIDATION_ERROR', message: 'required when creating an item' })));
     }
+    // A website product of this name whose variants have no SKU yet is most likely this item: creating another would
+    // duplicate it in the catalogue. The website team sets the ERP-approved SKU on it instead (no mapping is guessed here).
+    const unmapped = await Product.findOne({
+      name: { $regex: `^${escapeRegex(input.name!)}$`, $options: 'i' },
+      variants: { $elemMatch: { $or: [{ sku: { $exists: false } }, { sku: null }, { sku: { $regex: '^\\s*$' } }] } },
+    }).select('_id').lean();
+    if (unmapped) {
+      return errorResponse(res, 409, `Website product "${input.name}" already exists with variants that have no SKU. Ask the website team to set the SKUs on it instead of creating a new item`, [
+        { code: 'UNMAPPED_PRODUCT', field: 'name', productId: String(unmapped._id) },
+      ]);
+    }
   }
   const product = isNew ? new Product({ ...update.fields, variants: [] }) : products[0];
   if (!isNew) product.set(update.fields);
@@ -304,6 +316,20 @@ const pendingQuantity = async (variantId: unknown, since: Date) => {
   return row?.qty || 0;
 };
 
+/** Units of this variant held right now by unpaid or finishing checkouts. The ERP never sees these reservations. */
+const reservedQuantity = async (variantId: unknown) => {
+  const id = new mongoose.Types.ObjectId(String(variantId));
+  const [row] = await CheckoutSession.aggregate([
+    { $match: { stockReserved: true, status: { $in: ['pending', 'processing'] }, 'items.variantId': id } },
+    { $unwind: '$items' },
+    { $match: { 'items.variantId': id } },
+    { $group: { _id: null, qty: { $sum: '$items.quantity' } } },
+  ]);
+  return row?.qty || 0;
+};
+
+const STOCK_WRITE_ATTEMPTS = 3;
+
 // PUT /erp/stock/:sku — absolute sellable quantity for one variant
 export const updateStock = asyncHandler(async (req: Request, res: Response) => {
   const parsed = stockSchema.safeParse(req.body);
@@ -315,35 +341,54 @@ export const updateStock = asyncHandler(async (req: Request, res: Response) => {
   const hits = await findSku(code);
   if (hits.length !== 1) return skuLookupError(res, code, hits.length);
   const { product, variant } = hits[0];
-
-  // ponytail: provisional reconcile rule (ERP to confirm). A checkout landing between this read and the
-  // write below can be counted twice (under-sells, never over-sells); a transaction removes that window.
-  const pending = await pendingQuantity(variant._id, asOf);
-  const quantity = Math.max(0, parsed.data.quantity - pending);
-
-  // Only this variant's stock, and only if no newer ERP figure was applied — checkout's $inc on other fields is untouched.
-  const r = await Product.updateOne(
-    { _id: product._id, variants: { $elemMatch: { _id: variant._id, sku: code, $or: [{ stockAsOf: { $exists: false } }, { stockAsOf: null }, { stockAsOf: { $lt: asOf } }] } } },
-    { $set: { 'variants.$.stock': quantity, 'variants.$.stockAsOf': asOf } }
-  );
-
   const base = { sku: code, productId: String(product._id), variantId: String(variant._id), asOf: asOf.toISOString() };
-  if (!r.matchedCount) {
-    const current: any = (await Product.findById(product._id))?.variants.find((v) => String(v._id) === String(variant._id));
-    if (current?.stockAsOf && current.stockAsOf.getTime() === asOf.getTime()) {
+  const newerOrSame = (v: any) => v?.stockAsOf && v.stockAsOf.getTime() >= asOf.getTime();
+
+  // ponytail: provisional reconcile rule (ERP to confirm physical vs sellable). Stored = ERP figure minus website orders
+  // after asOf minus units held by open checkouts (the ERP knows neither). Sessions are read before orders, so a checkout
+  // finishing between the two reads is counted twice (under-sells), never missed. The write only applies if the stock
+  // is still what it was when read, so a reservation or release in between is never overwritten; a transaction would
+  // remove the double-count window too.
+  let current: any = variant;
+  let reserved = 0;
+  let pending = 0;
+  let quantity = 0;
+  let applied = false;
+  for (let attempt = 0; attempt < STOCK_WRITE_ATTEMPTS && current && !newerOrSame(current); attempt++) {
+    reserved = await reservedQuantity(variant._id);
+    pending = await pendingQuantity(variant._id, asOf);
+    quantity = Math.max(0, parsed.data.quantity - pending - reserved);
+
+    // Only this variant's stock, only if no newer ERP figure was applied, and only if nothing moved its stock since the read.
+    const r = await Product.updateOne(
+      { _id: product._id, variants: { $elemMatch: { _id: variant._id, sku: code, stock: current.stock, $or: [{ stockAsOf: { $exists: false } }, { stockAsOf: null }, { stockAsOf: { $lt: asOf } }] } } },
+      { $set: { 'variants.$.stock': quantity, 'variants.$.stockAsOf': asOf } }
+    );
+    if (r.matchedCount) { applied = true; break; }
+    const fresh: any = await Product.findById(product._id, { variants: 1 }).lean();
+    current = fresh?.variants?.find((v: any) => String(v._id) === String(variant._id) && v.sku === code);
+  }
+
+  if (!applied) {
+    if (!current) return fail(res, 404, `SKU not found: ${code}`, 'NOT_FOUND', 'sku');
+    if (current.stockAsOf && current.stockAsOf.getTime() === asOf.getTime()) {
       // Same update delivered again: answer as before, change nothing
       return successResponse(res, 200, 'Stock already at this update', { ...base, previousQuantity: current.stock, quantity: current.stock, applied: false, updatedAt: new Date().toISOString() });
     }
-    return errorResponse(res, 409, 'A newer stock update has already been applied', [{ code: 'STALE_UPDATE', field: 'asOf', currentAsOf: current?.stockAsOf?.toISOString() ?? null }]);
+    if (newerOrSame(current)) {
+      return errorResponse(res, 409, 'A newer stock update has already been applied', [{ code: 'STALE_UPDATE', field: 'asOf', currentAsOf: current.stockAsOf.toISOString() }]);
+    }
+    return errorResponse(res, 409, 'Stock changed repeatedly while applying this update; retry it', [{ code: 'CONFLICT' }]);
   }
   await syncProductStock(product._id);
 
   return successResponse(res, 200, 'Stock updated', {
     ...base,
-    previousQuantity: variant.stock,
+    previousQuantity: current.stock,
     quantity,
     erpQuantity: parsed.data.quantity,
     pendingOrderQuantity: pending,
+    reservedQuantity: reserved,
     applied: true,
     updatedAt: new Date().toISOString(),
   });
@@ -379,8 +424,8 @@ const orderLines = (order: any, products: Map<string, any>) => order.items.map((
   return {
     productId: String(it.product),
     variantId: String(it.variantId),
-    sku: v?.sku || null, // current SKU of the variant; not stored on the order
-    name: p?.name ?? null,
+    sku: it.sku || v?.sku || null, // SKU as sold; older orders fall back to the variant's current SKU
+    name: it.name ?? p?.name ?? null,
     size: it.size ?? null,
     quantity: it.quantity,
     unitPrice: it.price,
@@ -479,10 +524,6 @@ const webhookSchema = z.object({
   occurredAt: isoDate,
 }); // unknown fields are ignored so the ERP can add data without breaking delivery
 
-const RANK: Record<string, number> = { processing: 0, shipped: 1, delivered: 2 };
-/** Forward only; cancel allowed until delivered; delivered and cancelled are final. */
-const canMove = (from: string, to: string) =>
-  to === 'cancelled' ? from === 'processing' || from === 'shipped' : from !== 'cancelled' && RANK[to] > RANK[from];
 
 // POST /erp/webhooks/order-status
 export const orderStatusWebhook = asyncHandler(async (req: Request, res: Response) => {

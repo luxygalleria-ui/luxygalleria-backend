@@ -77,7 +77,7 @@ export const snapshotFromQuote = (
   stockReserved: true,
   expiresAt: new Date(Date.now() + sessionTtlMs()),
   items: q.lines.map((l, i) => ({
-    product: l.product, variantId: l.variantId, name: l.name, price: l.price, quantity: l.quantity, weight: l.weight,
+    product: l.product, variantId: l.variantId, name: l.name, sku: l.sku, price: l.price, quantity: l.quantity, weight: l.weight,
     size: typeof clientItems[i]?.size === 'string' ? clientItems[i].size.slice(0, 50) : undefined,
     image: typeof clientItems[i]?.image === 'string' ? clientItems[i].image.slice(0, 500) : undefined,
     subtotal: Math.round(l.price * l.quantity * 100) / 100,
@@ -108,7 +108,7 @@ const orderFromSession = (s: ICheckoutSession, paymentId: string, signature: str
   user: s.user,
   checkoutSession: s._id,
   items: s.items.map((i) => ({
-    product: i.product, variantId: i.variantId, quantity: i.quantity, price: i.price, size: i.size, image: i.image, subtotal: i.subtotal,
+    product: i.product, variantId: i.variantId, name: i.name, sku: i.sku, quantity: i.quantity, price: i.price, size: i.size, image: i.image, subtotal: i.subtotal,
     ...(s.breakdown.tax.enabled ? { taxRate: i.taxRate ?? null, taxAmount: i.taxAmount ?? 0 } : {}),
   })),
   fulfillmentMethod: s.fulfillmentMethod,

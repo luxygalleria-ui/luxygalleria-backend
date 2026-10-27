@@ -13,6 +13,7 @@ export interface ISessionItem {
   product: mongoose.Types.ObjectId;
   variantId: mongoose.Types.ObjectId;
   name: string;
+  sku?: string;
   price: number;
   quantity: number;
   weight: number;
@@ -59,6 +60,7 @@ const itemSchema = new Schema<ISessionItem>({
   product: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
   variantId: { type: Schema.Types.ObjectId, required: true },
   name: { type: String, required: true },
+  sku: String,
   price: { type: Number, required: true },
   quantity: { type: Number, required: true },
   weight: { type: Number, required: true },

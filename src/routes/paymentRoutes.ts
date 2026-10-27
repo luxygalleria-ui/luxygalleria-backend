@@ -1,5 +1,5 @@
 import express from 'express';
-import { createOrder, verifyPayment, getMyOrders, getAllOrders, updateOrderStatus, deleteOrder, calculateShipping, razorpayWebhook, refundOrder, reconcilePayments } from '../controllers/paymentController';
+import { createOrder, verifyPayment, getMyOrders, getAllOrders, updateOrderStatus, correctOrderStatus, deleteOrder, calculateShipping, razorpayWebhook, refundOrder, reconcilePayments } from '../controllers/paymentController';
 import { protect, authorize } from '../middlewares/authMiddleware';
 import { paymentLimiter } from '../middlewares/rateLimiter';
 
@@ -19,5 +19,7 @@ router.delete('/admin/orders/:id', protect, authorize('admin', 'superadmin'), de
 // Money movements: super admin only
 router.post('/admin/orders/:id/refund', protect, authorize('superadmin'), refundOrder);
 router.post('/admin/reconcile', protect, authorize('superadmin'), reconcilePayments);
+// Audited correction of a status the forward-only rule refuses
+router.post('/admin/orders/:id/status-correction', protect, authorize('superadmin'), correctOrderStatus);
 
 export default router;

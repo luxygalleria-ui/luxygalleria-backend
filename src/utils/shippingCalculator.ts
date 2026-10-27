@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { Product } from '../models/Product';
 import { Settings } from '../models/Settings';
 import { legacyShippingConfig, loadCheckoutSettings } from './checkoutSettings';
-import { priceOrder, Selection, OrderQuote } from './orderPricing';
+import { priceOrder, Selection, OrderQuote, CheckoutRuleError } from './orderPricing';
 
 export interface ShippingCalculationResult {
   subtotal: number;
@@ -147,6 +147,8 @@ export interface ResolvedLine {
   quantity: number;
   stock: number;
   name: string;
+  /** The variant's SKU when the line was priced; copied onto the order line as a purchase-time snapshot. */
+  sku?: string;
   requiresSpecialPackaging: boolean;
   taxRate: number | null;
 }
@@ -178,30 +180,15 @@ export const calculateShippingForItems = async (
       throw new Error(`Product not found: ${item.product}`);
     }
 
-    let itemPrice = 0;
-    let itemWeight = 0;
-
-    let variant: any = null;
-    if (item.variantId && product.variants && product.variants.length > 0) {
-      variant = product.variants.find((v: any) => v._id && v._id.toString() === item.variantId?.toString());
+    // Exactly the option the customer chose. Never another size or the first variant: that would charge for, reserve
+    // and send the ERP a different item.
+    const variant: any = item.variantId ? product.variants?.find((v: any) => v._id && v._id.toString() === item.variantId?.toString()) : null;
+    if (!variant) {
+      throw new CheckoutRuleError(`${product.name}: the selected option is no longer available. Remove it from your cart and add it again.`, 'VARIANT_UNAVAILABLE');
     }
-    if (!variant && item.size && product.variants && product.variants.length > 0) {
-      variant = product.variants.find((v: any) => v.volume?.toLowerCase() === item.size?.toLowerCase());
-    }
-
-    if (variant) {
-      itemPrice = variant.offerPrice || variant.price || 0;
-      // Weight from the stored variant only (its weight, else its own volume label, else the product); never the client's size text
-      itemWeight = (variant.weight && variant.weight > 0) ? variant.weight : (parseWeightFromVolume(variant.volume || '') || product.weight || 0);
-    } else if (product.variants && product.variants.length > 0) {
-      const defaultVariant = product.variants[0];
-      variant = defaultVariant;
-      itemPrice = defaultVariant.offerPrice || defaultVariant.price || 0;
-      const parsedDefaultWeight = parseWeightFromVolume(defaultVariant.volume || '');
-      itemWeight = (defaultVariant.weight && defaultVariant.weight > 0) ? defaultVariant.weight : (parsedDefaultWeight || product.weight || 0);
-    } else {
-      throw new Error(`Product ${product.name} has no variants configured`);
-    }
+    const itemPrice = variant.offerPrice || variant.price || 0;
+    // Weight from the stored variant only (its weight, else its own volume label, else the product); never the client's size text
+    const itemWeight = (variant.weight && variant.weight > 0) ? variant.weight : (parseWeightFromVolume(variant.volume || '') || product.weight || 0);
 
     // A missing or zero price would sell the item for free: refuse instead
     if (!(Number.isFinite(itemPrice) && itemPrice > 0)) {
@@ -216,6 +203,7 @@ export const calculateShippingForItems = async (
       quantity: item.quantity,
       stock: Number(variant.stock) || 0,
       name: product.name,
+      sku: variant.sku || undefined,
       requiresSpecialPackaging: product.requiresSpecialPackaging === true,
       taxRate: typeof product.taxRate === 'number' ? product.taxRate : null,
     });

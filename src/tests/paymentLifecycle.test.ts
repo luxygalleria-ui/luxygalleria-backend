@@ -11,6 +11,8 @@ const TEST_DB = 'mongodb://127.0.0.1:27017/luxy_payment_lifecycle_test';
 process.env.NODE_ENV = 'development';
 process.env.HISTORY_READ_ENABLED = 'false';
 process.env.SENDGRID_API_KEY = '';
+const ERP_SECRET = 'lifecycle_erp_secret_0123456789abcdef0123'; // throwaway local key
+process.env.ERP_API_KEYS = `erp-lc:${ERP_SECRET}`;
 
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
@@ -85,6 +87,15 @@ const run = async () => {
       const c = await call('POST', '/payments/create-order', { items, shippingAddress: address, fulfillment: { method: 'delivery' }, total }, token);
       return { ...c, orderId: c.json?.data?.razorpayOrder?.id as string, paise: c.json?.data?.razorpayOrder?.amount as number };
     };
+    let erpClock = Math.floor(Date.now() / 1000) - 100;
+    /** A signed ERP request, exactly as the ERP sends it. `path` is relative to /api/v1/erp. */
+    const erpCall = (method: string, path: string, body: unknown) => {
+      const raw = JSON.stringify(body);
+      const ts = String(erpClock++);
+      const sig = crypto.createHmac('sha256', ERP_SECRET).update(`${ts}.${method}./api/v1/erp${path}.${crypto.createHash('sha256').update(raw).digest('hex')}`).digest('hex');
+      return call(method, `/erp${path}`, raw, undefined, { 'X-ERP-Key-Id': 'erp-lc', 'X-ERP-Timestamp': ts, 'X-ERP-Signature': sig });
+    };
+    const erpStock = (sku: string, body: unknown) => erpCall('PUT', `/stock/${sku}`, body);
     const verify = (orderId: string, paymentId: string, token: string, extra: any = {}) =>
       call('POST', '/payments/verify', { razorpay_order_id: orderId, razorpay_payment_id: paymentId, razorpay_signature: sign(orderId, paymentId), ...extra }, token);
 
@@ -140,6 +151,36 @@ const run = async () => {
       assert.strictEqual(ok, 3, results.map((r) => r.status).join(','));
       assert.ok(results.filter((r) => r.status !== 200).every((r) => r.status === 400 && r.json.code === 'OUT_OF_STOCK'));
       assert.strictEqual(await stockOf(last), 0, 'never negative');
+      assert.strictEqual(await CheckoutSession.countDocuments({ 'items.product': last._id, stockReserved: true }), 3, 'refused checkouts hold nothing');
+    });
+
+    await test('an ERP stock update arriving while a checkout is creating its payment never loses that reservation', async () => {
+      const p = await mkProduct('Race Tea', 100, 50);
+      await Product.updateOne({ _id: p._id }, { $set: { 'variants.0.sku': 'RACE-TEA' } });
+      // Hold create-order inside the payment-gateway call, the slowest step of a checkout
+      const create = (razorpayInstance.orders as any).create;
+      let entered!: () => void;
+      let release!: () => void;
+      const inGateway = new Promise<void>((r) => { entered = r; });
+      const gate = new Promise<void>((r) => { release = r; });
+      (razorpayInstance.orders as any).create = async (o: any) => { entered(); await gate; return create(o); };
+      try {
+        const pending = checkout([item(p, 2)], annT);
+        await inGateway;
+        const e = await erpStock('RACE-TEA', { quantity: 40, asOf: new Date().toISOString() });
+        assert.strictEqual(e.status, 200, JSON.stringify(e.json));
+        release();
+        const c = await pending;
+        assert.strictEqual(c.status, 200, JSON.stringify(c.json));
+        assert.strictEqual(await stockOf(p), 38, 'the ERP figure less the 2 units this checkout holds');
+        // Abandoned: its units come back to exactly the ERP figure, never above it
+        await CheckoutSession.updateOne({ razorpayOrderId: c.orderId }, { $set: { expiresAt: new Date(Date.now() - 1000) } });
+        await expireStaleSessions();
+        assert.strictEqual(await stockOf(p), 40);
+      } finally {
+        (razorpayInstance.orders as any).create = create;
+        release();
+      }
     });
 
     await test('multi-line reservation is all or nothing (rolled back when one line is short)', async () => {
@@ -184,6 +225,196 @@ const run = async () => {
       const again = await verify(first.orderId, 'pay_first_late', annT);
       assert.strictEqual(again.status, 200, 'retry returns the recorded (cancelled) order, never a second one');
       assert.strictEqual(await Order.countDocuments({ razorpayOrderId: first.orderId }), 1);
+    });
+
+    await test('an unknown or missing variant is refused, never swapped for another size or the first variant', async () => {
+      const p = await mkProduct('Two Sizes', 100, 5);
+      await Product.updateOne({ _id: p._id }, { $push: { variants: { volume: '500g', price: 300, offerPrice: 300, actualPrice: 300, stock: 5, weight: 0.5 } } });
+      const gone = String(new mongoose.Types.ObjectId());
+      const body = (it: any) => ({ items: [it], shippingAddress: address, fulfillment: { method: 'delivery' } });
+      for (const it of [{ product: String(p._id), variantId: gone, quantity: 1, size: '200g' }, { product: String(p._id), quantity: 1, size: '200g' }]) {
+        const q = await call('POST', '/payments/calculate-shipping', body(it));
+        assert.deepStrictEqual([q.status, q.json.code], [400, 'VARIANT_UNAVAILABLE'], JSON.stringify(q.json));
+        const c = await call('POST', '/payments/create-order', { ...body(it), total: 140 }, annT);
+        assert.deepStrictEqual([c.status, c.json.code], [400, 'VARIANT_UNAVAILABLE']);
+      }
+      const after = (await Product.findById(p._id).lean())!;
+      assert.deepStrictEqual(after.variants.map((v: any) => v.stock), [5, 5], 'nothing reserved');
+    });
+
+    await test('order lines keep the SKU and product name as sold, whatever the catalogue does later', async () => {
+      const p = await mkProduct('Snapshot Tea', 120, 5);
+      await Product.updateOne({ _id: p._id }, { $set: { 'variants.0.sku': 'TEA-200' } });
+      const c = await checkout([item(p)], annT);
+      pay(c.orderId, 'pay_snapshot', c.paise);
+      const v = await verify(c.orderId, 'pay_snapshot', annT);
+      assert.strictEqual(v.status, 200, JSON.stringify(v.json));
+      await Product.updateOne({ _id: p._id }, { $set: { name: 'Renamed Tea', 'variants.0.sku': 'TEA-NEW' } });
+      const line = (await Order.findById(v.json.data._id).lean() as any).items[0];
+      assert.deepStrictEqual([line.sku, line.name, String(line.variantId)], ['TEA-200', 'Snapshot Tea', String(p.variants[0]._id)]);
+    });
+
+    console.log('Order status');
+    /** A paid order placed through the real checkout. */
+    const paidOrder = async (name: string, paymentId: string) => {
+      const p = await mkProduct(name, 100, 5);
+      const c = await checkout([item(p)], annT);
+      pay(c.orderId, paymentId, c.paise);
+      const v = await verify(c.orderId, paymentId, annT);
+      assert.strictEqual(v.status, 200, JSON.stringify(v.json));
+      return String(v.json.data._id);
+    };
+    const setStatus = (id: string, orderStatus: string, token = adminT) => call('PUT', `/payments/admin/orders/${id}/status`, { orderStatus }, token);
+    const statusOf = async (id: string) => (await Order.findById(id).lean()) as any;
+
+    await test('admin status change follows the ERP transition rules and records statusUpdatedAt', async () => {
+      const id = await paidOrder('Status Tea', 'pay_status');
+      const before = Date.now();
+      const shipped = await setStatus(id, 'shipped');
+      assert.strictEqual(shipped.status, 200, JSON.stringify(shipped.json));
+      let o = await statusOf(id);
+      assert.strictEqual(o.orderStatus, 'shipped');
+      assert.ok(o.statusUpdatedAt && o.statusUpdatedAt.getTime() >= before && o.statusUpdatedAt.getTime() <= Date.now(), 'statusUpdatedAt set to the change time');
+      const stamp = o.statusUpdatedAt.getTime();
+      // Same status again: success, nothing changes (no second email)
+      const again = await setStatus(id, 'shipped');
+      assert.deepStrictEqual([again.status, again.json.message], [200, 'Order status unchanged']);
+      assert.strictEqual((await statusOf(id)).statusUpdatedAt.getTime(), stamp);
+      // Backwards is refused, and changes nothing
+      const back = await setStatus(id, 'processing');
+      assert.deepStrictEqual([back.status, back.json.code], [409, 'INVALID_TRANSITION']);
+      assert.strictEqual((await statusOf(id)).orderStatus, 'shipped');
+      // Forward, then final
+      assert.strictEqual((await setStatus(id, 'delivered')).status, 200);
+      for (const to of ['cancelled', 'shipped', 'processing']) {
+        const r = await setStatus(id, to);
+        assert.deepStrictEqual([r.status, r.json.code], [409, 'INVALID_TRANSITION'], `delivered -> ${to}`);
+      }
+      o = await statusOf(id);
+      assert.deepStrictEqual([o.orderStatus, o.paymentStatus], ['delivered', 'completed'], 'payment status never touched');
+      // Cancelled is final too; cancel allowed from processing
+      const id2 = await paidOrder('Cancel Tea', 'pay_cancel');
+      assert.strictEqual((await setStatus(id2, 'cancelled')).status, 200);
+      assert.strictEqual((await setStatus(id2, 'processing')).status, 409);
+      assert.strictEqual((await statusOf(id2)).paymentStatus, 'completed', 'cancelling does not refund or change payment status');
+      // Validation and access unchanged
+      assert.strictEqual((await setStatus(id2, 'lost')).status, 400);
+      assert.strictEqual((await setStatus(id2, 'cancelled', annT)).status, 403);
+    });
+
+    await test('concurrent admin changes: exactly one wins; an older ERP event arriving later is stale', async () => {
+      const id = await paidOrder('Race Status', 'pay_race_status');
+      const [a, b] = await Promise.all([setStatus(id, 'shipped'), setStatus(id, 'cancelled')]);
+      assert.strictEqual([a, b].filter((r) => r.status === 200).length, 1, `${a.status} ${b.status}`);
+      assert.ok([a, b].every((r) => r.status === 200 || r.status === 409));
+      const o = await statusOf(id);
+      // The ERP reports a change that happened before the admin's: it must not override it
+      const e = await erpCall('POST', '/webhooks/order-status', { eventId: 'EV-ADMIN-RACE', orderId: id, status: 'delivered', occurredAt: new Date(o.statusUpdatedAt.getTime() - 60_000).toISOString() });
+      assert.strictEqual(e.status, 200, JSON.stringify(e.json));
+      assert.strictEqual(e.json.data.outcome, 'stale');
+      assert.strictEqual((await statusOf(id)).orderStatus, o.orderStatus);
+    });
+
+    const correct = (id: string, body: any, token = superT) => call('POST', `/payments/admin/orders/${id}/status-correction`, body, token);
+
+    await test('superadmin correction: audited, conditional, no side effects; admins and customers refused', async () => {
+      const id = await paidOrder('Correct Tea', 'pay_correct');
+      assert.strictEqual((await setStatus(id, 'delivered')).status, 200);
+      const before = await statusOf(id);
+      const fix = { fromStatus: 'delivered', orderStatus: 'shipped', reason: 'Marked delivered by mistake; still with courier' };
+
+      // Backend is the boundary: ordinary admin, customer and anonymous are refused, and nothing changes
+      assert.strictEqual((await correct(id, fix, adminT)).status, 403);
+      assert.strictEqual((await correct(id, fix, annT)).status, 403);
+      assert.strictEqual((await correct(id, fix, '')).status, 401);
+      // Validation
+      for (const [body, code] of [
+        [{ ...fix, reason: '' }, 'VALIDATION_ERROR'], [{ ...fix, reason: 'x   ' }, 'VALIDATION_ERROR'], [{ ...fix, reason: 'y'.repeat(301) }, 'VALIDATION_ERROR'],
+        [{ ...fix, orderStatus: 'lost' }, 'VALIDATION_ERROR'], [{ orderStatus: 'shipped', reason: fix.reason }, 'VALIDATION_ERROR'],
+        [{ ...fix, orderStatus: 'delivered' }, 'NOT_A_CORRECTION'], // same status
+      ] as const) {
+        const r = await correct(id, body);
+        assert.deepStrictEqual([r.status, r.json.code], [400, code], JSON.stringify(body));
+      }
+      assert.strictEqual((await correct('not-an-id', fix)).status, 400);
+      assert.strictEqual((await correct(String(new mongoose.Types.ObjectId()), fix)).status, 404);
+      let o = await statusOf(id);
+      assert.deepStrictEqual([o.orderStatus, o.statusCorrections?.length ?? 0], ['delivered', 0], 'refused requests changed nothing');
+
+      // A move the normal rule allows is not a correction
+      const id2 = await paidOrder('Normal Tea', 'pay_normal');
+      const normal = await correct(id2, { fromStatus: 'processing', orderStatus: 'shipped', reason: fix.reason });
+      assert.deepStrictEqual([normal.status, normal.json.code], [400, 'NOT_A_CORRECTION']);
+
+      // Stale view: the superadmin saw "shipped", but it is "delivered" now -> 409, nothing overwritten
+      const stale = await correct(id, { fromStatus: 'shipped', orderStatus: 'processing', reason: fix.reason });
+      assert.deepStrictEqual([stale.status, stale.json.code], [409, 'CONFLICT']);
+
+      const startedAt = Date.now();
+      const ok = await correct(id, fix);
+      assert.strictEqual(ok.status, 200, JSON.stringify(ok.json));
+      o = await statusOf(id);
+      assert.strictEqual(o.orderStatus, 'shipped');
+      assert.strictEqual(o.statusCorrections.length, 1);
+      const [entry] = o.statusCorrections;
+      assert.deepStrictEqual([entry.by, entry.from, entry.to, entry.reason], [String(superU._id), 'delivered', 'shipped', fix.reason]);
+      assert.ok(entry.at.getTime() >= startedAt && entry.at.getTime() === o.statusUpdatedAt.getTime(), 'audited at the same instant statusUpdatedAt was set');
+      // No side effects: payment, refund and stock untouched
+      assert.deepStrictEqual([o.paymentStatus, o.refund?.status, o.razorpayPaymentId], [before.paymentStatus, before.refund?.status, before.razorpayPaymentId]);
+      // Normal rules apply again afterwards
+      assert.strictEqual((await setStatus(id, 'processing')).status, 409);
+      assert.strictEqual((await setStatus(id, 'delivered')).status, 200);
+    });
+
+    await test('concurrent corrections from the same view: exactly one applies and one audit entry is written', async () => {
+      const id = await paidOrder('Twin Tea', 'pay_twin_fix');
+      assert.strictEqual((await setStatus(id, 'cancelled')).status, 200);
+      const rs = await Promise.all(['processing', 'shipped'].map((to) => correct(id, { fromStatus: 'cancelled', orderStatus: to, reason: 'Cancelled in error by support' })));
+      assert.deepStrictEqual(rs.map((r) => r.status).sort(), [200, 409]);
+      const o = await statusOf(id);
+      assert.strictEqual(o.statusCorrections.length, 1);
+      assert.strictEqual(o.statusCorrections[0].to, o.orderStatus);
+      // An ERP event older than the correction is stale; the ERP callback keeps its normal rules
+      const e = await erpCall('POST', '/webhooks/order-status', { eventId: 'EV-AFTER-FIX', orderId: id, status: 'cancelled', occurredAt: new Date(o.statusUpdatedAt.getTime() - 1000).toISOString() });
+      assert.strictEqual(e.json.data.outcome, 'stale');
+      assert.strictEqual((await statusOf(id)).orderStatus, o.orderStatus);
+    });
+
+    console.log('Customer order data');
+    await test('customers get only their own orders, with no payment signature, payment ids, ERP ids or internal records', async () => {
+      const ORDER_KEYS = ['_id', 'createdAt', 'updatedAt', 'orderStatus', 'paymentStatus', 'paymentMethod', 'subtotal', 'discount', 'shippingFee', 'total',
+        'fulfillmentMethod', 'shippingMethod', 'shippingAddress', 'pickupDetails', 'pickupFee', 'specialPackagingFee', 'tax', 'trackingNumber', 'items'];
+      const ITEM_KEYS = ['product', 'name', 'size', 'image', 'quantity', 'price', 'subtotal', 'taxRate', 'taxAmount'];
+      const p = await mkProduct('Private Tea', 100, 5);
+      const c = await checkout([item(p)], annT);
+      pay(c.orderId, 'pay_private', c.paise);
+      const signature = sign(c.orderId, 'pay_private');
+      const v = await verify(c.orderId, 'pay_private', annT);
+      const again = await verify(c.orderId, 'pay_private', annT); // "already placed" path
+      assert.deepStrictEqual([v.status, again.status], [200, 200]);
+      const id = String(v.json.data._id);
+      // Fill every internal field the website keeps on an order
+      const e = await erpCall('POST', '/webhooks/order-status', { eventId: 'EV-PRIVATE', orderId: id, erpOrderId: 'SO-INTERNAL-9', status: 'shipped', trackingNumber: 'TRK-PUBLIC-7', occurredAt: new Date().toISOString() });
+      assert.strictEqual(e.status, 200, JSON.stringify(e.json));
+      await Order.updateOne({ _id: id }, { $set: { fulfillmentIssue: 'internal note', refund: { status: 'required', reason: 'internal', events: [{ at: new Date(), by: String(adminU._id), action: 'flagged' }] } } });
+
+      const mine = await call('GET', '/payments/myorders', undefined, annT);
+      assert.strictEqual(mine.status, 200);
+      const o = mine.json.data.find((x: any) => x._id === id);
+      for (const [label, body] of [['myorders', o], ['verify', v.json.data], ['verify retry', again.json.data]] as const) {
+        assert.deepStrictEqual(Object.keys(body).filter((k) => !ORDER_KEYS.includes(k)), [], `${label}: only allow-listed order fields`);
+        for (const it of body.items) assert.deepStrictEqual(Object.keys(it).filter((k) => !ITEM_KEYS.includes(k)), [], `${label}: only allow-listed item fields`);
+        const text = JSON.stringify(body);
+        for (const secret of [signature, 'pay_private', c.orderId, 'SO-INTERNAL-9', 'internal note', String(adminU._id), String(ann._id)]) {
+          assert.ok(!text.includes(secret), `${label} must not contain ${secret.slice(0, 6)}…`);
+        }
+      }
+      assert.deepStrictEqual([o.trackingNumber, o.orderStatus, o.items[0].product.name, o.items[0].quantity], ['TRK-PUBLIC-7', 'shipped', 'Private Tea', 1], 'what the order history shows is still there');
+      // Another customer never sees it; no token, no orders
+      const bens = await call('GET', '/payments/myorders', undefined, benT);
+      assert.ok(!bens.json.data.some((x: any) => x._id === id));
+      assert.ok(!JSON.stringify(bens.json).includes(id));
+      assert.strictEqual((await call('GET', '/payments/myorders')).status, 401);
     });
 
     console.log('Duplicates and webhooks');

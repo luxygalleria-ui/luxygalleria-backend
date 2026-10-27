@@ -5,6 +5,9 @@ export interface IOrder extends Document {
   items: {
     product: mongoose.Types.ObjectId;
     variantId?: mongoose.Types.ObjectId | string;
+    /** Purchase-time snapshots (absent on orders placed before they were recorded). */
+    name?: string;
+    sku?: string;
     quantity: number;
     price: number;
     size?: string;
@@ -42,6 +45,8 @@ export interface IOrder extends Document {
   erpOrderId?: string;
   trackingNumber?: string;
   statusUpdatedAt?: Date;
+  /** Superadmin corrections that the normal forward-only status rule would refuse. Append-only audit trail. */
+  statusCorrections?: { at: Date; by: string; from: string; to: string; reason: string }[];
   /** The checkout session (quote snapshot) this order was created from; absent on older orders. */
   checkoutSession?: mongoose.Types.ObjectId;
   /** Set when payment succeeded but the order could not be fulfilled, e.g. stock ran out after the session expired. */
@@ -69,6 +74,9 @@ const OrderSchema: Schema = new Schema(
       {
         product: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
         variantId: { type: Schema.Types.ObjectId, required: true },
+        // Product name and variant SKU as sold, so later catalogue edits or deletions never change order history
+        name: { type: String },
+        sku: { type: String },
         quantity: { type: Number, required: true },
         price: { type: Number, required: true },
         size: { type: String },
@@ -119,7 +127,10 @@ const OrderSchema: Schema = new Schema(
     // Set by the ERP order-status webhook
     erpOrderId: { type: String },
     trackingNumber: { type: String },
-    statusUpdatedAt: { type: Date }, // ERP event time of the last applied status; older events are ignored
+    // Written in the same atomic update as the status it records (paymentController.correctOrderStatus); never edited
+    statusCorrections: [{ at: { type: Date, required: true }, by: { type: String, required: true }, from: { type: String, required: true },
+      to: { type: String, required: true }, reason: { type: String, required: true }, _id: false }],
+    statusUpdatedAt: { type: Date }, // when the status last changed: ERP event time, or the time of an admin change; older ERP events are ignored
     checkoutSession: { type: Schema.Types.ObjectId, ref: 'CheckoutSession' },
     fulfillmentIssue: { type: String },
     // Refund workflow (admin-initiated; see paymentController). Absent = no refund ever needed or requested.
