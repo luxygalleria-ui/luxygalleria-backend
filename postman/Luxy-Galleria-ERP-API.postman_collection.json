@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Luxy Galleria ERP API",
-    "description": "Machine-to-machine ERP API for luxygalleria.com, generated from `luxy-backend` source (`src/routes/erpRoutes.ts`, `src/controllers/erpController.ts`, `src/middlewares/erpAuth.ts`). Full specification: `docs/ERP-INTEGRATION-API-SPEC.md`.\n\n**Setup**\n1. Import this collection and the *Luxy Galleria ERP - Production* environment; select the environment (top right).\n2. Set `erpKeyId` and `erpSecret` (Current value only; do not sync or share the secret). They are issued by Luxy Galleria through a secure channel.\n3. Set `itemSku`, `categoryName`, `orderId` as needed. Your computer clock must be within 5 minutes of real time.\n\n**Authentication** — every request is HMAC-signed by the collection pre-request script; no manual headers are needed:\n- `X-ERP-Key-Id`: your key id\n- `X-ERP-Timestamp`: Unix seconds\n- `X-ERP-Signature`: hex HMAC-SHA256(secret, `timestamp.METHOD.pathWithQuery.sha256hex(body)`)\n\n`pathWithQuery` is e.g. `/api/v1/erp/orders?page=1&limit=10`. The body is the exact raw JSON sent, empty for GET, or the image file bytes for Image Upload (see that request).\n\n| HTTP | message | Cause |\n|---|---|---|\n| 401 | `Invalid ERP credentials` | `X-ERP-Key-Id` missing or not configured on the server |\n| 401 | `X-ERP-Timestamp missing or more than 300s from server time` | Computer clock wrong or request re-sent much later |\n| 401 | `Invalid X-ERP-Signature` | Wrong secret, or body/path changed after signing |\n| 401 | `Replayed request: …` | Same signature sent twice (re-send generates a new one automatically) |\n| 503 | `ERP integration is not configured` | Server has no ERP keys |\n| 429 | `Too many ERP requests…` | More than 600 requests/minute |\n\nResponses: `{ \"success\": true, \"message\": \"…\", \"data\": … }` or `{ \"success\": false, \"message\": \"…\", \"errors\": [{ \"code\": \"…\", \"field\": \"…\" }] }`.",
+    "description": "Machine-to-machine ERP API for luxygalleria.com, generated from `luxy-backend` source (`src/routes/erpRoutes.ts`, `src/controllers/erpController.ts`, `src/middlewares/erpAuth.ts`). Full specification: `docs/ERP-INTEGRATION-API-SPEC.md` (version 2.1).\n\n**Setup**\n1. Import this collection and the *Luxy Galleria ERP - Production* environment; select the environment (top right).\n2. Set `erpKeyId` and `erpSecret` (Current value only; do not sync or share the secret). They are issued by Luxy Galleria through a secure channel.\n3. Set `itemSku`, `categoryName`, `orderId` as needed. Your computer clock must be within 5 minutes of real time.\n\n**Authentication** — every request is HMAC-signed by the collection pre-request script; no manual headers are needed:\n- `X-ERP-Key-Id`: your key id\n- `X-ERP-Timestamp`: Unix seconds\n- `X-ERP-Signature`: hex HMAC-SHA256(secret, `timestamp.METHOD.pathWithQuery.sha256hex(body)`)\n\n`pathWithQuery` is e.g. `/api/v1/erp/orders?page=1&limit=10`. The body is the exact raw JSON sent, empty for GET, or the image file bytes for Image Upload (see that request).\n\n| HTTP | message | Cause |\n|---|---|---|\n| 401 | `Invalid ERP credentials` | `X-ERP-Key-Id` missing or not configured on the server |\n| 401 | `X-ERP-Timestamp missing or more than 300s from server time` | Computer clock wrong or request re-sent much later |\n| 401 | `Invalid X-ERP-Signature` | Wrong secret, or body/path changed after signing |\n| 401 | `Replayed request: …` | Same signature sent twice (re-send generates a new one automatically) |\n| 503 | `ERP integration is not configured` | Server has no ERP keys |\n| 429 | `Too many ERP requests…` | More than 600 requests/minute |\n\nResponses: `{ \"success\": true, \"message\": \"…\", \"data\": … }` or `{ \"success\": false, \"message\": \"…\", \"errors\": [{ \"code\": \"…\", \"field\": \"…\" }] }`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -190,7 +190,7 @@
             "items"
           ]
         },
-        "description": "**POST {{baseUrl}}/erp/items** — create a product with its variants, or update the product that already carries these SKUs.\n\n- `201` + `action: \"created\"` when no SKU exists yet; `200` + `action: \"updated\"` when the SKUs belong to one existing product.\n- On create, `name`, `description` and `category` are required. `category` must be the name (case-insensitive) or id of an **existing** website category.\n- Each new variant needs `sku`, `offerPrice` and `actualPrice` (`offerPrice` ≤ `actualPrice`). `stock` is used **only when the variant is created**; change stock later with Stock Update.\n- Unknown fields are rejected (`400`). Optional: `brand`, `brandId`, `imageUrls` (https, replaces the list), `variants[].volume|flavor|weight|image`.\n- Errors: `400` validation / unknown category; `409 CONFLICT` SKUs on two products; `409 DUPLICATE_SKU`.\n\n⚠️ **Production:** the website has no inactive-product flag, so a created item is visible on the storefront. Use an approved test SKU."
+        "description": "**POST {{baseUrl}}/erp/items** — create a product with its variants, or update the product that already carries these SKUs.\n\n- `201` + `action: \"created\"` when no SKU exists yet; `200` + `action: \"updated\"` when the SKUs belong to one existing product.\n- On create, `name`, `description` and `category` are required. `category` must be the name (case-insensitive) or id of an **existing** website category.\n- Each new variant needs `sku`, `offerPrice` and `actualPrice` (`offerPrice` ≤ `actualPrice`). `stock` is used **only when the variant is created**; change stock later with Stock Update.\n- Unknown fields are rejected (`400`). Optional: `brand`, `brandId`, `imageUrls` (https, replaces the list), `variants[].volume|flavor|weight|image`.\n- Errors: `400` validation / unknown category; `409 CONFLICT` SKUs on two products; `409 DUPLICATE_SKU`; `409 UNMAPPED_PRODUCT` when a website product with the same name has variants without a SKU (ask Luxy Galleria to set your SKU on it; nothing is created).\n\n⚠️ **Production:** the website has no inactive-product flag, so a created item is visible on the storefront. Use an approved test SKU."
       },
       "response": []
     },
@@ -358,6 +358,12 @@
               "          },",
               "          \"applied\": {",
               "            \"type\": \"boolean\"",
+              "          },",
+              "          \"pendingOrderQuantity\": {",
+              "            \"type\": \"integer\"",
+              "          },",
+              "          \"reservedQuantity\": {",
+              "            \"type\": \"integer\"",
               "          }",
               "        }",
               "      }",
@@ -396,7 +402,7 @@
             "{{itemSku}}"
           ]
         },
-        "description": "**PUT {{baseUrl}}/erp/stock/{sku}** — set the **absolute** sellable quantity of one variant (not an adjustment).\n\n- `quantity`: integer 0–1,000,000. `asOf`: ISO 8601 time the ERP figure was taken (here: the send time, set by the collection script).\n- Website orders placed after `asOf` are subtracted: stored = max(0, quantity − pendingOrderQuantity). Both are returned.\n- Same `asOf` again → `200`, `applied: false`. Older `asOf` than the last applied → `409 STALE_UPDATE`.\n- Errors: `400` validation / `asOf` > 5 min in the future; `404` unknown SKU (never creates a product); `409 DUPLICATE_SKU`."
+        "description": "**PUT {{baseUrl}}/erp/stock/{sku}** — set the **absolute** sellable quantity of one variant (not an adjustment).\n\n- `quantity`: integer 0–1,000,000. `asOf`: ISO 8601 time the ERP figure was taken (here: the send time, set by the collection script).\n- Website orders placed after `asOf` and units held by open website checkouts are subtracted: stored = max(0, quantity − pendingOrderQuantity − reservedQuantity). All are returned. Provisional until the ERP team confirms physical vs sellable stock.\n- Same `asOf` again → `200`, `applied: false`. Older `asOf` than the last applied → `409 STALE_UPDATE`.\n- Errors: `400` validation / `asOf` > 5 min in the future; `404` unknown SKU (never creates a product); `409 DUPLICATE_SKU`; `409 CONFLICT` when stock kept changing during the update (nothing written; retry as is)."
       },
       "response": []
     },
@@ -564,7 +570,7 @@
             }
           ]
         },
-        "description": "**GET {{baseUrl}}/erp/orders** — orders page by page, oldest change first (sorted by `updatedAt`, then `orderId`).\n\n- Query: `page` (≥1), `limit` (1–100, default 50), optional `status`, `paymentStatus`, `updatedSince`. Unknown parameters → `400`.\n- Response also carries `pagination: { page, limit, total, pages }` next to `data`.\n- Incremental sync: keep the newest `updatedAt` received and pass it as `updatedSince`; de-duplicate by `orderId`.\n- Read-only. Copy an `orderId` from here into the environment for Order Details."
+        "description": "**GET {{baseUrl}}/erp/orders** — orders page by page, oldest change first (sorted by `updatedAt`, then `orderId`).\n\n- Query: `page` (≥1), `limit` (1–100, default 50), optional `status`, `paymentStatus`, `updatedSince`. Unknown parameters → `400`.\n- Response also carries `pagination: { page, limit, total, pages }` next to `data`.\n- Incremental sync: keep the newest `updatedAt` received and pass it as `updatedSince`; de-duplicate by `orderId`.\n- `items[].sku` / `items[].name` are the values at purchase for orders placed since API version 2.1; older orders show current product data.\n- Read-only. Copy an `orderId` from here into the environment for Order Details."
       },
       "response": []
     },
@@ -684,7 +690,10 @@
               "            ]",
               "          },",
               "          \"shippingAddress\": {",
-              "            \"type\": \"object\",",
+              "            \"type\": [",
+              "              \"object\",",
+              "              \"null\"",
+              "            ],",
               "            \"required\": [",
               "              \"street\",",
               "              \"city\",",
@@ -725,7 +734,7 @@
             "{{orderId}}"
           ]
         },
-        "description": "**GET {{baseUrl}}/erp/orders/{orderId}** — one order by website order id (24 hex characters).\n\n- Adds `customer.phone`, `shippingAddress`, `payment` and `statusUpdatedAt` to the list fields.\n- Not held by the website (so not returned): tax/GST/HSN, billing address, recipient name/phone, order number.\n- Errors: `400` malformed id; `404` not found. Read-only."
+        "description": "**GET {{baseUrl}}/erp/orders/{orderId}** — one order by website order id (24 hex characters).\n\n- Adds `customer.phone`, `shippingAddress`, `payment` and `statusUpdatedAt` to the list fields.\n- `shippingAddress` is `null` for store-pickup orders. GST is returned in `charges.tax` and per item (`taxRate`, `taxAmount`) when enabled.\n- Not held by the website (so not returned): HSN codes, billing address, recipient name/phone, order number.\n- Errors: `400` malformed id; `404` not found. Read-only."
       },
       "response": []
     },
@@ -910,6 +919,402 @@
         "description": "**POST {{baseUrl}}/erp/webhooks/order-status** — the ERP tells the website an order's fulfilment status changed.\n\n- `eventId` (unique per event; leave the environment value empty to auto-generate one per send), `orderId`, `status` (`processing` | `shipped` | `delivered` | `cancelled`), `occurredAt`. Optional `erpOrderId`, `trackingNumber`.\n- Allowed: processing → shipped/delivered/cancelled; shipped → delivered/cancelled. `delivered` and `cancelled` are final.\n- Outcomes (all `200`): `applied` (customer emailed once), `unchanged`, `stale` (older than last applied), or `duplicate: true` for a repeated `eventId`.\n- Errors: `400` validation; `404` order not found; `409 INVALID_TRANSITION`; `409 CONFLICT` (erpOrderId mismatch or concurrent change — retry).\n\n⚠️ **Production:** an applied change is visible to the customer and **emails them**. Use only an approved test order."
       },
       "response": []
+    },
+    {
+      "name": "8. Item List",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () {",
+              "  pm.expect(pm.response.code).to.equal(200);",
+              "});",
+              "pm.test('data matches the documented schema', function () {",
+              "  pm.response.to.have.jsonSchema({",
+              "    type: 'object', required: ['success', 'data'],",
+              "    properties: {",
+              "      success: { const: true },",
+              "      data: { type: 'object', required: ['items', 'pagination'], properties: {",
+              "        items: { type: 'array', items: { type: 'object', required: ['productId', 'name', 'images', 'variants'], properties: {",
+              "          productId: { type: 'string', pattern: '^[a-f0-9]{24}$' },",
+              "          variants: { type: 'array', items: { type: 'object', required: ['variantId', 'sku', 'stock'], properties: {",
+              "            variantId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, sku: { type: ['string', 'null'] }, stock: { type: 'integer' } } } } } } },",
+              "        pagination: { type: 'object', required: ['page', 'limit', 'total', 'pages'] } } },",
+              "    },",
+              "  });",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/erp/items?page=1&limit=10",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "erp",
+            "items"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "10"
+            }
+          ]
+        },
+        "description": "**GET {{baseUrl}}/erp/items** — website products with all variants, newest change first.\n\n- Query: `page` (≥1), `limit` (1–100, default 50), optional `search` (≤100 characters; case-insensitive match on product name or SKU). Unknown parameters → `400`.\n- `pagination` is inside `data`.\n- `variants[].sku` is `null` for variants that have no SKU yet; agree their item codes with Luxy Galleria using `variantId`.\n- Read-only.\n\n*Added in API version 2.1. Verified by a local Postman CLI run (see the spec, Section 15.7); not yet run against production.*"
+      }
+    },
+    {
+      "name": "9. Item Lookup",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () {",
+              "  pm.expect(pm.response.code).to.equal(200);",
+              "});",
+              "pm.test('data matches the documented schema', function () {",
+              "  pm.response.to.have.jsonSchema({",
+              "    type: 'object', required: ['success', 'data'],",
+              "    properties: {",
+              "      success: { const: true },",
+              "      data: { type: 'object', required: ['productId', 'name', 'variant'], properties: {",
+              "        productId: { type: 'string', pattern: '^[a-f0-9]{24}$' },",
+              "        variant: { type: 'object', required: ['sku', 'variantId', 'offerPrice', 'actualPrice', 'stock'], properties: {",
+              "          variantId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, stock: { type: 'integer' } } } } },",
+              "    },",
+              "  });",
+              "});",
+              "pm.test('returns the requested SKU', function () {",
+              "  pm.expect(pm.response.json().data.variant.sku).to.equal(pm.variables.get('itemSku'));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/erp/items/{{itemSku}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "erp",
+            "items",
+            "{{itemSku}}"
+          ]
+        },
+        "description": "**GET {{baseUrl}}/erp/items/{sku}** — the one variant carrying this SKU, with its product.\n\n- Errors: `404 NOT_FOUND` unknown SKU; `409 DUPLICATE_SKU` SKU on two variants.\n- Read-only.\n\n*Added in API version 2.1. Verified by a local Postman CLI run (see the spec, Section 15.7); not yet run against production.*"
+      }
+    },
+    {
+      "name": "Negative checks",
+      "description": "Expected refusals. Each request is read-only or refused before any change, so the folder is safe to run in any environment. *Added in API version 2.1; verified by a local Postman CLI run, not yet against production.*",
+      "item": [
+        {
+          "name": "N1. Item Lookup — unknown SKU → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', function () {",
+                  "  pm.expect(pm.response.code).to.equal(404);",
+                  "});",
+                  "pm.test('error code NOT_FOUND', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.success).to.equal(false);",
+                  "  pm.expect(body.errors[0].code).to.equal('NOT_FOUND');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/erp/items/POSTMAN-NO-SUCH-SKU-0000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "items",
+                "POSTMAN-NO-SUCH-SKU-0000"
+              ]
+            },
+            "description": "Expects `404 NOT_FOUND`. Assumes no website variant uses the SKU `POSTMAN-NO-SUCH-SKU-0000`.\n\nNegative check: the request is refused before any data is read or changed. Safe to run in any environment."
+          }
+        },
+        {
+          "name": "N2. Order Checking — limit above 100 → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', function () {",
+                  "  pm.expect(pm.response.code).to.equal(400);",
+                  "});",
+                  "pm.test('error code VALIDATION_ERROR', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.success).to.equal(false);",
+                  "  pm.expect(body.errors[0].code).to.equal('VALIDATION_ERROR');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/erp/orders?limit=500",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "500"
+                }
+              ]
+            },
+            "description": "Expects `400 VALIDATION_ERROR` (limit is 1–100).\n\nNegative check: the request is refused before any data is read or changed. Safe to run in any environment."
+          }
+        },
+        {
+          "name": "N3. Stock Update — negative quantity → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', function () {",
+                  "  pm.expect(pm.response.code).to.equal(400);",
+                  "});",
+                  "pm.test('error code VALIDATION_ERROR', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.success).to.equal(false);",
+                  "  pm.expect(body.errors[0].code).to.equal('VALIDATION_ERROR');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": -1,\n  \"asOf\": \"{{nowIso}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/erp/stock/{{itemSku}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "stock",
+                "{{itemSku}}"
+              ]
+            },
+            "description": "Expects `400 VALIDATION_ERROR`. The body is validated before the SKU is looked up, so no stock is changed.\n\nNegative check: the request is refused before any data is read or changed. Safe to run in any environment."
+          }
+        },
+        {
+          "name": "N4. Wrong signature → 401",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runs after the collection script has signed the request: replace the signature with a wrong one.",
+                  "pm.request.headers.upsert({ key: 'X-ERP-Signature', value: '0'.repeat(64) });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', function () {",
+                  "  pm.expect(pm.response.code).to.equal(401);",
+                  "});",
+                  "pm.test('error code UNAUTHENTICATED', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.success).to.equal(false);",
+                  "  pm.expect(body.errors[0].code).to.equal('UNAUTHENTICATED');",
+                  "  pm.expect(body.message).to.match(/Invalid X-ERP-Signature/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/erp/orders?limit=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Expects `401 Invalid X-ERP-Signature`.\n\nNegative check: the request is refused before any data is read or changed. Safe to run in any environment."
+          }
+        },
+        {
+          "name": "N5. Expired timestamp → 401",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A timestamp 10 minutes old is outside the ±300 s window; it is checked before the signature.",
+                  "pm.request.headers.upsert({ key: 'X-ERP-Timestamp', value: String(Math.floor(Date.now() / 1000) - 600) });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', function () {",
+                  "  pm.expect(pm.response.code).to.equal(401);",
+                  "});",
+                  "pm.test('error code UNAUTHENTICATED', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.success).to.equal(false);",
+                  "  pm.expect(body.errors[0].code).to.equal('UNAUTHENTICATED');",
+                  "  pm.expect(body.message).to.match(/X-ERP-Timestamp/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/erp/orders?limit=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Expects `401 X-ERP-Timestamp missing or more than 300s from server time`.\n\nNegative check: the request is refused before any data is read or changed. Safe to run in any environment."
+          }
+        },
+        {
+          "name": "N6. Unknown key id → 401",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.request.headers.upsert({ key: 'X-ERP-Key-Id', value: 'postman-unknown-key' });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', function () {",
+                  "  pm.expect(pm.response.code).to.equal(401);",
+                  "});",
+                  "pm.test('error code UNAUTHENTICATED', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.success).to.equal(false);",
+                  "  pm.expect(body.errors[0].code).to.equal('UNAUTHENTICATED');",
+                  "  pm.expect(body.message).to.match(/Invalid ERP credentials/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/erp/orders?limit=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Expects `401 Invalid ERP credentials`.\n\nNegative check: the request is refused before any data is read or changed. Safe to run in any environment."
+          }
+        }
+      ]
     }
   ]
 }

@@ -7,8 +7,8 @@ For the ERP development team. The full contract is in `ERP-INTEGRATION-API-SPEC.
 | Item | File |
 |---|---|
 | API specification | `docs/ERP-INTEGRATION-API-SPEC.md` |
-| Postman collection (7 requests, automatic signing, tests) | `postman/Luxy-Galleria-ERP-API.postman_collection.json` |
-| Postman environment template (credentials blank) | `postman/Luxy-Galleria-ERP-Production.postman_environment.json` |
+| Postman collection (9 requests plus a *Negative checks* folder, automatic signing, tests) | `postman/Luxy-Galleria-ERP-API.postman_collection.json` |
+| Postman environment templates (credentials blank) | `postman/Luxy-Galleria-ERP-Production.postman_environment.json`; `postman/Luxy-Galleria-ERP-Local-Staging.postman_environment.json` for staging tests |
 | Node.js signing example | `docs/erp-signing-client.mjs` |
 | Key ID and secret | Sent separately by Luxy Galleria through a one-time secret link |
 
@@ -25,6 +25,8 @@ Base URL: `https://api.luxygalleria.com/api/v1`
 | 5 | Order Details | `GET /erp/orders/{orderId}` | ERP reads Website |
 | 6 | Order Status Callback | `POST /erp/webhooks/order-status` | ERP → Website |
 | 7 | Image Upload | `POST /erp/images` (multipart, field `image`) | ERP → Website |
+| 8 | Item List | `GET /erp/items` | ERP reads Website |
+| 9 | Item Lookup | `GET /erp/items/{sku}` | ERP reads Website |
 
 Not available yet:
 - Website → ERP order push (the website does not send orders to you; pull them with #4 and #5).
@@ -61,17 +63,20 @@ Sign every attempt, including retries, with a fresh timestamp. Check your implem
 
 ## Rules that matter most
 
-- **Stock** is an absolute quantity with an `asOf` time. Older figures are refused (`409 STALE_UPDATE`), and website orders placed after `asOf` are subtracted (Section 4).
-- **Item Add** matches on SKU. Repeating it updates the same product and never duplicates it. Stock is applied only when a variant is created (Section 5).
+- **Stock** is an absolute quantity with an `asOf` time. Older figures are refused (`409 STALE_UPDATE`). Website orders placed after `asOf` and units held by open website checkouts are subtracted; this formula is provisional until you confirm whether you send physical or sellable stock. Retry a `409 CONFLICT` as is (Section 4).
+- **Item Add** matches on SKU. Repeating it updates the same product and never duplicates it. Stock is applied only when a variant is created. `409 UNMAPPED_PRODUCT` means the website already has that product without SKUs: ask us to set your SKU on it rather than creating it again (Section 5).
+- **SKU mapping**: use Item List (Section 6A) to see website variants without a SKU, and agree their item codes with us before syncing.
 - **Item Edit** changes only the fields you send; it cannot change stock or SKU (Section 6).
-- **Orders**: sync incrementally with `updatedSince` and de-duplicate by `orderId` (Section 7).
+- **Orders**: sync incrementally with `updatedSince` and de-duplicate by `orderId`. Order lines carry the SKU and name as sold (Section 7).
 - **Status callback**: send a unique `eventId` per event and retry with the same `eventId`. Transitions only move forward; `delivered` and `cancelled` are final (Section 9).
 - **Images**: JPG, PNG or WEBP, up to 15 MB, one file in field `image`. In Postman, paste the file's SHA-256 into `imageSha256` (Section 11.4).
-- **Retries**: retry `429`/`5xx`/timeouts with backoff; fix the request before retrying `400`/`401`/`404`/`409` (Section 3.6).
+- **Retries**: retry `429`/`5xx`/timeouts with backoff; fix the request before retrying `400`/`401`/`404`/`409`, except a `409 CONFLICT` saying *retry it*, which is retried unchanged (Section 3.6).
 
 ## Current status
 
-- All seven endpoints pass automated and Postman tests on a local test server.
+- Version 2.1 changes (27 October 2026: stock reservations, `UNMAPPED_PRODUCT`, order-line snapshots, Item List/Lookup documentation) pass automated tests locally and are **not yet deployed**.
+
+- All nine endpoints pass automated tests on a local test server.
 - Production routes are deployed and enforce authentication.
 - Production reads of orders were reported working in an earlier test.
 - Production writes and a real image upload have **not** been verified yet.
