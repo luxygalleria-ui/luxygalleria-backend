@@ -1,0 +1,103 @@
+$kind: collection
+name: Luxy Galleria ERP API
+description: |-
+  Machine-to-machine ERP API for luxygalleria.com, generated from `luxy-backend` source (`src/routes/erpRoutes.ts`, `src/controllers/erpController.ts`, `src/middlewares/erpAuth.ts`). Full specification: `docs/ERP-INTEGRATION-API-SPEC.md` (version 2.1).
+
+  **Setup**
+  1. Import this collection and an environment: **Luxy Galleria ERP - Local / Staging** for all testing, *Luxy Galleria ERP - Production* only for approved production reads. Select it (top right).
+  2. Set `erpKeyId` and `erpSecret` (Current value only; do not sync or share the secret). They are issued by Luxy Galleria through a secure channel.
+  3. Set `itemSku`, `categoryName`, `orderId` as needed. Your computer clock must be within 5 minutes of real time.
+
+  **Run order:** `0. Health check`, then 1–9, then *Write checks (local / staging only)*, then *Negative checks*. Write requests change data: never run them against production without an approved test SKU and test order.
+
+  **Authentication** — every request is HMAC-signed by the collection pre-request script; no manual headers are needed:
+  - `X-ERP-Key-Id`: your key id
+  - `X-ERP-Timestamp`: Unix seconds
+  - `X-ERP-Signature`: hex HMAC-SHA256(secret, `timestamp.METHOD.pathWithQuery.sha256hex(body)`)
+
+  `pathWithQuery` is e.g. `/api/v1/erp/orders?page=1&limit=10`. The body is the exact raw JSON sent, empty for GET, or the image file bytes for Image Upload (see that request).
+
+  | HTTP | message | Cause |
+  |---|---|---|
+  | 401 | `Invalid ERP credentials` | `X-ERP-Key-Id` missing or not configured on the server |
+  | 401 | `X-ERP-Timestamp missing or more than 300s from server time` | Computer clock wrong or request re-sent much later |
+  | 401 | `Invalid X-ERP-Signature` | Wrong secret, or body/path changed after signing |
+  | 401 | `Replayed request: …` | Same signature sent twice (re-send generates a new one automatically) |
+  | 503 | `ERP integration is not configured` | Server has no ERP keys |
+  | 429 | `Too many ERP requests…` | More than 600 requests/minute |
+
+  Responses: `{ "success": true, "message": "…", "data": … }` or `{ "success": false, "message": "…", "errors": [{ "code": "…", "field": "…" }] }`.
+scripts:
+  - type: http:beforeRequest
+    code: |-
+      // Luxy Galleria ERP request signing. Mirrors luxy-backend/src/middlewares/erpAuth.ts:
+      //   X-ERP-Signature = hex HMAC-SHA256(erpSecret, timestamp + "." + METHOD + "." + pathWithQuery + "." + hex SHA-256(body))
+      // body = the exact raw JSON text sent, "" for GET, or the image FILE bytes for POST /erp/images (via imageSha256).
+      const cryptoJs = require('crypto-js');
+      const keyId = String(pm.variables.get('erpKeyId') || '').trim();
+      const secret = String(pm.variables.get('erpSecret') || '').trim();
+      if (!keyId || secret.length < 32) {
+        throw new Error('Select the Luxy Galleria ERP environment and set erpKeyId and erpSecret (secret is 32+ characters).');
+      }
+      const baseUrl = String(pm.variables.get('baseUrl') || '');
+      if (!/^https?:\/\/[^/]+\/api\/v1$/.test(baseUrl)) {
+        throw new Error('baseUrl must look like https://api.luxygalleria.com/api/v1 (no trailing slash).');
+      }
+
+      // Values used inside request bodies are fixed here, before hashing, so the signed and sent bytes match.
+      // Never use Postman dynamic variables such as {{$guid}} or {{$timestamp}} in a body: they resolve twice.
+      pm.variables.set('nowIso', new Date().toISOString());
+      if (!pm.variables.get('eventId')) pm.variables.set('eventId', 'POSTMAN-' + Date.now());
+
+      const method = pm.request.method.toUpperCase();
+      const resolvedUrl = pm.variables.replaceIn(pm.request.url.toString());
+      const pathWithQuery = resolvedUrl.replace(/^[a-z]+:\/\/[^/?#]+/i, '').replace(/#.*$/, '') || '/';
+
+      const body = pm.request.body;
+      let bodyHash;
+      if (body && body.mode === 'formdata') {
+        // Postman scripts cannot read the selected file, so its SHA-256 is supplied in the environment.
+        bodyHash = String(pm.variables.get('imageSha256') || '').replace(/\s+/g, '').toLowerCase();
+        if (!/^[a-f0-9]{64}$/.test(bodyHash)) {
+          throw new Error('Set imageSha256 to the SHA-256 of the selected image (macOS/Linux: shasum -a 256 <file>; Windows: certutil -hashfile <file> SHA256).');
+        }
+      } else {
+        const raw = body && body.mode === 'raw' ? pm.variables.replaceIn(body.raw || '') : '';
+        bodyHash = cryptoJs.SHA256(raw).toString(cryptoJs.enc.Hex);
+      }
+
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const signature = cryptoJs.HmacSHA256(timestamp + '.' + method + '.' + pathWithQuery + '.' + bodyHash, secret).toString(cryptoJs.enc.Hex);
+      pm.request.headers.upsert({ key: 'X-ERP-Key-Id', value: keyId });
+      pm.request.headers.upsert({ key: 'X-ERP-Timestamp', value: timestamp });
+      pm.request.headers.upsert({ key: 'X-ERP-Signature', value: signature });
+      // For diagnosing a 401 Invalid X-ERP-Signature in the test script: what was signed, and a fingerprint (not the value) of the secret
+      pm.variables.set('erpSigningDebug', JSON.stringify({ keyId, timestamp, method, pathWithQuery, bodySha256: bodyHash,
+        secretLength: secret.length, secretFingerprint: cryptoJs.SHA256(secret).toString(cryptoJs.enc.Hex).slice(0, 12) }));
+    language: text/javascript
+  - type: http:afterResponse
+    code: |-
+      // If the pre-request script fails, Postman still sends the request, unsigned, and the server answers 401 Invalid ERP credentials.
+      if (!pm.info.requestName.includes('[unsigned]')) pm.test('request was signed by the collection pre-request script', function () {
+        pm.expect(pm.request.headers.has('X-ERP-Signature'), 'No X-ERP-Signature header: check the Postman Console for a pre-request script error').to.be.true;
+      });
+      // Every ERP response, success or error, uses the same envelope.
+      pm.test('response is the standard JSON envelope', function () {
+        pm.response.to.have.jsonSchema({
+          type: 'object',
+          required: ['success', 'message'],
+          properties: { success: { type: 'boolean' }, message: { type: 'string' } },
+        });
+      });
+      // 401 Invalid X-ERP-Signature: the key id was accepted, so the secret or the signed request differs from the server's view.
+      // Compare secretFingerprint with the server's (see the handover guide, "Troubleshooting 401"); the secret itself is never logged.
+      if (pm.response.code === 401 && /X-ERP-Signature/.test(pm.response.text())) {
+        console.warn('Signed as: ' + (pm.variables.get('erpSigningDebug') || '(collection pre-request script did not run)'));
+        console.warn('Sent: ' + pm.request.method + ' ' + pm.request.url.toString() + ' | X-ERP-Key-Id=' + (pm.request.headers.get('X-ERP-Key-Id') || '(none)'));
+      }
+      if (pm.response.code >= 400) {
+        let msg = '';
+        try { msg = pm.response.json().message; } catch (e) { msg = pm.response.text().slice(0, 200); }
+        console.warn('HTTP ' + pm.response.code + ': ' + msg);
+      }
+    language: text/javascript

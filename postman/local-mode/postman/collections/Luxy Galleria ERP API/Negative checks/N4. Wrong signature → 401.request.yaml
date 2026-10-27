@@ -1,0 +1,28 @@
+$kind: http-request
+description: |-
+  Expects `401 Invalid X-ERP-Signature`.
+
+  Negative check: the request is refused before any data is read or changed. Safe to run in any environment.
+url: "{{baseUrl}}/erp/orders?limit=1"
+method: GET
+queryParams:
+  limit: "1"
+scripts:
+  - type: beforeRequest
+    code: |-
+      // Runs after the collection script has signed the request: replace the signature with a wrong one.
+      pm.request.headers.upsert({ key: 'X-ERP-Signature', value: '0'.repeat(64) });
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 401', function () {
+        pm.expect(pm.response.code).to.equal(401);
+      });
+      pm.test('error code UNAUTHENTICATED', function () {
+        const body = pm.response.json();
+        pm.expect(body.success).to.equal(false);
+        pm.expect(body.errors[0].code).to.equal('UNAUTHENTICATED');
+        pm.expect(body.message).to.match(/Invalid X-ERP-Signature/);
+      });
+    language: text/javascript
+order: 5000

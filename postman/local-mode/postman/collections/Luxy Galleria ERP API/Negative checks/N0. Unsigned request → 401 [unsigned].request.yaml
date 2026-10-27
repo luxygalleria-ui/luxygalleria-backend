@@ -1,0 +1,22 @@
+$kind: http-request
+description: "No `X-ERP-*` headers. Expected: `401 Invalid ERP credentials`. Read-only; safe in any environment."
+url: "{{baseUrl}}/erp/orders?limit=1"
+method: GET
+queryParams:
+  limit: "1"
+scripts:
+  - type: beforeRequest
+    code: |-
+      // Remove what the collection script added, as a client without credentials would send it
+      ['X-ERP-Key-Id', 'X-ERP-Timestamp', 'X-ERP-Signature'].forEach((h) => pm.request.headers.remove(h));
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 401', function () {
+        pm.expect(pm.response.code).to.equal(401);
+      });
+      pm.test('error code UNAUTHENTICATED', function () {
+        pm.expect(pm.response.json().errors[0].code).to.equal('UNAUTHENTICATED');
+      });
+    language: text/javascript
+order: 1000

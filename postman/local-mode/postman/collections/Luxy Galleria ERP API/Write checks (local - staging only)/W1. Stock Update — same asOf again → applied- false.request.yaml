@@ -1,0 +1,26 @@
+$kind: http-request
+name: "W1. Stock Update — same asOf again → applied: false"
+description: "Redelivers the figure request 3 applied (same `asOf`). Expected: `200`, message `Stock already at this update`, `applied: false`; stock unchanged. Run after the numbered requests, against a **local or approved staging** database only. The body is the same values in compact JSON: a request repeated byte for byte within the same second has the same signature and is refused as a replay (`401`), so a real retry is always re-signed with a fresh timestamp."
+url: "{{baseUrl}}/erp/stock/{{itemSku}}"
+method: PUT
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: '{"quantity":{{stockQuantity}},"asOf":"{{lastStockAsOf}}"}'
+scripts:
+  - type: beforeRequest
+    code: if (!pm.collectionVariables.get('lastStockAsOf')) throw new Error('Run 3. Stock Update first');
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200', function () {
+        pm.expect(pm.response.code).to.equal(200);
+      });
+      pm.test('nothing re-applied', function () {
+        const d = pm.response.json().data;
+        pm.expect(d.applied).to.equal(false);
+        pm.expect(d.asOf).to.equal(pm.collectionVariables.get('lastStockAsOf'));
+      });
+    language: text/javascript
+order: 1000

@@ -1,0 +1,36 @@
+name: Luxy Galleria ERP - Local Staging
+values:
+  - key: baseUrl
+    value: http://localhost:5000/api/v1
+    enabled: true
+  - key: erpKeyId
+    value: ''
+    enabled: true
+  - key: erpSecret
+    value: ''
+    enabled: true
+    type: secret
+  - key: itemSku
+    value: ERP-TEST-SKU-001
+    enabled: true
+  - key: categoryName
+    value: Chocolates
+    enabled: true
+  - key: stockQuantity
+    value: '10'
+    enabled: true
+  - key: orderId
+    value: ''
+    enabled: true
+  - key: orderStatus
+    value: shipped
+    enabled: true
+  - key: trackingNumber
+    value: TEST-TRACK-001
+    enabled: true
+  - key: eventId
+    value: ''
+    enabled: true
+  - key: imageSha256
+    value: ''
+    enabled: true

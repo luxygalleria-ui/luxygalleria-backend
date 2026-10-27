@@ -1,0 +1,27 @@
+$kind: http-request
+name: W4. Order Status Callback — backwards → 409 INVALID_TRANSITION
+description: "Tries to move the test order back to `processing`. Precondition: request 7 moved it to `shipped`, `delivered` or `cancelled`. Expected: `409 INVALID_TRANSITION`; nothing recorded. Run after the numbered requests, against a **local or approved staging** database only."
+url: "{{baseUrl}}/erp/webhooks/order-status"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "eventId": "POSTMAN-BACKWARDS-{{nowIso}}",
+      "orderId": "{{orderId}}",
+      "status": "processing",
+      "occurredAt": "{{nowIso}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 409', function () {
+        pm.expect(pm.response.code).to.equal(409);
+      });
+      pm.test('error code INVALID_TRANSITION', function () {
+        pm.expect(pm.response.json().errors[0].code).to.equal('INVALID_TRANSITION');
+      });
+    language: text/javascript
+order: 4000

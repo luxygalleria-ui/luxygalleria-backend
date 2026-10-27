@@ -1,0 +1,88 @@
+$kind: http-request
+description: |-
+  **PUT {{baseUrl}}/erp/stock/{sku}** — set the **absolute** sellable quantity of one variant (not an adjustment).
+
+  - `quantity`: integer 0–1,000,000. `asOf`: ISO 8601 time the ERP figure was taken (here: the send time, set by the collection script).
+  - Website orders placed after `asOf` and units held by open website checkouts are subtracted: stored = max(0, quantity − pendingOrderQuantity − reservedQuantity). All are returned. Provisional until the ERP team confirms physical vs sellable stock.
+  - Same `asOf` again → `200`, `applied: false`. Older `asOf` than the last applied → `409 STALE_UPDATE`.
+  - Errors: `400` validation / `asOf` > 5 min in the future; `404` unknown SKU (never creates a product); `409 DUPLICATE_SKU`; `409 CONFLICT` when stock kept changing during the update (nothing written; retry as is).
+url: "{{baseUrl}}/erp/stock/{{itemSku}}"
+method: PUT
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "quantity": {{stockQuantity}},
+      "asOf": "{{nowIso}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200', function () {
+        pm.expect(pm.response.code).to.be.oneOf([200]);
+      });
+      pm.test('data matches the documented schema', function () {
+        pm.response.to.have.jsonSchema({
+          "type": "object",
+          "required": [
+            "success",
+            "data"
+          ],
+          "properties": {
+            "success": {
+              "const": true
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "sku",
+                "productId",
+                "variantId",
+                "asOf",
+                "previousQuantity",
+                "quantity",
+                "applied",
+                "updatedAt"
+              ],
+              "properties": {
+                "sku": {
+                  "type": "string"
+                },
+                "productId": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{24}$"
+                },
+                "variantId": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{24}$"
+                },
+                "previousQuantity": {
+                  "type": "integer"
+                },
+                "quantity": {
+                  "type": "integer"
+                },
+                "applied": {
+                  "type": "boolean"
+                },
+                "pendingOrderQuantity": {
+                  "type": "integer"
+                },
+                "reservedQuantity": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        });
+      });
+      // Remember what was applied, for the retry and stale checks in 'Write checks'
+      if (pm.response.code === 200) {
+        const asOf = pm.response.json().data.asOf;
+        pm.collectionVariables.set('lastStockAsOf', asOf);
+        pm.collectionVariables.set('staleStockAsOf', new Date(new Date(asOf).getTime() - 3600000).toISOString());
+      }
+    language: text/javascript
+order: 4000

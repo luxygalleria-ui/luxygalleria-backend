@@ -1,0 +1,3 @@
+$kind: collection
+description: Expected refusals. Each request is read-only or refused before any change, so the folder is safe to run in any environment. *Added in API version 2.1; verified by a local Postman CLI run, not yet against production.*
+order: 12000

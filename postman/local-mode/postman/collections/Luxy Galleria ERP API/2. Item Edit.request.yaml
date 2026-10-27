@@ -1,0 +1,88 @@
+$kind: http-request
+description: |-
+  **PATCH {{baseUrl}}/erp/items/{sku}** — change only the supplied fields of this SKU's variant and its product.
+
+  - Product fields: `name`, `description`, `category`, `brand`, `brandId`, `imageUrls`. Variant fields: `size`/`volume`, `flavor`, `offerPrice`, `actualPrice`, `weight`, `image`.
+  - At least one field. `stock` and `sku` are **not allowed** (`400`). Omitted fields, other variants and stock are untouched.
+  - Errors: `400` validation / price above MRP; `404` SKU not found; `409 DUPLICATE_SKU`.
+url: "{{baseUrl}}/erp/items/{{itemSku}}"
+method: PATCH
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "offerPrice": 189
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200', function () {
+        pm.expect(pm.response.code).to.be.oneOf([200]);
+      });
+      pm.test('data matches the documented schema', function () {
+        pm.response.to.have.jsonSchema({
+          "type": "object",
+          "required": [
+            "success",
+            "data"
+          ],
+          "properties": {
+            "success": {
+              "const": true
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "productId",
+                "name",
+                "updatedFields",
+                "variant"
+              ],
+              "properties": {
+                "productId": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{24}$"
+                },
+                "updatedFields": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "variant": {
+                  "type": "object",
+                  "required": [
+                    "sku",
+                    "variantId",
+                    "offerPrice",
+                    "actualPrice",
+                    "stock"
+                  ],
+                  "properties": {
+                    "sku": {
+                      "type": "string"
+                    },
+                    "variantId": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{24}$"
+                    },
+                    "offerPrice": {
+                      "type": "number"
+                    },
+                    "actualPrice": {
+                      "type": "number"
+                    },
+                    "stock": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        });
+      });
+    language: text/javascript
+order: 3000

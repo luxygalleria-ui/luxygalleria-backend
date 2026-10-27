@@ -1,0 +1,32 @@
+$kind: http-request
+description: "Redelivers request 7's event id. Expected: `200`, `duplicate: true`, the original `outcome`; nothing changes and no email is sent. Run after the numbered requests, against a **local or approved staging** database only."
+url: "{{baseUrl}}/erp/webhooks/order-status"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "eventId": "{{lastEventId}}",
+      "orderId": "{{orderId}}",
+      "status": "{{orderStatus}}",
+      "trackingNumber": "{{trackingNumber}}",
+      "occurredAt": "{{nowIso}}"
+    }
+scripts:
+  - type: beforeRequest
+    code: if (!pm.collectionVariables.get('lastEventId')) throw new Error('Run 7. Order Status Callback first');
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200', function () {
+        pm.expect(pm.response.code).to.equal(200);
+      });
+      pm.test('acknowledged as a duplicate, no side effects', function () {
+        const d = pm.response.json().data;
+        pm.expect(d.duplicate).to.equal(true);
+        pm.expect(d.eventId).to.equal(pm.collectionVariables.get('lastEventId'));
+      });
+    language: text/javascript
+order: 3000

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Luxy Galleria ERP API",
-    "description": "Machine-to-machine ERP API for luxygalleria.com, generated from `luxy-backend` source (`src/routes/erpRoutes.ts`, `src/controllers/erpController.ts`, `src/middlewares/erpAuth.ts`). Full specification: `docs/ERP-INTEGRATION-API-SPEC.md` (version 2.1).\n\n**Setup**\n1. Import this collection and the *Luxy Galleria ERP - Production* environment; select the environment (top right).\n2. Set `erpKeyId` and `erpSecret` (Current value only; do not sync or share the secret). They are issued by Luxy Galleria through a secure channel.\n3. Set `itemSku`, `categoryName`, `orderId` as needed. Your computer clock must be within 5 minutes of real time.\n\n**Authentication** — every request is HMAC-signed by the collection pre-request script; no manual headers are needed:\n- `X-ERP-Key-Id`: your key id\n- `X-ERP-Timestamp`: Unix seconds\n- `X-ERP-Signature`: hex HMAC-SHA256(secret, `timestamp.METHOD.pathWithQuery.sha256hex(body)`)\n\n`pathWithQuery` is e.g. `/api/v1/erp/orders?page=1&limit=10`. The body is the exact raw JSON sent, empty for GET, or the image file bytes for Image Upload (see that request).\n\n| HTTP | message | Cause |\n|---|---|---|\n| 401 | `Invalid ERP credentials` | `X-ERP-Key-Id` missing or not configured on the server |\n| 401 | `X-ERP-Timestamp missing or more than 300s from server time` | Computer clock wrong or request re-sent much later |\n| 401 | `Invalid X-ERP-Signature` | Wrong secret, or body/path changed after signing |\n| 401 | `Replayed request: …` | Same signature sent twice (re-send generates a new one automatically) |\n| 503 | `ERP integration is not configured` | Server has no ERP keys |\n| 429 | `Too many ERP requests…` | More than 600 requests/minute |\n\nResponses: `{ \"success\": true, \"message\": \"…\", \"data\": … }` or `{ \"success\": false, \"message\": \"…\", \"errors\": [{ \"code\": \"…\", \"field\": \"…\" }] }`.",
+    "description": "Machine-to-machine ERP API for luxygalleria.com, generated from `luxy-backend` source (`src/routes/erpRoutes.ts`, `src/controllers/erpController.ts`, `src/middlewares/erpAuth.ts`). Full specification: `docs/ERP-INTEGRATION-API-SPEC.md` (version 2.1).\n\n**Setup**\n1. Import this collection and an environment: **Luxy Galleria ERP - Local / Staging** for all testing, *Luxy Galleria ERP - Production* only for approved production reads. Select it (top right).\n2. Set `erpKeyId` and `erpSecret` (Current value only; do not sync or share the secret). They are issued by Luxy Galleria through a secure channel.\n3. Set `itemSku`, `categoryName`, `orderId` as needed. Your computer clock must be within 5 minutes of real time.\n\n**Run order:** `0. Health check`, then 1–9, then *Write checks (local / staging only)*, then *Negative checks*. Write requests change data: never run them against production without an approved test SKU and test order.\n\n**Authentication** — every request is HMAC-signed by the collection pre-request script; no manual headers are needed:\n- `X-ERP-Key-Id`: your key id\n- `X-ERP-Timestamp`: Unix seconds\n- `X-ERP-Signature`: hex HMAC-SHA256(secret, `timestamp.METHOD.pathWithQuery.sha256hex(body)`)\n\n`pathWithQuery` is e.g. `/api/v1/erp/orders?page=1&limit=10`. The body is the exact raw JSON sent, empty for GET, or the image file bytes for Image Upload (see that request).\n\n| HTTP | message | Cause |\n|---|---|---|\n| 401 | `Invalid ERP credentials` | `X-ERP-Key-Id` missing or not configured on the server |\n| 401 | `X-ERP-Timestamp missing or more than 300s from server time` | Computer clock wrong or request re-sent much later |\n| 401 | `Invalid X-ERP-Signature` | Wrong secret, or body/path changed after signing |\n| 401 | `Replayed request: …` | Same signature sent twice (re-send generates a new one automatically) |\n| 503 | `ERP integration is not configured` | Server has no ERP keys |\n| 429 | `Too many ERP requests…` | More than 600 requests/minute |\n\nResponses: `{ \"success\": true, \"message\": \"…\", \"data\": … }` or `{ \"success\": false, \"message\": \"…\", \"errors\": [{ \"code\": \"…\", \"field\": \"…\" }] }`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -50,7 +50,10 @@
           "const signature = cryptoJs.HmacSHA256(timestamp + '.' + method + '.' + pathWithQuery + '.' + bodyHash, secret).toString(cryptoJs.enc.Hex);",
           "pm.request.headers.upsert({ key: 'X-ERP-Key-Id', value: keyId });",
           "pm.request.headers.upsert({ key: 'X-ERP-Timestamp', value: timestamp });",
-          "pm.request.headers.upsert({ key: 'X-ERP-Signature', value: signature });"
+          "pm.request.headers.upsert({ key: 'X-ERP-Signature', value: signature });",
+          "// For diagnosing a 401 Invalid X-ERP-Signature in the test script: what was signed, and a fingerprint (not the value) of the secret",
+          "pm.variables.set('erpSigningDebug', JSON.stringify({ keyId, timestamp, method, pathWithQuery, bodySha256: bodyHash,",
+          "  secretLength: secret.length, secretFingerprint: cryptoJs.SHA256(secret).toString(cryptoJs.enc.Hex).slice(0, 12) }));"
         ]
       }
     },
@@ -60,7 +63,7 @@
         "type": "text/javascript",
         "exec": [
           "// If the pre-request script fails, Postman still sends the request, unsigned, and the server answers 401 Invalid ERP credentials.",
-          "pm.test('request was signed by the collection pre-request script', function () {",
+          "if (!pm.info.requestName.includes('[unsigned]')) pm.test('request was signed by the collection pre-request script', function () {",
           "  pm.expect(pm.request.headers.has('X-ERP-Signature'), 'No X-ERP-Signature header: check the Postman Console for a pre-request script error').to.be.true;",
           "});",
           "// Every ERP response, success or error, uses the same envelope.",
@@ -71,6 +74,12 @@
           "    properties: { success: { type: 'boolean' }, message: { type: 'string' } },",
           "  });",
           "});",
+          "// 401 Invalid X-ERP-Signature: the key id was accepted, so the secret or the signed request differs from the server's view.",
+          "// Compare secretFingerprint with the server's (see the handover guide, \"Troubleshooting 401\"); the secret itself is never logged.",
+          "if (pm.response.code === 401 && /X-ERP-Signature/.test(pm.response.text())) {",
+          "  console.warn('Signed as: ' + (pm.variables.get('erpSigningDebug') || '(collection pre-request script did not run)'));",
+          "  console.warn('Sent: ' + pm.request.method + ' ' + pm.request.url.toString() + ' | X-ERP-Key-Id=' + (pm.request.headers.get('X-ERP-Key-Id') || '(none)'));",
+          "}",
           "if (pm.response.code >= 400) {",
           "  let msg = '';",
           "  try { msg = pm.response.json().message; } catch (e) { msg = pm.response.text().slice(0, 200); }",
@@ -81,6 +90,39 @@
     }
   ],
   "item": [
+    {
+      "name": "0. Health check",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () {",
+              "  pm.expect(pm.response.code).to.equal(200);",
+              "});",
+              "pm.test('backend is running', function () {",
+              "  pm.expect(pm.response.json().success).to.equal(true);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        },
+        "description": "**GET {{baseUrl}}/health** — connectivity check. No authentication is needed (the collection script still adds ERP headers, which this route ignores).\n\nExpected: `200 {\"success\":true,\"message\":\"Backend is running\",…}`. If this fails, nothing else will: check `baseUrl` and that the backend is running."
+      }
+    },
     {
       "name": "1. Item Add / Upsert",
       "event": [
@@ -369,7 +411,13 @@
               "      }",
               "    }",
               "  });",
-              "});"
+              "});",
+              "// Remember what was applied, for the retry and stale checks in 'Write checks'",
+              "if (pm.response.code === 200) {",
+              "  const asOf = pm.response.json().data.asOf;",
+              "  pm.collectionVariables.set('lastStockAsOf', asOf);",
+              "  pm.collectionVariables.set('staleStockAsOf', new Date(new Date(asOf).getTime() - 3600000).toISOString());",
+              "}"
             ]
           }
         }
@@ -883,7 +931,9 @@
               "      }",
               "    }",
               "  });",
-              "});"
+              "});",
+              "// Remember the event id actually sent, for the duplicate check in 'Write checks'",
+              "pm.collectionVariables.set('lastEventId', JSON.parse(pm.variables.replaceIn(pm.request.body.raw)).eventId);"
             ]
           }
         }
@@ -1023,9 +1073,292 @@
       }
     },
     {
+      "name": "Write checks (local / staging only)",
+      "description": "Retry, stale and transition rules, using values captured from requests 3 and 7. Run after the numbered requests, against a **local or approved staging** database only. Never run against production: they change stock and order status.",
+      "item": [
+        {
+          "name": "W1. Stock Update — same asOf again → applied: false",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('lastStockAsOf')) throw new Error('Run 3. Stock Update first');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () {",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});",
+                  "pm.test('nothing re-applied', function () {",
+                  "  const d = pm.response.json().data;",
+                  "  pm.expect(d.applied).to.equal(false);",
+                  "  pm.expect(d.asOf).to.equal(pm.collectionVariables.get('lastStockAsOf'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"quantity\":{{stockQuantity}},\"asOf\":\"{{lastStockAsOf}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/erp/stock/{{itemSku}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "stock",
+                "{{itemSku}}"
+              ]
+            },
+            "description": "Redelivers the figure request 3 applied (same `asOf`). Expected: `200`, message `Stock already at this update`, `applied: false`; stock unchanged. Run after the numbered requests, against a **local or approved staging** database only. The body is the same values in compact JSON: a request repeated byte for byte within the same second has the same signature and is refused as a replay (`401`), so a real retry is always re-signed with a fresh timestamp."
+          }
+        },
+        {
+          "name": "W2. Stock Update — older asOf → 409 STALE_UPDATE",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('staleStockAsOf')) throw new Error('Run 3. Stock Update first');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', function () {",
+                  "  pm.expect(pm.response.code).to.equal(409);",
+                  "});",
+                  "pm.test('error code STALE_UPDATE', function () {",
+                  "  pm.expect(pm.response.json().errors[0].code).to.equal('STALE_UPDATE');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 1,\n  \"asOf\": \"{{staleStockAsOf}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/erp/stock/{{itemSku}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "stock",
+                "{{itemSku}}"
+              ]
+            },
+            "description": "Sends a figure one hour older than the last applied one. Expected: `409 STALE_UPDATE` with `currentAsOf`; stock unchanged. Run after the numbered requests, against a **local or approved staging** database only."
+          }
+        },
+        {
+          "name": "W3. Order Status Callback — same eventId again → duplicate",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('lastEventId')) throw new Error('Run 7. Order Status Callback first');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () {",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});",
+                  "pm.test('acknowledged as a duplicate, no side effects', function () {",
+                  "  const d = pm.response.json().data;",
+                  "  pm.expect(d.duplicate).to.equal(true);",
+                  "  pm.expect(d.eventId).to.equal(pm.collectionVariables.get('lastEventId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"{{lastEventId}}\",\n  \"orderId\": \"{{orderId}}\",\n  \"status\": \"{{orderStatus}}\",\n  \"trackingNumber\": \"{{trackingNumber}}\",\n  \"occurredAt\": \"{{nowIso}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/erp/webhooks/order-status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "webhooks",
+                "order-status"
+              ]
+            },
+            "description": "Redelivers request 7's event id. Expected: `200`, `duplicate: true`, the original `outcome`; nothing changes and no email is sent. Run after the numbered requests, against a **local or approved staging** database only."
+          }
+        },
+        {
+          "name": "W4. Order Status Callback — backwards → 409 INVALID_TRANSITION",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', function () {",
+                  "  pm.expect(pm.response.code).to.equal(409);",
+                  "});",
+                  "pm.test('error code INVALID_TRANSITION', function () {",
+                  "  pm.expect(pm.response.json().errors[0].code).to.equal('INVALID_TRANSITION');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"POSTMAN-BACKWARDS-{{nowIso}}\",\n  \"orderId\": \"{{orderId}}\",\n  \"status\": \"processing\",\n  \"occurredAt\": \"{{nowIso}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/erp/webhooks/order-status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "webhooks",
+                "order-status"
+              ]
+            },
+            "description": "Tries to move the test order back to `processing`. Precondition: request 7 moved it to `shipped`, `delivered` or `cancelled`. Expected: `409 INVALID_TRANSITION`; nothing recorded. Run after the numbered requests, against a **local or approved staging** database only."
+          }
+        }
+      ]
+    },
+    {
       "name": "Negative checks",
       "description": "Expected refusals. Each request is read-only or refused before any change, so the folder is safe to run in any environment. *Added in API version 2.1; verified by a local Postman CLI run, not yet against production.*",
       "item": [
+        {
+          "name": "N0. Unsigned request → 401 [unsigned]",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Remove what the collection script added, as a client without credentials would send it",
+                  "['X-ERP-Key-Id', 'X-ERP-Timestamp', 'X-ERP-Signature'].forEach((h) => pm.request.headers.remove(h));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', function () {",
+                  "  pm.expect(pm.response.code).to.equal(401);",
+                  "});",
+                  "pm.test('error code UNAUTHENTICATED', function () {",
+                  "  pm.expect(pm.response.json().errors[0].code).to.equal('UNAUTHENTICATED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/erp/orders?limit=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "No `X-ERP-*` headers. Expected: `401 Invalid ERP credentials`. Read-only; safe in any environment."
+          }
+        },
         {
           "name": "N1. Item Lookup — unknown SKU → 404",
           "event": [

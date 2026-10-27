@@ -985,9 +985,10 @@ curl -sS -X POST "$BASE$P" -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" 
 
 | File | Contents |
 |---|---|
-| `postman/Luxy-Galleria-ERP-API.postman_collection.json` | Postman Collection v2.1 with the nine requests in a runnable order, a *Negative checks* folder, automatic signing, and test assertions |
+| `postman/Luxy-Galleria-ERP-API.postman_collection.json` | Postman Collection v2.1: a health check, the nine endpoint requests in a runnable order, a *Write checks* folder and a *Negative checks* folder (21 requests), automatic signing, and test assertions |
 | `postman/Luxy-Galleria-ERP-Production.postman_environment.json` | Environment template for production. Credentials and IDs are blank. |
 | `postman/Luxy-Galleria-ERP-Local-Staging.postman_environment.json` | Same variables for a local or staging backend (`baseUrl` defaults to `http://localhost:5000/api/v1`). Credentials and IDs are blank. Use it for all test writes. |
+| `postman/local-mode/` | The same collection and the Local / Staging environment in the YAML format of **Postman Local Mode** (`.postman/resources.yaml`, `postman/collections/…`, `postman/environments/…`), generated with the Postman CLI (`postman collection migrate`, `postman environment new`) and linted with 0 errors. Use it when Postman reports that JSON collections are unsupported in Local Mode. Regenerate it from the JSON collection after any change. |
 
 | Postman request | Function | Section |
 |---|---|---|
@@ -1000,9 +1001,11 @@ curl -sS -X POST "$BASE$P" -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" 
 | 7. Order Status Callback | Order Status Callback | 9 |
 | 8. Item List | Item List | 6A |
 | 9. Item Lookup | Item Lookup | 6B |
-| Negative checks (folder) | Expected refusals: unknown SKU (`404`), bad query (`400`), invalid stock body (`400`), wrong signature, expired timestamp and unknown key (`401`) | 2.5, 4, 6B, 7 |
+| 0. Health check | Connectivity (`GET /health`, no authentication needed) | 1.3 |
+| Write checks (folder) | W1 same `asOf` again (`200`, `applied: false`), W2 older `asOf` (`409 STALE_UPDATE`), W3 same `eventId` again (`200`, `duplicate: true`), W4 backwards status (`409 INVALID_TRANSITION`). They use values captured by requests 3 and 7. Local or staging only. | 4, 9 |
+| Negative checks (folder) | Expected refusals: unsigned request, wrong signature, expired timestamp and unknown key (`401`), unknown SKU (`404`), bad query (`400`), invalid stock body (`400`) | 2.5, 4, 6B, 7 |
 
-The run order puts Item Add first, because Item Edit and Stock Update need its SKU to exist. The *Negative checks* are safe to run anywhere: they are read-only or refused before any data is read or written.
+Run order: `0. Health check`, 1–9, *Write checks*, *Negative checks*. Item Add comes first because Item Edit and Stock Update need its SKU to exist. The *Negative checks* are safe to run anywhere: they are read-only or refused before any data is read or written.
 
 ### 11.2 Setup and secrets
 
@@ -1234,7 +1237,7 @@ Automated tests against throwaway local MongoDB databases (no production data, e
 | `src/tests/products.test.ts` | 12 passed, 0 failed | Website admin keeps variant ids, stock and `stockAsOf` on edits; SKU set-once and uniqueness rules, including legacy SKUs stored with surrounding or only spaces |
 | `src/tests/paymentLifecycle.test.ts` | 16 passed, 0 failed | Unknown variant refused at checkout; SKU/name stored on the order line; a stock update arriving while a checkout is creating its payment does not lose that checkout's reservation; admin status changes follow the callback's transition rules, set `statusUpdatedAt`, and make an older callback `stale` |
 
-Postman collection (version 2.1 files), run with the Postman CLI 1.76 against a local server on a throwaway database with a throwaway key: 15 requests, 61 assertions passed. Requests 1–5 and 7–9 returned their documented success status (Order Details was run on a store-pickup order, whose `shippingAddress` is `null`), and all six *Negative checks* returned their documented refusal. *6. Image Upload* failed as expected in a command-line run, because no file can be selected (Section 11.4); image upload remains covered only by the automated test with storage stubbed.
+Postman collection, run with the Postman CLI 1.76 against a local server on a throwaway database with a throwaway key and image storage **stubbed** (27 October 2026): **21 requests, 84 assertions, 0 failures**, from both the classic JSON files and the Local Mode YAML files. Every numbered request returned its documented success status, including *6. Image Upload* with a real PNG file and its `imageSha256` (signature over the file bytes accepted). W1–W4 and N0–N6 returned their documented outcomes. The collection's signing script, run offline against the §2.3 test vector, produces the expected signature. Storing an image in real cloud storage, and opening the Local Mode files in the Postman desktop app, are **not** verified.
 
 Nothing in version 2.1 has been tested in staging (none exists) or production.
 

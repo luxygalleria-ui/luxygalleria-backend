@@ -1,0 +1,29 @@
+$kind: http-request
+description: |-
+  Expects `400 VALIDATION_ERROR`. The body is validated before the SKU is looked up, so no stock is changed.
+
+  Negative check: the request is refused before any data is read or changed. Safe to run in any environment.
+url: "{{baseUrl}}/erp/stock/{{itemSku}}"
+method: PUT
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "quantity": -1,
+      "asOf": "{{nowIso}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 400', function () {
+        pm.expect(pm.response.code).to.equal(400);
+      });
+      pm.test('error code VALIDATION_ERROR', function () {
+        const body = pm.response.json();
+        pm.expect(body.success).to.equal(false);
+        pm.expect(body.errors[0].code).to.equal('VALIDATION_ERROR');
+      });
+    language: text/javascript
+order: 4000

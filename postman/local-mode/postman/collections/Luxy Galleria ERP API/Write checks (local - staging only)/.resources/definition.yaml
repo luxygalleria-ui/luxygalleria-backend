@@ -1,0 +1,4 @@
+$kind: collection
+name: Write checks (local / staging only)
+description: "Retry, stale and transition rules, using values captured from requests 3 and 7. Run after the numbered requests, against a **local or approved staging** database only. Never run against production: they change stock and order status."
+order: 11000

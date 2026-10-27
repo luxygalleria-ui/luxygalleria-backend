@@ -1,0 +1,108 @@
+$kind: http-request
+name: 1. Item Add / Upsert
+description: |-
+  **POST {{baseUrl}}/erp/items** — create a product with its variants, or update the product that already carries these SKUs.
+
+  - `201` + `action: "created"` when no SKU exists yet; `200` + `action: "updated"` when the SKUs belong to one existing product.
+  - On create, `name`, `description` and `category` are required. `category` must be the name (case-insensitive) or id of an **existing** website category.
+  - Each new variant needs `sku`, `offerPrice` and `actualPrice` (`offerPrice` ≤ `actualPrice`). `stock` is used **only when the variant is created**; change stock later with Stock Update.
+  - Unknown fields are rejected (`400`). Optional: `brand`, `brandId`, `imageUrls` (https, replaces the list), `variants[].volume|flavor|weight|image`.
+  - Errors: `400` validation / unknown category; `409 CONFLICT` SKUs on two products; `409 DUPLICATE_SKU`; `409 UNMAPPED_PRODUCT` when a website product with the same name has variants without a SKU (ask Luxy Galleria to set your SKU on it; nothing is created).
+
+  ⚠️ **Production:** the website has no inactive-product flag, so a created item is visible on the storefront. Use an approved test SKU.
+url: "{{baseUrl}}/erp/items"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "name": "ERP Test Item - do not publish",
+      "description": "Created from the Luxy Galleria ERP Postman collection for integration testing.",
+      "category": "{{categoryName}}",
+      "variants": [
+        {
+          "sku": "{{itemSku}}",
+          "size": "100g",
+          "offerPrice": 199,
+          "actualPrice": 249,
+          "stock": 0
+        }
+      ]
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 201 or 200', function () {
+        pm.expect(pm.response.code).to.be.oneOf([201,200]);
+      });
+      pm.test('data matches the documented schema', function () {
+        pm.response.to.have.jsonSchema({
+          "type": "object",
+          "required": [
+            "success",
+            "data"
+          ],
+          "properties": {
+            "success": {
+              "const": true
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "productId",
+                "action",
+                "variants"
+              ],
+              "properties": {
+                "productId": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{24}$"
+                },
+                "action": {
+                  "enum": [
+                    "created",
+                    "updated"
+                  ]
+                },
+                "variants": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "sku",
+                      "variantId",
+                      "offerPrice",
+                      "actualPrice",
+                      "stock",
+                      "action"
+                    ],
+                    "properties": {
+                      "sku": {
+                        "type": "string"
+                      },
+                      "variantId": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{24}$"
+                      },
+                      "offerPrice": {
+                        "type": "number"
+                      },
+                      "actualPrice": {
+                        "type": "number"
+                      },
+                      "stock": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        });
+      });
+    language: text/javascript
+order: 2000

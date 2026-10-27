@@ -1,0 +1,18 @@
+$kind: http-request
+description: |-
+  **GET {{baseUrl}}/health** — connectivity check. No authentication is needed (the collection script still adds ERP headers, which this route ignores).
+
+  Expected: `200 {"success":true,"message":"Backend is running",…}`. If this fails, nothing else will: check `baseUrl` and that the backend is running.
+url: "{{baseUrl}}/health"
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200', function () {
+        pm.expect(pm.response.code).to.equal(200);
+      });
+      pm.test('backend is running', function () {
+        pm.expect(pm.response.json().success).to.equal(true);
+      });
+    language: text/javascript
+order: 1000
