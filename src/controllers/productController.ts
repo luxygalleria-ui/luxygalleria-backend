@@ -7,6 +7,81 @@ import { asyncHandler } from '../utils/asyncHandler';
 import { successResponse, errorResponse } from '../utils/responseHandler';
 import { parseWeightFromVolume } from '../utils/shippingCalculator';
 import { escapeRegex } from './contactController';
+import Order from '../models/Order';
+import { CheckoutSession } from '../models/CheckoutSession';
+
+const MAX_SKU_LENGTH = 64; // same limit as the ERP API's SKU rule (erpController)
+const MAX_STOCK = 1_000_000;
+/** Variant fields the admin product form may change on an existing variant. Never stock, stockAsOf or (here) sku. */
+const EDITABLE_VARIANT_FIELDS = ['size', 'volume', 'flavor', 'offerPrice', 'actualPrice', 'price', 'oldPrice', 'weight', 'image', 'description', 'name'] as const;
+
+/** A variant from the admin form in stored shape: legacy mirror fields kept in step, defaults as before. */
+const normalizeVariant = (v: any) => {
+  const size = v.size || v.volume || 'Standard';
+  const parsedWeight = parseWeightFromVolume(size);
+  const offerPrice = Number(v.offerPrice !== undefined ? v.offerPrice : (v.price || 0));
+  const actualPrice = Number(v.actualPrice !== undefined ? v.actualPrice : (v.oldPrice || v.price || 0));
+  return {
+    ...v,
+    size,
+    flavor: v.flavor || 'Default',
+    volume: size,
+    offerPrice,
+    actualPrice,
+    price: offerPrice,
+    oldPrice: actualPrice,
+    weight: Number(v.weight !== undefined && v.weight > 0 ? v.weight : (parsedWeight !== null ? parsedWeight : 0)),
+    stock: Number(v.stock !== undefined ? v.stock : 0),
+    image: v.image || '',
+    images: Array.isArray(v.images) ? v.images : (v.image ? [v.image] : []),
+    sku: typeof v.sku === 'string' ? v.sku.trim() : '',
+  };
+};
+
+/** Server-side variant rules, shared by create and update (the admin form checks the same, but is not trusted). */
+const variantProblem = (v: ReturnType<typeof normalizeVariant>, label: string, { checkStock = true } = {}) => {
+  if (!(Number.isFinite(v.offerPrice) && v.offerPrice > 0)) return `${label}: offer price must be greater than zero`;
+  if (!Number.isFinite(v.actualPrice) || v.actualPrice < v.offerPrice) return `${label}: actual price (MRP) cannot be less than the offer price`;
+  if (!Number.isFinite(v.weight) || v.weight < 0 || v.weight > 1000) return `${label}: weight must be between 0 and 1000 kg`;
+  if (checkStock && !(Number.isInteger(v.stock) && v.stock >= 0 && v.stock <= MAX_STOCK)) return `${label}: stock must be a whole number, 0 or more`;
+  if (v.sku.length > MAX_SKU_LENGTH) return `${label}: SKU must be at most ${MAX_SKU_LENGTH} characters`;
+  return null;
+};
+
+/** New variant for $push / create: no client id, no ERP timestamp, no empty SKU. */
+const freshVariant = (v: ReturnType<typeof normalizeVariant>) => {
+  const { _id, stockAsOf, originalStock, ...fresh } = v;
+  if (!fresh.sku) delete (fresh as any).sku;
+  return fresh;
+};
+
+/**
+ * SKUs (of those given) already carried by a variant anywhere in the catalogue. The ERP addresses exactly one variant
+ * per SKU. Stored values are compared trimmed, so a legacy " ABC" still counts as ABC.
+ */
+const skusInUse = async (skus: string[]) => {
+  if (!skus.length) return [];
+  const patterns = skus.map((s) => new RegExp(`^\\s*${escapeRegex(s)}\\s*$`));
+  const products = await Product.find({ 'variants.sku': { $in: patterns } }, { 'variants.sku': 1 }).lean();
+  return [...new Set(products.flatMap((p: any) => p.variants.map((v: any) => (v.sku || '').trim()).filter((s: string) => skus.includes(s))))];
+};
+
+const skuConflict = async (res: Response, skus: string[]) => {
+  if (new Set(skus).size !== skus.length) return errorResponse(res, 400, 'Each SKU may be used by only one variant', [{ code: 'DUPLICATE_SKU', field: 'sku' }]);
+  const taken = await skusInUse(skus);
+  if (taken.length) return errorResponse(res, 409, `SKU already used by another variant: ${taken.join(', ')}`, [{ code: 'DUPLICATE_SKU', field: 'sku', skus: taken }]);
+  return null;
+};
+
+/** Variant ids (of those given) referenced by an order or an open checkout; removing them would orphan that history or reservation. */
+const variantsInUse = async (ids: unknown[]) => {
+  const [ordered, open] = await Promise.all([
+    Order.distinct('items.variantId', { 'items.variantId': { $in: ids } }),
+    CheckoutSession.distinct('items.variantId', { status: { $in: ['pending', 'processing'] }, 'items.variantId': { $in: ids } }),
+  ]);
+  const used = new Set([...ordered, ...open].map(String));
+  return ids.filter((id) => used.has(String(id)));
+};
 
 export const createProduct = asyncHandler(async (req: Request, res: Response) => {
   let existingImages: string[] = [];
@@ -32,40 +107,21 @@ export const createProduct = asyncHandler(async (req: Request, res: Response) =>
     }
   }
 
-  if (req.body.variants && Array.isArray(req.body.variants)) {
-    req.body.variants = req.body.variants.map((v: any) => {
-      const size = v.size || v.volume || 'Standard';
-      const flavor = v.flavor || 'Default';
-      const volume = size;
-      const parsedWeight = parseWeightFromVolume(size);
-      const offerPrice = Number(v.offerPrice !== undefined ? v.offerPrice : (v.price || 0));
-      const actualPrice = Number(v.actualPrice !== undefined ? v.actualPrice : (v.oldPrice || v.price || 0));
-      const weight = Number(v.weight !== undefined && v.weight > 0 ? v.weight : (parsedWeight !== null ? parsedWeight : 0));
-      const stock = Number(v.stock !== undefined ? v.stock : 0);
-      const sku = v.sku || '';
-      const image = v.image || '';
-      const images = Array.isArray(v.images) ? v.images : (v.image ? [v.image] : []);
-      return {
-        ...v,
-        size,
-        flavor,
-        volume,
-        offerPrice,
-        actualPrice,
-        price: offerPrice,
-        oldPrice: actualPrice,
-        weight,
-        stock,
-        image,
-        images,
-        sku
-      };
-    });
-    if (req.body.variants.length > 0) {
-      req.body.weight = req.body.variants[0].weight;
-      req.body.stock = req.body.variants.reduce((acc: number, curr: any) => acc + curr.stock, 0);
-    }
+  // A product without variants cannot be priced, stocked, bought or addressed by the ERP
+  if (!Array.isArray(req.body.variants) || req.body.variants.length === 0) {
+    return errorResponse(res, 400, 'At least one variant is required');
   }
+  const variants = req.body.variants.map((raw: any) => normalizeVariant(raw && typeof raw === 'object' ? raw : {}));
+  for (const [i, v] of variants.entries()) {
+    const problem = variantProblem(v, `Variant ${i + 1} (${v.size})`);
+    if (problem) return errorResponse(res, 400, problem);
+  }
+  const conflict = await skuConflict(res, variants.map((v: any) => v.sku).filter(Boolean));
+  if (conflict) return conflict;
+  req.body.variants = variants.map(freshVariant);
+  req.body.weight = req.body.variants[0].weight;
+  req.body.stock = req.body.variants.reduce((acc: number, curr: any) => acc + curr.stock, 0);
+  delete req.body._id;
 
   if (req.body.categoryId) {
     const categoryObj = await Category.findById(req.body.categoryId);
@@ -284,12 +340,17 @@ export const getProducts = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
+/**
+ * Updates a product without ever rewriting the variants array: existing variants are changed field by field by _id,
+ * so their ids, current stock (checkout reservations, ERP figures) and ERP timestamps (stockAsOf) survive every edit.
+ * Stock changes only by an explicit adjustment that names the value the admin saw (originalStock).
+ */
 export const updateProduct = asyncHandler(async (req: Request, res: Response) => {
-  let product = await Product.findById(req.params.id);
+  const product = await Product.findById(req.params.id);
   if (!product) {
     return errorResponse(res, 404, 'Product not found');
   }
-  
+
   let existingImages: string[] = [];
   if (req.body.images) {
     if (Array.isArray(req.body.images)) {
@@ -312,64 +373,127 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
     }
   }
 
-  if (req.body.variants && Array.isArray(req.body.variants)) {
-    req.body.variants = req.body.variants.map((v: any) => {
-      const size = v.size || v.volume || 'Standard';
-      const flavor = v.flavor || 'Default';
-      const volume = size;
-      const parsedWeight = parseWeightFromVolume(size);
-      const offerPrice = Number(v.offerPrice !== undefined ? v.offerPrice : (v.price || 0));
-      const actualPrice = Number(v.actualPrice !== undefined ? v.actualPrice : (v.oldPrice || v.price || 0));
-      const weight = Number(v.weight !== undefined && v.weight > 0 ? v.weight : (parsedWeight !== null ? parsedWeight : 0));
-      const stock = Number(v.stock !== undefined ? v.stock : 0);
-      const sku = v.sku || '';
-      const image = v.image || '';
-      const images = Array.isArray(v.images) ? v.images : (v.image ? [v.image] : []);
-      return {
-        ...v,
-        size,
-        flavor,
-        volume,
-        offerPrice,
-        actualPrice,
-        price: offerPrice,
-        oldPrice: actualPrice,
-        weight,
-        stock,
-        image,
-        images,
-        sku
-      };
-    });
-    if (req.body.variants.length > 0) {
-      req.body.weight = req.body.variants[0].weight;
-      req.body.stock = req.body.variants.reduce((acc: number, curr: any) => acc + curr.stock, 0);
-    }
-  }
-  
-  if (req.body.categoryId) {
-    const categoryObj = await Category.findById(req.body.categoryId);
+  const fields: Record<string, any> = { ...req.body };
+  const incoming = fields.variants;
+  delete fields.variants;
+  delete fields._id;
+  delete fields.__v;
+  delete fields.stock; // derived: the sum of the variants' stock
+  const unset: Record<string, 1> = {};
+
+  if (fields.categoryId) {
+    const categoryObj = await Category.findById(fields.categoryId);
     if (categoryObj) {
-      req.body.category = categoryObj.name;
+      fields.category = categoryObj.name;
     }
-  } else if (req.body.categoryId === "") {
-    delete req.body.categoryId;
-    req.body.$unset = req.body.$unset || {};
-    req.body.$unset.categoryId = 1;
+  } else if (fields.categoryId === "") {
+    delete fields.categoryId;
+    unset.categoryId = 1;
   }
 
-  if (req.body.brandId === "") {
-    delete req.body.brandId;
-    req.body.$unset = req.body.$unset || {};
-    req.body.$unset.brandId = 1;
+  if (fields.brandId === "") {
+    delete fields.brandId;
+    unset.brandId = 1;
   }
-  
-  product = await Product.findByIdAndUpdate(req.params.id, req.body, {
-    new: true,
-    runValidators: true,
-  });
-  
-  successResponse(res, 200, 'Product updated successfully', product);
+
+  const sets: Record<string, unknown> = {};
+  const arrayFilters: Record<string, unknown>[] = [];
+  const additions: any[] = [];
+  const adjustments: { id: unknown; from: number; to: number }[] = [];
+  const newSkus: string[] = [];
+  let removedIds: unknown[] = [];
+
+  if (incoming !== undefined) {
+    if (!Array.isArray(incoming) || incoming.length === 0) return errorResponse(res, 400, 'At least one variant is required');
+    const existingById = new Map(product.variants.map((v: any) => [String(v._id), v]));
+    const kept = new Set<string>();
+
+    for (const [i, raw] of incoming.entries()) {
+      if (!raw || typeof raw !== 'object') return errorResponse(res, 400, `Variant ${i + 1} is invalid`);
+      const v = normalizeVariant(raw);
+      const label = `Variant ${i + 1} (${v.size})`;
+
+      if (!raw._id) {
+        const problem = variantProblem(v, label);
+        if (problem) return errorResponse(res, 400, problem);
+        const fresh = freshVariant(v);
+        if (fresh.sku) newSkus.push(fresh.sku);
+        additions.push(fresh);
+        continue;
+      }
+
+      const existing: any = existingById.get(String(raw._id));
+      if (!existing) return errorResponse(res, 400, `${label} does not belong to this product; reload it and try again`);
+      if (kept.has(String(existing._id))) return errorResponse(res, 400, `${label} appears more than once`);
+      kept.add(String(existing._id));
+      const problem = variantProblem(v, label, { checkStock: false });
+      if (problem) return errorResponse(res, 400, problem);
+
+      const f = `v${i}`;
+      arrayFilters.push({ [`${f}._id`]: existing._id });
+      for (const key of EDITABLE_VARIANT_FIELDS) if (v[key] !== undefined) sets[`variants.$[${f}].${key}`] = v[key];
+
+      // SKU: may be set once on a variant that has none; an existing ERP item code is never overwritten or cleared here.
+      // Compared trimmed: stray spaces on a stored SKU are not a change, and a spaces-only SKU counts as none.
+      const currentSku = (existing.sku || '').trim();
+      if (raw.sku !== undefined && v.sku !== currentSku) {
+        if (currentSku) {
+          return errorResponse(res, 409, `${label} already has SKU "${currentSku}"; it cannot be changed or removed here`, [{ code: 'SKU_LOCKED', field: `variants.${i}.sku` }]);
+        }
+        sets[`variants.$[${f}].sku`] = v.sku;
+        newSkus.push(v.sku);
+      }
+
+      // Stock: only an explicit adjustment, refused if the stock moved since the admin loaded it. Never touches stockAsOf.
+      if (raw.originalStock !== undefined && raw.stock !== undefined && Number(raw.stock) !== Number(raw.originalStock)) {
+        const from = Number(raw.originalStock);
+        const to = Number(raw.stock);
+        if (!(Number.isInteger(to) && to >= 0 && to <= MAX_STOCK)) return errorResponse(res, 400, `${label}: stock must be a whole number, 0 or more`);
+        if (from !== existing.stock) {
+          return errorResponse(res, 409, `${label}: stock is now ${existing.stock} (changed by orders or ERP sync since you opened this product). Reload and adjust again`, [{ code: 'STOCK_CHANGED', field: `variants.${i}.stock`, current: existing.stock }]);
+        }
+        adjustments.push({ id: existing._id, from, to });
+      }
+    }
+
+    const removed = product.variants.filter((v: any) => !kept.has(String(v._id)));
+    const inUse = await variantsInUse(removed.map((v: any) => v._id));
+    if (inUse.length) {
+      const names = removed.filter((v: any) => inUse.some((id) => String(id) === String(v._id))).map((v: any) => v.size || v.volume);
+      return errorResponse(res, 409, `Cannot remove ${names.join(', ')}: part of existing orders or an open checkout`, [{ code: 'VARIANT_IN_USE', variantIds: inUse.map(String) }]);
+    }
+    removedIds = removed.map((v: any) => v._id);
+
+    const conflict = await skuConflict(res, newSkus);
+    if (conflict) return conflict;
+  }
+
+  // Explicit stock adjustments first: one conditional write each, so a concurrent checkout or ERP update is never overwritten
+  for (const a of adjustments) {
+    const r = await Product.updateOne(
+      { _id: product._id, variants: { $elemMatch: { _id: a.id, stock: a.from } } },
+      { $set: { 'variants.$.stock': a.to } }
+    );
+    if (!r.matchedCount) return errorResponse(res, 409, 'Stock changed while saving; reload and adjust again', [{ code: 'STOCK_CHANGED' }]);
+  }
+
+  await Product.updateOne(
+    { _id: product._id },
+    { $set: { ...fields, ...sets }, ...(Object.keys(unset).length ? { $unset: unset } : {}) },
+    { arrayFilters, runValidators: true }
+  );
+  if (removedIds.length) {
+    // __v bump: a concurrent ERP save that addressed variants by position must fail rather than hit a shifted variant
+    await Product.updateOne({ _id: product._id }, { $pull: { variants: { _id: { $in: removedIds } } }, $inc: { __v: 1 } });
+  }
+  if (additions.length) {
+    await Product.updateOne({ _id: product._id }, { $push: { variants: { $each: additions } } }, { runValidators: true });
+  }
+  if (incoming !== undefined) {
+    await Product.updateOne({ _id: product._id }, [{ $set: { stock: { $sum: '$variants.stock' }, weight: { $ifNull: [{ $arrayElemAt: ['$variants.weight', 0] }, 0] } } }]);
+  }
+
+  successResponse(res, 200, 'Product updated successfully', await Product.findById(product._id));
 });
 
 // Replaces a whole collection (Gifting / New Arrivals) in one call; array order becomes the display order.
@@ -404,9 +528,14 @@ export const setGiftingProducts = setCollectionProducts('isGifting', 'giftingOrd
 export const setNewArrivalProducts = setCollectionProducts('isNewArrival', 'newArrivalOrder');
 
 export const deleteProduct = asyncHandler(async (req: Request, res: Response) => {
-  const product = await Product.findByIdAndDelete(req.params.id);
+  const product = await Product.findById(req.params.id);
   if (!product) {
     return errorResponse(res, 404, 'Product not found');
   }
+  // Orders and open checkouts point at its variants; deleting it would orphan order history and held stock
+  if ((await variantsInUse(product.variants.map((v: any) => v._id))).length) {
+    return errorResponse(res, 409, 'This product is part of existing orders or an open checkout and cannot be deleted. Set its stock to 0 to stop selling it.', [{ code: 'PRODUCT_IN_USE' }]);
+  }
+  await Product.deleteOne({ _id: product._id });
   successResponse(res, 200, 'Product deleted successfully', null);
 });
