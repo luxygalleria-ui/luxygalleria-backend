@@ -1,0 +1,144 @@
+$kind: http-request
+description: |-
+  **GET {{baseUrl}}/erp/orders** — orders page by page, oldest change first (sorted by `updatedAt`, then `orderId`).
+
+  - Query: `page` (≥1), `limit` (1–100, default 50), optional `status`, `paymentStatus`, `updatedSince`. Unknown parameters → `400`.
+  - Response also carries `pagination: { page, limit, total, pages }` next to `data`.
+  - Incremental sync: keep the newest `updatedAt` received and pass it as `updatedSince`; de-duplicate by `orderId`.
+  - `items[].sku` / `items[].name` are the values at purchase for orders placed since API version 2.1; older orders show current product data.
+  - Read-only. Copy an `orderId` from here into the environment for Order Details.
+url: "{{baseUrl}}/erp/orders?page=1&limit=10"
+method: GET
+queryParams:
+  - key: page
+    value: "1"
+  - key: limit
+    value: "10"
+  - key: status
+    value: processing
+    disabled: true
+    description: processing | shipped | delivered | cancelled
+  - key: paymentStatus
+    value: completed
+    disabled: true
+    description: pending | completed | failed | refunded
+  - key: updatedSince
+    value: 2026-10-01T00:00:00Z
+    disabled: true
+    description: ISO 8601; returns orders with updatedAt >= this
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200', function () {
+        pm.expect(pm.response.code).to.be.oneOf([200]);
+      });
+      pm.test('data matches the documented schema', function () {
+        pm.response.to.have.jsonSchema({
+          "type": "object",
+          "required": [
+            "success",
+            "data"
+          ],
+          "properties": {
+            "success": {
+              "const": true
+            },
+            "data": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "orderId",
+                  "createdAt",
+                  "updatedAt",
+                  "orderStatus",
+                  "paymentStatus",
+                  "currency",
+                  "subtotal",
+                  "total",
+                  "customer",
+                  "items",
+                  "erp"
+                ],
+                "properties": {
+                  "orderId": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{24}$"
+                  },
+                  "orderStatus": {
+                    "enum": [
+                      "processing",
+                      "shipped",
+                      "delivered",
+                      "cancelled"
+                    ]
+                  },
+                  "paymentStatus": {
+                    "enum": [
+                      "pending",
+                      "completed",
+                      "failed",
+                      "refunded"
+                    ]
+                  },
+                  "currency": {
+                    "const": "INR"
+                  },
+                  "subtotal": {
+                    "type": "number"
+                  },
+                  "total": {
+                    "type": "number"
+                  },
+                  "customer": {
+                    "type": "object",
+                    "required": [
+                      "customerId",
+                      "name",
+                      "email"
+                    ]
+                  },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "productId",
+                        "variantId",
+                        "sku",
+                        "name",
+                        "quantity",
+                        "unitPrice",
+                        "lineTotal"
+                      ],
+                      "properties": {
+                        "sku": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "quantity": {
+                          "type": "integer"
+                        },
+                        "unitPrice": {
+                          "type": "number"
+                        }
+                      }
+                    }
+                  },
+                  "erp": {
+                    "type": "object",
+                    "required": [
+                      "erpOrderId",
+                      "trackingNumber"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        });
+      });
+    language: text/javascript
+order: 5000

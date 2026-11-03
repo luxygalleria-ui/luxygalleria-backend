@@ -52,23 +52,36 @@ const isReplay = (signature, nowSeconds) => {
     seen.set(signature, nowSeconds + TOLERANCE_SECONDS * 2);
     return false;
 };
-const unauthorized = (res, message) => (0, responseHandler_1.errorResponse)(res, 401, message, [{ code: 'UNAUTHENTICATED' }]);
+const refuse = (res, reason, extra = {}) => {
+    res.locals.erpAuthFailure = { reason, ...extra };
+};
+const unauthorized = (res, message, reason, extra) => {
+    refuse(res, reason, extra);
+    return (0, responseHandler_1.errorResponse)(res, 401, message, [{ code: 'UNAUTHENTICATED' }]);
+};
 /** Key id and timestamp only — cheap enough to run before reading an upload. Also writes the audit line. */
 const erpHeaders = (req, res, next) => {
     const started = Date.now();
     // Audit trail: caller, route and outcome. Never bodies, secrets or customer data.
+    const keys = loadKeys();
+    const claimedKeyId = req.get('X-ERP-Key-Id') || null;
     res.on('finish', () => console.log(JSON.stringify({
-        event: 'ERP_API', keyId: req.erpKeyId || null, claimedKeyId: req.get('X-ERP-Key-Id') || null,
+        event: 'ERP_API', keyId: req.erpKeyId || null, claimedKeyId,
+        // Diagnostics: is the claimed key configured in THIS process, how many keys it loaded, and why a request failed
+        claimedKeyConfigured: claimedKeyId ? keys.has(claimedKeyId) : false, configuredKeyCount: keys.size,
+        ...(res.locals.erpAuthFailure ? { authFailure: res.locals.erpAuthFailure } : {}),
         method: req.method, path: req.originalUrl.split('?')[0], status: res.statusCode, ms: Date.now() - started,
     })));
-    const keys = loadKeys();
-    if (!keys.size)
+    if (!keys.size) {
+        refuse(res, 'not_configured');
         return (0, responseHandler_1.errorResponse)(res, 503, 'ERP integration is not configured', [{ code: 'UNAVAILABLE' }]);
+    }
     if (!keys.has(req.get('X-ERP-Key-Id') || ''))
-        return unauthorized(res, 'Invalid ERP credentials');
+        return unauthorized(res, 'Invalid ERP credentials', 'unknown_key');
     const ts = Number(req.get('X-ERP-Timestamp'));
     if (!Number.isInteger(ts) || Math.abs(Date.now() / 1000 - ts) > TOLERANCE_SECONDS) {
-        return unauthorized(res, `X-ERP-Timestamp missing or more than ${TOLERANCE_SECONDS}s from server time`);
+        // Clock difference in whole seconds helps spot a skewed ERP/Postman clock; absent when the header is missing
+        return unauthorized(res, `X-ERP-Timestamp missing or more than ${TOLERANCE_SECONDS}s from server time`, 'bad_timestamp', Number.isFinite(ts) && ts > 0 ? { skewSeconds: Math.round(Date.now() / 1000 - ts) } : {});
     }
     next();
 };
@@ -81,17 +94,17 @@ const erpSignature = (bodyOf) => (req, res, next) => {
     const keyId = req.get('X-ERP-Key-Id') || '';
     const secret = loadKeys().get(keyId);
     if (!secret)
-        return unauthorized(res, 'Invalid ERP credentials');
+        return unauthorized(res, 'Invalid ERP credentials', 'unknown_key');
     const bodyHash = crypto_1.default.createHash('sha256').update(bodyOf(req) || Buffer.alloc(0)).digest('hex');
     const expected = crypto_1.default.createHmac('sha256', secret)
         .update(`${req.get('X-ERP-Timestamp')}.${req.method}.${req.originalUrl}.${bodyHash}`)
         .digest('hex');
     const given = String(req.get('X-ERP-Signature') || '').toLowerCase();
     if (given.length !== expected.length || !crypto_1.default.timingSafeEqual(Buffer.from(given), Buffer.from(expected))) {
-        return unauthorized(res, 'Invalid X-ERP-Signature');
+        return unauthorized(res, 'Invalid X-ERP-Signature', 'bad_signature');
     }
     if (isReplay(given, Date.now() / 1000))
-        return unauthorized(res, 'Replayed request: sign every attempt with a fresh timestamp');
+        return unauthorized(res, 'Replayed request: sign every attempt with a fresh timestamp', 'replay');
     req.erpKeyId = keyId;
     next();
 };

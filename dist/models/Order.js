@@ -94,6 +94,17 @@ const OrderSchema = new mongoose_1.Schema({
     erpOrderId: { type: String },
     trackingNumber: { type: String },
     statusUpdatedAt: { type: Date }, // ERP event time of the last applied status; older events are ignored
+    checkoutSession: { type: mongoose_1.Schema.Types.ObjectId, ref: 'CheckoutSession' },
+    fulfillmentIssue: { type: String },
+    // Refund workflow (admin-initiated; see paymentController). Absent = no refund ever needed or requested.
+    refund: {
+        status: { type: String, enum: ['required', 'requested', 'pending', 'processed', 'failed'] },
+        amountPaise: { type: Number },
+        razorpayRefundId: { type: String },
+        reason: { type: String },
+        lastError: { type: String },
+        events: [{ at: { type: Date, default: Date.now }, by: String, action: String, outcome: String, detail: String, _id: false }],
+    },
 }, { timestamps: true });
 // Stable order for ERP incremental sync (GET /erp/orders?updatedSince=)
 OrderSchema.index({ updatedAt: 1, _id: 1 });

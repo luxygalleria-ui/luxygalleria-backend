@@ -1,0 +1,43 @@
+$kind: http-request
+description: |-
+  **POST {{baseUrl}}/erp/giftboxes** — add an existing product to Gifting.
+
+  A giftbox is an existing website product that is in the storefront **Gifting** collection (`/gifting`), at a `position` (0 = first). Its product details, variants, prices and stock are managed with the Item endpoints (1–3, 8, 9); these requests only manage membership and order, like the admin Gifting page. `id` in the path is the website `productId`.
+
+  | Field | Type | Required | Rules |
+  |---|---|---|---|
+  | `sku` | string | One of `sku` / `productId` | SKU of any variant of the product (1–64 characters, exact) |
+  | `productId` | string | One of `sku` / `productId` | 24-hex website product id |
+  | `position` | integer | No | 0–100000; 0 = first. Omitted or past the end = last |
+
+  - Like the admin page, Gifting is exclusive: the product leaves New Arrivals.
+  - Already in Gifting → `409 ALREADY_IN_GIFTING` (accepted here so re-runs pass; `giftboxId` is stored either way). Unknown SKU/product → `404`; SKU on two variants → `409 DUPLICATE_SKU`.
+  - This request uses the test item from *1. Item Add*; it **puts that product on the live /gifting page** of the target server.
+
+  **Write request — local / staging only.** Never run against production without approval.
+
+  *Added in API version 2.2. Verified by a local Postman CLI run (spec Section 15.8); not yet run against production.*
+url: "{{baseUrl}}/erp/giftboxes"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "sku": "{{itemSku}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 201 or 409', function () {
+        pm.expect(pm.response.code).to.be.oneOf([201, 409]);
+      });
+      const body = pm.response.json();
+      const id = pm.response.code === 201 ? body.data.productId : body.errors[0].productId;
+      if (pm.response.code === 409) pm.test('duplicate refused with ALREADY_IN_GIFTING', function () { pm.expect(body.errors[0].code).to.equal('ALREADY_IN_GIFTING'); });
+      else pm.test('data matches the documented schema', function () { pm.response.to.have.jsonSchema({ type: 'object', required: ['data'], properties: { data: { type: 'object', required: ['productId', 'name', 'images', 'variants', 'position', 'brandId'], properties: { productId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, position: { type: 'integer', minimum: 0 }, brandId: { type: ['string', 'null'] }, variants: { type: 'array', items: { type: 'object', required: ['variantId', 'sku', 'stock'] } } } } } }); });
+      pm.environment.set('giftboxId', id);
+    language: text/javascript
+examples: ./.resources/15. Giftbox Add.resources/examples
+order: 16000

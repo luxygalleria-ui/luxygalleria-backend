@@ -1,0 +1,26 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/erp/brands/{{brandId}}"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    Content-Type: application/json; charset=utf-8
+  body:
+    type: json
+    content: |-
+      {
+        "success": true,
+        "message": "Brand fetched",
+        "data": {
+          "brandId": "6ae9c44baa53391159c27a0e",
+          "name": "Maison Noir",
+          "logo": "https://res.cloudinary.com/demo/image/upload/maison-noir.png",
+          "status": "ACTIVE",
+          "displayOrder": 2,
+          "createdAt": "2026-11-03T11:23:55.400Z",
+          "updatedAt": "2026-11-03T11:23:55.400Z"
+        }
+      }
+order: 1000

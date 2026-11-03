@@ -24,6 +24,8 @@ export interface Selection {
   shippingMethod?: ShippingMethod;
   /** Delivery address state; decides Kerala vs outside Kerala. */
   state?: string;
+  /** Delivery address country; delivery zones cover India only. Absent = not yet known (quote before an address). */
+  country?: string;
   /** ₹ off the subtotal, already validated by the caller. 0 at checkout today (no coupons are applied server-side). */
   discount?: number;
 }
@@ -59,7 +61,9 @@ const rateConfig = (r: ShippingRate, fallbackItemWeightKg: number): ShippingConf
 /** Month 1-12 in the store's time zone. */
 const monthInIndia = (now: Date) => Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', month: 'numeric' }).format(now));
 
-const specialLines = (lines: PricedLine[], s: CheckoutSettings) => (s.chocolate.enabled ? lines.filter((l) => l.requiresSpecialPackaging) : []);
+// Only an enabled AND owner-confirmed rule applies (saving enabled without confirmation is already refused; this guards stored data too)
+const chocolateActive = (s: CheckoutSettings) => s.chocolate.enabled && s.chocolate.rateConfirmed;
+const specialLines = (lines: PricedLine[], s: CheckoutSettings) => (chocolateActive(s) ? lines.filter((l) => l.requiresSpecialPackaging) : []);
 
 /** Every way this cart could be received, with the reason when one is not allowed. */
 export const checkoutOptions = (lines: PricedLine[], s: CheckoutSettings, zone: Zone, now = new Date()): CheckoutOption[] => {
@@ -118,21 +122,38 @@ export const computeTax = (lines: PricedLine[], discount: number, t: TaxSettings
   };
 };
 
+/** Weight used for a line: its stored weight, else the explicitly configured fallback (FALLBACK_ITEM_WEIGHT_KG), else none. */
+const lineWeightKg = (l: PricedLine, fallbackKg: number) => (Number(l.weight) > 0 ? Number(l.weight) : fallbackKg);
+
 /** Chocolate packaging: charged once per order on the combined weight of all such items, never per product. */
-export const specialPackagingFee = (lines: PricedLine[], s: CheckoutSettings) => {
+export const specialPackagingFee = (lines: PricedLine[], s: CheckoutSettings, fallbackKg = 0) => {
   const special = specialLines(lines, s);
   if (!special.length) return { applied: false, weightG: 0, steps: 0, fee: 0 };
-  const weightG = Math.round(special.reduce((a, l) => a + (Number(l.weight) || 0) * l.quantity * 1000, 0));
+  const weightG = Math.round(special.reduce((a, l) => a + lineWeightKg(l, fallbackKg) * l.quantity * 1000, 0));
   if (s.chocolate.basis === 'flat_per_order') return { applied: true, weightG, steps: 1, fee: s.chocolate.feeAmount };
-  // Every started step counts; an item with no recorded weight still counts as one step
-  const steps = Math.max(1, Math.ceil(weightG / s.chocolate.unitGrams));
+  // Every started step counts (250 g -> 1, 260 g -> 2). Lines without a weight never reach here for delivery (see priceOrder).
+  const steps = Math.ceil(weightG / s.chocolate.unitGrams);
   return { applied: true, weightG, steps, fee: round2(steps * s.chocolate.feeAmount) };
 };
 
 export const priceOrder = (lines: PricedLine[], s: CheckoutSettings, sel: Selection = {}, opts: { now?: Date; fallbackItemWeightKg?: number } = {}) => {
   const knownZone = zoneOfState(sel.state);
   const zone: Zone = knownZone ?? 'kerala';
+  const fallbackKg = opts.fallbackItemWeightKg ?? 0;
   const options = checkoutOptions(lines, s, zone, opts.now);
+  // Delivery is priced by weight: without a weight for every item there is no correct charge, so delivery is not offered
+  // (store pickup still is). Never assume a weight unless FALLBACK_ITEM_WEIGHT_KG is explicitly configured.
+  const noWeight = lines.filter((l) => !(lineWeightKg(l, fallbackKg) > 0)).map((l) => l.name);
+  const weightReason = noWeight.length
+    ? `Delivery charge cannot be calculated: no weight is set for ${[...new Set(noWeight)].join(', ')}. Choose store pickup or contact the store.`
+    : '';
+  if (weightReason) {
+    for (const o of options) if (o.fulfillment === 'delivery' && o.allowed) { o.allowed = false; o.reason = weightReason; }
+  }
+  // Zones are Kerala and the rest of India: an address abroad has no configured rate, so it is refused, never priced as domestic
+  if (sel.country !== undefined && sel.country.trim() !== '' && !/^\s*(india|in|ind|bharat|republic of india)\s*$/i.test(sel.country)) {
+    for (const o of options) if (o.fulfillment === 'delivery') { o.allowed = false; o.reason = 'We currently deliver within India only'; }
+  }
 
   // Explicit choice must be allowed; otherwise the first allowed delivery method, then pickup
   let chosen: CheckoutOption | undefined;
@@ -141,8 +162,19 @@ export const priceOrder = (lines: PricedLine[], s: CheckoutSettings, sel: Select
   // No allowed method: report the most relevant reason (an offered method's, else the destination's)
   else if (sel.fulfillment === 'delivery') chosen = options.find((o) => o.fulfillment === 'delivery' && o.allowed) ?? options.find((o) => o.fulfillment === 'delivery' && o.offered) ?? options[0];
   else chosen = options.find((o) => o.allowed);
-  if (!chosen) throw new CheckoutRuleError('No delivery or pickup option is available for this order', 'NO_OPTION', options);
-  if (!chosen.allowed) throw new CheckoutRuleError(chosen.reason || 'This option is not available', 'OPTION_UNAVAILABLE', options);
+  if (!chosen) {
+    throw new CheckoutRuleError(weightReason || 'No delivery or pickup option is available for this order', weightReason ? 'WEIGHT_MISSING' : 'NO_OPTION', options);
+  }
+  if (!chosen.allowed) {
+    // A destination with no delivery method at all: say that, rather than naming one method as if another might work
+    const noMethodAtAll = chosen.fulfillment === 'delivery' && s.shipping.zones[zone].enabled && !options.some((o) => o.fulfillment === 'delivery' && o.offered);
+    if (noMethodAtAll) {
+      const where = zone === 'kerala' ? 'Kerala' : 'addresses outside Kerala';
+      const pickupOk = options.some((o) => o.fulfillment === 'pickup' && o.allowed);
+      throw new CheckoutRuleError(`No delivery method is currently available for ${where}. ${pickupOk ? 'Choose store pickup, or contact the store.' : 'Please contact the store.'}`, 'NO_DELIVERY_METHOD', options);
+    }
+    throw new CheckoutRuleError(chosen.reason || 'This option is not available', chosen.reason === weightReason && weightReason ? 'WEIGHT_MISSING' : 'OPTION_UNAVAILABLE', options);
+  }
 
   const subtotal = round2(lines.reduce((a, l) => a + l.price * l.quantity, 0));
   const discount = round2(Math.min(Math.max(Number(sel.discount) || 0, 0), subtotal));
@@ -150,10 +182,10 @@ export const priceOrder = (lines: PricedLine[], s: CheckoutSettings, sel: Select
 
   const ship = isPickup
     ? { totalWeight: calculateShippingPure(lines).totalWeight, baseShipping: 0, extraWeightCharge: 0, shipping: 0, freeShippingApplied: false }
-    : calculateShippingPure(lines, rateConfig(s.shipping.zones[zone][chosen.shippingMethod!], opts.fallbackItemWeightKg ?? 0));
+    : calculateShippingPure(lines, rateConfig(s.shipping.zones[zone][chosen.shippingMethod!], fallbackKg));
 
   // Packaging protects goods in transit: pickup orders are not charged for it
-  const packaging = isPickup ? { applied: false, weightG: 0, steps: 0, fee: 0 } : specialPackagingFee(lines, s);
+  const packaging = isPickup ? { applied: false, weightG: 0, steps: 0, fee: 0 } : specialPackagingFee(lines, s, fallbackKg);
   const pickupFee = isPickup ? s.pickup.charge : 0;
   const tax = computeTax(lines, discount, s.tax);
   const grandTotal = round2(subtotal - discount + tax.addedToTotal + ship.shipping + packaging.fee + pickupFee);
@@ -172,7 +204,14 @@ export const priceOrder = (lines: PricedLine[], s: CheckoutSettings, sel: Select
     shipping: ship.shipping,
     freeShippingApplied: ship.freeShippingApplied,
     specialPackagingFee: packaging.fee,
-    specialPackaging: { ...packaging, note: packaging.applied || specialLines(lines, s).length ? s.chocolate.customerNote : '' },
+    specialPackaging: {
+      ...packaging,
+      note: packaging.applied || specialLines(lines, s).length ? s.chocolate.customerNote : '',
+      // Cart items the saved rule treats as temperature-sensitive, and that rule, so checkout can explain the charge.
+      // Empty / null while the feature is off or unconfirmed: nothing about it is shown or charged.
+      items: [...new Set(specialLines(lines, s).map((l) => l.name))],
+      rule: chocolateActive(s) ? { basis: s.chocolate.basis, feeAmount: s.chocolate.feeAmount, unitGrams: s.chocolate.unitGrams } : null,
+    },
     pickupFee,
     pickupDetails: isPickup
       ? { storeName: s.pickup.storeName, address: s.pickup.address, openingHours: s.pickup.openingHours, phone: s.pickup.phone, instructions: s.pickup.instructions }

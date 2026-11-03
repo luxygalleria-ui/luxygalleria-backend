@@ -1,0 +1,28 @@
+$kind: http-request
+description: |-
+  **GET {{baseUrl}}/erp/giftboxes** — the Gifting collection in storefront order.
+
+  A giftbox is an existing website product that is in the storefront **Gifting** collection (`/gifting`), at a `position` (0 = first). Its product details, variants, prices and stock are managed with the Item endpoints (1–3, 8, 9); these requests only manage membership and order, like the admin Gifting page. `id` in the path is the website `productId`.
+
+  - Query: `page` (≥1), `limit` (1–100, default 50), optional `search` (≤100 characters; case-insensitive on product name or SKU). Unknown parameters → `400`.
+  - Each row is the Item List row plus `position` and `brandId`.
+  - Read-only. Does not set `giftboxId`: for production reads, copy a `productId` from here into `giftboxId` by hand.
+
+  *Added in API version 2.2. Verified by a local Postman CLI run (spec Section 15.8); not yet run against production.*
+url: "{{baseUrl}}/erp/giftboxes?page=1&limit=20"
+method: GET
+queryParams:
+  page: "1"
+  limit: "20"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200', function () {
+        pm.expect(pm.response.code).to.be.oneOf([200]);
+      });
+      pm.test('data matches the documented schema', function () {
+        pm.response.to.have.jsonSchema({ type: 'object', required: ['success', 'data'], properties: { success: { const: true }, data: { type: 'object', required: ['giftboxes', 'pagination'], properties: { giftboxes: { type: 'array', items: { type: 'object', required: ['productId', 'name', 'images', 'variants', 'position', 'brandId'], properties: { productId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, position: { type: 'integer', minimum: 0 }, brandId: { type: ['string', 'null'] }, variants: { type: 'array', items: { type: 'object', required: ['variantId', 'sku', 'stock'] } } } } }, pagination: { type: 'object', required: ['page', 'limit', 'total', 'pages'] } } } } });
+      });
+    language: text/javascript
+examples: ./.resources/14. Giftbox List.resources/examples
+order: 15000

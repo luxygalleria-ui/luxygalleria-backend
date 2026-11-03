@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Version | 2.0 |
-| Date | 23 October 2026 |
+| Version | 2.2 |
+| Date | 3 November 2026 (2.1: 27 October 2026; 2.0: 23 October 2026) |
 | Audience | ERP development team |
 | API base URL | `https://api.luxygalleria.com/api/v1` |
 | ERP API prefix | `/api/v1/erp` |
@@ -11,7 +11,7 @@
 | Quick start | `docs/ERP-DEVELOPER-HANDOVER.md` |
 | Source of truth | `luxy-backend`: `src/routes/erpRoutes.ts`, `src/controllers/erpController.ts`, `src/middlewares/erpAuth.ts` |
 
-Every request field, rule and response in this document comes from the backend source code. Every response example was captured from that code running on a local test server with a throwaway database (23 October 2026), unless it is marked otherwise. Items that cannot be confirmed from source or tests are marked **NEEDS CONFIRMATION**.
+Every request field, rule and response in this document comes from the backend source code. Every response example was captured from that code running on a local test server with a throwaway database (23 October 2026), unless it is marked otherwise. Behaviour added in version 2.1 (Sections 4, 5, 6A, 6B and the order-line fields) is documented from source and the automated tests of 27 October 2026; responses shown for it are marked *shape from source and tests*. Sections 10A (Brands) and 10B (Giftboxes) were added in version 2.2; their examples were captured from the code on a local server with a throwaway database on 3 November 2026. Items that cannot be confirmed from source or tests are marked **NEEDS CONFIRMATION**.
 
 ---
 
@@ -23,10 +23,14 @@ Every request field, rule and response in this document comes from the backend s
 4. Stock Update — `PUT /erp/stock/{sku}`
 5. Item Add / Upsert — `POST /erp/items`
 6. Item Edit — `PATCH /erp/items/{sku}`
+6A. Item List — `GET /erp/items`
+6B. Item Lookup — `GET /erp/items/{sku}`
 7. Order Checking — `GET /erp/orders`
 8. Order Details — `GET /erp/orders/{orderId}`
 9. Order Status Callback — `POST /erp/webhooks/order-status`
 10. Image Upload — `POST /erp/images`
+10A. Brands — `/erp/brands`
+10B. Giftboxes — `/erp/giftboxes`
 11. Postman package
 12. Website–ERP data mapping
 13. Not implemented: website → ERP order push and customer sync
@@ -44,6 +48,7 @@ Every request field, rule and response in this document comes from the backend s
 |---|---|---|---|
 | ERP → Website | Products/variants, prices, stock, images, order fulfilment status | Sections 4, 5, 6, 9, 10 | Implemented |
 | ERP reads Website | Orders and order details (including customer contact and shipping address) | Sections 7, 8 | Implemented |
+| ERP ↔ Website | Brands (list, read, create, update) and the Gifting collection (giftboxes: list, read, add, move, remove) | Sections 10A, 10B | Implemented (version 2.2) |
 | Website → ERP | Automatic new-order (sales order) push | — | **NOT IMPLEMENTED** (Section 13) |
 | Customers | Customer master synchronization | — | **NOT IMPLEMENTED** (Section 13) |
 
@@ -62,8 +67,19 @@ Status labels: **VERIFIED** — a real request succeeded in that environment. **
 | 5 | Order Details | `GET` | `https://api.luxygalleria.com/api/v1/erp/orders/{orderId}` | VERIFIED | `200` reported by an earlier team test; not independently re-run |
 | 6 | Order Status Callback | `POST` | `https://api.luxygalleria.com/api/v1/erp/webhooks/order-status` | VERIFIED | NOT TESTED |
 | 7 | Image Upload | `POST` | `https://api.luxygalleria.com/api/v1/erp/images` | Signing and validation VERIFIED; storing an image NOT TESTED (storage disabled on the test server) | NOT TESTED |
+| 8 | Item List | `GET` | `https://api.luxygalleria.com/api/v1/erp/items` | VERIFIED | NOT TESTED |
+| 9 | Item Lookup | `GET` | `https://api.luxygalleria.com/api/v1/erp/items/{sku}` | VERIFIED | NOT TESTED |
+| 10 | Brand List | `GET` | `https://api.luxygalleria.com/api/v1/erp/brands` | VERIFIED | NOT DEPLOYED |
+| 11 | Brand Details | `GET` | `https://api.luxygalleria.com/api/v1/erp/brands/{id}` | VERIFIED | NOT DEPLOYED |
+| 12 | Brand Create | `POST` | `https://api.luxygalleria.com/api/v1/erp/brands` | VERIFIED | NOT DEPLOYED |
+| 13 | Brand Update | `PATCH` | `https://api.luxygalleria.com/api/v1/erp/brands/{id}` | VERIFIED | NOT DEPLOYED |
+| 14 | Giftbox List | `GET` | `https://api.luxygalleria.com/api/v1/erp/giftboxes` | VERIFIED | NOT DEPLOYED |
+| 15 | Giftbox Details | `GET` | `https://api.luxygalleria.com/api/v1/erp/giftboxes/{id}` | VERIFIED | NOT DEPLOYED |
+| 16 | Giftbox Add | `POST` | `https://api.luxygalleria.com/api/v1/erp/giftboxes` | VERIFIED | NOT DEPLOYED |
+| 17 | Giftbox Update (position) | `PATCH` | `https://api.luxygalleria.com/api/v1/erp/giftboxes/{id}` | VERIFIED | NOT DEPLOYED |
+| 18 | Giftbox Remove | `DELETE` | `https://api.luxygalleria.com/api/v1/erp/giftboxes/{id}` | VERIFIED | NOT DEPLOYED |
 
-All seven production routes are deployed and enforce authentication. An unsigned request to each returns `401` (checked 22 and 23 October 2026). Section 15 lists all evidence.
+Routes 1–7 are deployed in production and enforce authentication: an unsigned request to each returns `401` (checked 22 and 23 October 2026). Routes 8–9 were not included in that check. The version 2.1 behaviour changes (27 October 2026) are verified locally only and are **not yet deployed**. Routes 10–18 (version 2.2) are verified locally only and are **not deployed**: until they are, production answers them with `404`. Section 15 lists all evidence.
 
 ### 1.3 Environments
 
@@ -78,7 +94,7 @@ Health check (no authentication): `GET https://api.luxygalleria.com/api/v1/healt
 
 ## 2. Authentication
 
-All seven endpoints use HMAC-SHA256 request signing with a key ID and a shared secret. No other credential is accepted: admin and customer logins or JWTs do not work on `/api/v1/erp/*`, and ERP keys work nowhere else.
+All ERP endpoints use HMAC-SHA256 request signing with a key ID and a shared secret. No other credential is accepted: admin and customer logins or JWTs do not work on `/api/v1/erp/*`, and ERP keys work nowhere else.
 
 ### 2.1 Credentials
 
@@ -204,9 +220,12 @@ Error:
 |---|---|---|
 | `VALIDATION_ERROR` | 400 | Request does not meet the schema or a business rule |
 | `UNAUTHENTICATED` | 401 | Authentication failed (Section 2.5) |
-| `NOT_FOUND` | 404 | SKU or order does not exist |
+| `NOT_FOUND` | 404 | SKU, order, brand or product does not exist (or, for giftboxes, is not in Gifting) |
 | `DUPLICATE_SKU` | 409 | The SKU exists on more than one website variant; Luxy Galleria must fix the data |
-| `CONFLICT` | 409 | Request conflicts with current data (SKUs of two products, `erpOrderId` mismatch, concurrent change) |
+| `CONFLICT` | 409 | Request conflicts with current data (SKUs of two products, `erpOrderId` mismatch, concurrent change). On Stock Update and the status callback it means *retry the same request*. |
+| `UNMAPPED_PRODUCT` | 409 | Item Add would duplicate a website product whose variants have no SKU yet; Luxy Galleria must set the SKU on that product first (Section 5) |
+| `DUPLICATE_BRAND` | 409 | Another brand already has this name, ignoring case; `errors[0].brandId` is that brand (Section 10A) |
+| `ALREADY_IN_GIFTING` | 409 | The product is already in the Gifting collection; `errors[0].productId` (Section 10B) |
 | `STALE_UPDATE` | 409 | A newer stock figure was already applied |
 | `INVALID_TRANSITION` | 409 | Order status change not allowed |
 | `PAYLOAD_TOO_LARGE` | 413 | Image over 15 MB |
@@ -241,7 +260,7 @@ These come from the shared request parser or router, so they do not use ERP code
 ### 3.6 Retries and idempotency
 
 - **Retry** `429`, `502`, `503` and network timeouts with exponential backoff (for example 30 s, 2 min, 10 min, 1 h). Re-sign each attempt.
-- **Do not retry** `400`, `401`, `404` or `409` until the request or data is fixed.
+- **Do not retry** `400`, `401`, `404` or `409` until the request or data is fixed, **except** `409 CONFLICT` whose message ends in *retry it* (Stock Update: stock kept changing; Order Status Callback: order changed concurrently). Nothing was written; retry it unchanged with a fresh signature (same `eventId` for the callback).
 - Every write is safe to repeat; see the *Idempotency* note on each endpoint. An `Idempotency-Key` header is not used.
 
 ---
@@ -271,9 +290,13 @@ These come from the shared request parser or router, so they do not use ERP code
 
 **Behaviour**
 
-- **Website orders since your snapshot stay reserved.** Orders created on the website after `asOf`, not cancelled, and containing this variant are subtracted:
-  - stored stock = `max(0, quantity − pendingOrderQuantity)`
-  - **NEEDS CONFIRMATION**: whether your figure already excludes website orders.
+- **Units the website has already committed are subtracted** (you cannot see either of these):
+  - `pendingOrderQuantity`: units of this variant in website orders created after `asOf` and not cancelled;
+  - `reservedQuantity`: units of this variant held right now by open website checkouts (customer is paying). An unpaid checkout holds its units for 30 minutes by default (server setting `CHECKOUT_SESSION_TTL_MINUTES`, minimum 5); they are released by the next expiry sweep, which runs every 5 minutes and before each new checkout.
+  - stored stock = `max(0, quantity − pendingOrderQuantity − reservedQuantity)`
+  - Because held units are subtracted, a checkout that is later abandoned returns its units on top of the stored figure, giving back your `quantity` less `pendingOrderQuantity`. Stock never rises above your figure because of an abandoned checkout.
+  - **NEEDS CONFIRMATION** (Section 14, item 4): whether `quantity` is physical on-hand stock or sellable stock, and whether it already excludes website orders you have received. The formula above is provisional until you confirm.
+- **The write is conditional.** It is applied only if the variant's stock has not changed between the server reading it and writing your figure (a checkout reserving or releasing units at that moment). The server retries this automatically up to 3 times; if stock keeps changing it returns `409 CONFLICT` and nothing is written. Retry the same body with a fresh signature.
 - **Out-of-order updates are refused.**
   - The update applies only if `asOf` is newer than the last applied `asOf` for the variant.
   - The same `asOf` again returns `200` with `applied: false` and changes nothing.
@@ -309,7 +332,7 @@ These come from the shared request parser or router, so they do not use ERP code
 }
 ```
 
-`quantity` is the stored stock; `erpQuantity` is the figure you sent.
+`quantity` is the stored stock; `erpQuantity` is the figure you sent. Since version 2.1 the applied response also contains `"reservedQuantity": <integer>` next to `pendingOrderQuantity` (*shape from source and tests*; not in the 23 October capture above). `previousQuantity` is the variant's stock immediately before your figure was written.
 
 **Success `200` — same `asOf` delivered again**
 
@@ -343,8 +366,9 @@ These come from the shared request parser or router, so they do not use ERP code
 | 404 | Unknown SKU | `{"success":false,"message":"SKU not found: NOPE","errors":[{"code":"NOT_FOUND","field":"sku"}]}` |
 | 409 | Older `asOf` | `{"success":false,"message":"A newer stock update has already been applied","errors":[{"code":"STALE_UPDATE","field":"asOf","currentAsOf":"2026-10-23T04:27:41.000Z"}]}` |
 | 409 | SKU on two variants | `{"success":false,"message":"SKU DUP-SKU is used by 2 website variants; fix the duplicate before syncing","errors":[{"code":"DUPLICATE_SKU","field":"sku"}]}` |
+| 409 | Stock kept changing during the update (version 2.1; *shape from source*) | `{"success":false,"message":"Stock changed repeatedly while applying this update; retry it","errors":[{"code":"CONFLICT"}]}` |
 
-**Idempotency:** repeating a request with the same `asOf` changes nothing.
+**Idempotency:** repeating a request with the same `asOf` changes nothing. A request that got `409 CONFLICT` changed nothing and can be retried as is.
 
 ```bash
 P=/api/v1/erp/stock/SKU-001
@@ -394,6 +418,7 @@ curl -sS -X PUT "$BASE$P" -H "Content-Type: application/json" \
 | All existing SKUs belong to one product | That product is updated → `200`, `action: "updated"`. Only supplied fields change, variants not in the request are kept, and new SKUs are added as new variants. |
 | SKUs belong to two different products | `409 CONFLICT` |
 | A SKU exists on two website variants | `409 DUPLICATE_SKU` |
+| No SKU exists yet, but a website product with the same `name` (case-insensitive) has variants without a SKU | `409 UNMAPPED_PRODUCT` with that `productId`; nothing is created (version 2.1). The website product was most likely created in the website admin before SKUs were assigned. Ask Luxy Galleria to set your SKU on its variant; your next request then updates it in place. |
 | Unknown category or brand | `400`. Categories and brands are never auto-created (**NEEDS CONFIRMATION** whether they should be). |
 
 **Request — create**
@@ -467,8 +492,9 @@ curl -sS -X PUT "$BASE$P" -H "Content-Type: application/json" \
 | 400 | Same SKU twice in one request | `{"success":false,"message":"Each SKU may appear only once per request","errors":[{"code":"VALIDATION_ERROR","field":"variants"}]}` |
 | 409 | SKUs of two products | `{"success":false,"message":"These SKUs belong to different website products; send them separately","errors":[{"code":"CONFLICT","field":"variants"}]}` |
 | 409 | SKU on two variants | `{"success":false,"message":"SKU DUP-SKU is used by 2 website variants; fix the duplicate before syncing","errors":[{"code":"DUPLICATE_SKU","field":"sku"}]}` |
+| 409 | Same-named product without SKUs exists (version 2.1; *shape from source and tests*) | `{"success":false,"message":"Website product \"Rose Serum\" already exists with variants that have no SKU. Ask the website team to set the SKUs on it instead of creating a new item","errors":[{"code":"UNMAPPED_PRODUCT","field":"name","productId":"<24-hex id>"}]}` |
 
-**Idempotency:** repeating the request updates the same product and never creates a duplicate.
+**Idempotency:** repeating the request updates the same product and never creates a duplicate. The name check only catches an exact (case-insensitive) name match; a renamed product is not detected, so map SKUs before syncing items (Section 14, item 4).
 
 ⚠️ **Production:** the website has no inactive or draft product flag, so a created product is immediately visible on the storefront.
 
@@ -552,6 +578,96 @@ curl -sS -X PATCH "$BASE$P" -H "Content-Type: application/json" \
 
 ---
 
+## 6A. Item List — `GET /erp/items`
+
+| | |
+|---|---|
+| Direction | ERP reads Website |
+| Full URL | `https://api.luxygalleria.com/api/v1/erp/items` |
+| Purpose | List website products with all their variants, including variants that have no SKU yet (for SKU mapping and reconciliation) |
+| Headers | Section 2.2 (no body; sign an empty body) |
+| Postman | *8. Item List* |
+
+**Query parameters** (strict; unknown parameters → `400`)
+
+| Name | Type | Default | Rules |
+|---|---|---|---|
+| `page` | integer | 1 | ≥ 1 |
+| `limit` | integer | 50 | 1–100 |
+| `search` | string | — | At most 100 characters. Case-insensitive *contains* match on product name or variant SKU. |
+
+Sorted by product `updatedAt`, newest first, then product id. `pagination` is inside `data` here (unlike Order Checking, where it is top-level).
+
+**Success `200`** (*shape from source and tests*)
+
+```json
+{
+  "success": true,
+  "message": "Items fetched",
+  "data": {
+    "items": [
+      {
+        "productId": "<24-hex id>",
+        "name": "Rose Serum",
+        "description": "Hydrating face serum",
+        "category": "Skincare",
+        "images": ["https://…"],
+        "status": "In Stock",
+        "updatedAt": "2026-10-27T05:00:00.000Z",
+        "variants": [
+          { "variantId": "<24-hex id>", "sku": "SKU-001", "name": null, "size": "30ml", "flavor": "Default", "offerPrice": 499, "actualPrice": 599, "stock": 10, "weight": 0.05, "image": null }
+        ]
+      }
+    ],
+    "pagination": { "page": 1, "limit": 50, "total": 1, "pages": 1 }
+  }
+}
+```
+
+- `variants[].sku` is `null` for a variant that has no SKU yet. Such a variant cannot be used with the SKU endpoints until Luxy Galleria sets its SKU; use `variantId` to identify it when agreeing the SKU mapping.
+- `status` is a free-text display label set in the website admin; it is not derived from stock.
+
+**Errors:** `400 VALIDATION_ERROR` for a bad `page`/`limit`, a `search` over 100 characters or an unknown parameter (same shape as Section 7).
+
+Read-only.
+
+---
+
+## 6B. Item Lookup — `GET /erp/items/{sku}`
+
+| | |
+|---|---|
+| Direction | ERP reads Website |
+| Full URL | `https://api.luxygalleria.com/api/v1/erp/items/{sku}` |
+| Purpose | Read the one variant carrying this SKU, with its product |
+| Headers | Section 2.2 (no body) |
+| Postman | *9. Item Lookup* |
+
+**Path parameter:** `sku` — as in Section 4.
+
+**Success `200`** (*shape from source and tests*)
+
+```json
+{
+  "success": true,
+  "message": "Item fetched",
+  "data": {
+    "productId": "<24-hex id>",
+    "name": "Rose Serum",
+    "description": "Hydrating face serum",
+    "category": "Skincare",
+    "images": ["https://…"],
+    "variant": { "sku": "SKU-001", "variantId": "<24-hex id>", "size": "30ml", "flavor": "Default", "offerPrice": 499, "actualPrice": 599, "stock": 10, "weight": 0.05, "image": null }
+  }
+}
+```
+
+**Errors:** `404 NOT_FOUND` (unknown SKU) and `409 DUPLICATE_SKU` (SKU on two variants), exactly as in Section 4.
+
+Read-only.
+
+---
+
 ## 7. Order Checking — `GET /erp/orders`
 
 | | |
@@ -607,11 +723,12 @@ curl -sS -X PATCH "$BASE$P" -H "Content-Type: application/json" \
 }
 ```
 
-(One of the two returned orders shown.)
+(One of the two returned orders shown. This 23 October capture predates some fields: current responses also contain `fulfillment`, `charges` and, per item, `taxRate` and `taxAmount`; see Section 12.4.)
 
 **Field notes**
 
-- `items[].sku` and `items[].name` are looked up from the product **when you call**; the order does not store them. They are `null` when the product or variant has been deleted or has no SKU, as in this captured example.
+- `items[].sku` and `items[].name` (version 2.1): for orders placed after the 2.1 release, these are the variant SKU and product name **at the time of purchase**, stored on the order, so later catalogue edits do not change them. For older orders they are looked up from the product when you call, and are `null` when the product or variant has been deleted or has no SKU (as in this captured example).
+- `items[].variantId` is always the variant that was sold. Since version 2.1 checkout refuses a variant id that no longer exists instead of substituting another variant.
 - `currency` is always `INR`.
 - `discount` is currently always `0`.
 - `erp.*` is filled by the Order Status Callback.
@@ -676,10 +793,10 @@ curl -sS "$BASE$P" -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" -H "X-ER
 }
 ```
 
-`statusUpdatedAt` is the `occurredAt` of the last Order Status Callback that was applied or unchanged; `null` before any.
+`statusUpdatedAt` is when the status last changed: the `occurredAt` of the last Order Status Callback that was applied or unchanged, or the time a Luxy Galleria admin changed or a superadmin corrected the status; `null` before any. A superadmin correction can set a status the forward-only rule refuses (for example back from `delivered` to `shipped` after a mistake); later callbacks then follow the normal rules from the corrected status. Admin status changes follow the same transition rules as the callback (Section 9), so a callback whose `occurredAt` is older than an admin change is recorded as `stale`.
 
 **Not returned, because the website does not store it:**
-- tax, GST and HSN amounts
+- HSN codes on order lines (GST amounts are returned in `charges.tax` and `items[].taxRate` / `items[].taxAmount` when GST was enabled for the order; Section 12.4)
 - billing address
 - recipient name and phone (separate from the customer account)
 - apartment and landmark
@@ -876,14 +993,291 @@ curl -sS -X POST "$BASE$P" -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" 
 
 ---
 
+## 10A. Brands — `/erp/brands`
+
+| | |
+|---|---|
+| Direction | ERP reads and writes Website brands |
+| Full URLs | `GET https://api.luxygalleria.com/api/v1/erp/brands`, `GET …/erp/brands/{id}`, `POST …/erp/brands`, `PATCH …/erp/brands/{id}` |
+| Purpose | Maintain the website's brand list (the same records the admin panel's *Brands* page edits and the storefront brand strip shows). Item Add / Edit link products to a brand with `brand` or `brandId` (Sections 5, 6). |
+| Headers | Section 2.2 |
+| Postman | *10. Brand List*, *11. Brand Create*, *12. Brand Details*, *13. Brand Update* |
+
+**Brand fields** (website `Brand` model; nothing else is stored)
+
+| Field | Type | Create | Update | Rules |
+|---|---|---|---|---|
+| `name` | string | **Required** | Optional | 1–100 characters, trimmed. Must not equal another brand's name, ignoring case → `409 DUPLICATE_BRAND` |
+| `logo` | string | Optional (default `""`) | Optional | An `https://` URL, normally from Image Upload (Section 10); `""` removes the logo |
+| `status` | string | Optional (default `ACTIVE`) | Optional | `ACTIVE` — shown on the storefront and selectable in the admin product form; `INACTIVE` — hidden from both. The admin panel offers the same two values. |
+| `displayOrder` | integer | Optional (default `0`) | Optional | 0–100000. Lower shows first on the storefront |
+
+Bodies are strict: unknown fields (including `brandId`, `_id`, `createdAt`) → `400`. Update needs at least one field and changes only the fields sent.
+
+**No delete.** Products keep a reference to their brand, so the ERP API does not delete brands. To retire a brand, `PATCH` it to `"status": "INACTIVE"`. (The admin panel can still delete a brand.)
+
+**Duplicate rule.** The website stores brand names as entered, with no database unique index. The ERP API refuses a create, or a rename, whose name matches another brand ignoring case and surrounding spaces, and returns that brand's id so the ERP can map to it. Renaming a brand to its own current name is allowed.
+
+### 10A.1 Brand List — `GET /erp/brands`
+
+| Query | Type | Default | Rules |
+|---|---|---|---|
+| `page` | integer | 1 | ≥ 1 |
+| `limit` | integer | 50 | 1–100 |
+| `search` | string | — | ≤ 100 characters; case-insensitive *contains* match on name |
+| `status` | string | — | `ACTIVE` or `INACTIVE` |
+
+Unknown parameters → `400`. Sorted by `displayOrder`, then name. `pagination` is inside `data`.
+
+`GET /erp/brands?page=1&limit=20&search=noir` → `200`
+
+```json
+{
+  "success": true,
+  "message": "Brands fetched",
+  "data": {
+    "brands": [
+      {
+        "brandId": "6ae9c44baa53391159c27a0e",
+        "name": "Maison Noir",
+        "logo": "https://res.cloudinary.com/demo/image/upload/maison-noir.png",
+        "status": "ACTIVE",
+        "displayOrder": 2,
+        "createdAt": "2026-11-03T11:23:55.400Z",
+        "updatedAt": "2026-11-03T11:23:55.400Z"
+      }
+    ],
+    "pagination": { "page": 1, "limit": 20, "total": 1, "pages": 1 }
+  }
+}
+```
+
+`logo` is `null` when the brand has none. Read-only.
+
+### 10A.2 Brand Details — `GET /erp/brands/{id}`
+
+`id` is the 24-hex `brandId`. `200` returns one brand object as in the list, with `"message": "Brand fetched"`.
+
+| HTTP | Case | Body |
+|---|---|---|
+| 400 | Malformed id | `{"success":false,"message":"id must be a 24-character hex id","errors":[{"code":"VALIDATION_ERROR","field":"id"}]}` |
+| 404 | No such brand | `{"success":false,"message":"Brand not found","errors":[{"code":"NOT_FOUND","field":"id"}]}` |
+
+### 10A.3 Brand Create — `POST /erp/brands`
+
+```json
+{
+  "name": "Maison Noir",
+  "logo": "https://res.cloudinary.com/demo/image/upload/maison-noir.png",
+  "status": "ACTIVE",
+  "displayOrder": 2
+}
+```
+
+Minimum body: `{"name": "Maison Noir"}`. → `201`
+
+```json
+{
+  "success": true,
+  "message": "Brand created",
+  "data": {
+    "brandId": "6ae9c44baa53391159c27a0e",
+    "name": "Maison Noir",
+    "logo": "https://res.cloudinary.com/demo/image/upload/maison-noir.png",
+    "status": "ACTIVE",
+    "displayOrder": 2,
+    "createdAt": "2026-11-03T11:23:55.400Z",
+    "updatedAt": "2026-11-03T11:23:55.400Z"
+  }
+}
+```
+
+An `ACTIVE` brand appears on the storefront brand strip at once. Create test brands as `INACTIVE`.
+
+| HTTP | Case | Body |
+|---|---|---|
+| 409 | Name already used (`{"name":"maison noir"}`) | `{"success":false,"message":"A brand with this name already exists","errors":[{"code":"DUPLICATE_BRAND","field":"name","brandId":"6ae9c44baa53391159c27a0e"}]}` |
+| 400 | Invalid fields (`{"name":"","status":"DELETED"}`) | `{"success":false,"message":"Validation failed","errors":[{"field":"name","code":"VALIDATION_ERROR","message":"String must contain at least 1 character(s)"},{"field":"status","code":"VALIDATION_ERROR","message":"Invalid enum value. Expected 'ACTIVE' \| 'INACTIVE', received 'DELETED'"}]}` |
+
+**Idempotency:** a retried create returns `409 DUPLICATE_BRAND` with the `brandId` of the brand the first attempt made; treat that as success.
+
+### 10A.4 Brand Update — `PATCH /erp/brands/{id}`
+
+```json
+{ "status": "INACTIVE", "displayOrder": 5 }
+```
+
+→ `200`
+
+```json
+{
+  "success": true,
+  "message": "Brand updated",
+  "data": {
+    "brandId": "6ae9c44baa53391159c27a0e",
+    "name": "Maison Noir",
+    "logo": "https://res.cloudinary.com/demo/image/upload/maison-noir.png",
+    "status": "INACTIVE",
+    "displayOrder": 5,
+    "createdAt": "2026-11-03T11:23:55.400Z",
+    "updatedAt": "2026-11-03T11:23:55.444Z",
+    "updatedFields": ["status", "displayOrder"]
+  }
+}
+```
+
+| HTTP | Case | Body |
+|---|---|---|
+| 400 | Empty body | `{"success":false,"message":"Validation failed","errors":[{"code":"VALIDATION_ERROR","message":"send at least one field to change"}]}` |
+| 400 / 404 | Malformed / unknown id | As in 10A.2 |
+| 409 | Rename to another brand's name (`{"name":"LUMINA"}`) | `{"success":false,"message":"A brand with this name already exists","errors":[{"code":"DUPLICATE_BRAND","field":"name","brandId":"6ae9c44baa53391159c27a02"}]}` — `brandId` is the other brand |
+
+Repeating the same update is harmless.
+
+---
+
+## 10B. Giftboxes — `/erp/giftboxes`
+
+| | |
+|---|---|
+| Direction | ERP reads and writes the website Gifting collection |
+| Full URLs | `GET https://api.luxygalleria.com/api/v1/erp/giftboxes`, `GET …/erp/giftboxes/{id}`, `POST …/erp/giftboxes`, `PATCH …/erp/giftboxes/{id}`, `DELETE …/erp/giftboxes/{id}` |
+| Postman | *14. Giftbox List*, *15. Giftbox Add*, *16. Giftbox Details*, *17. Giftbox Update (position)*, *18. Giftbox Remove* |
+
+**What a giftbox is on this website.** There is no separate giftbox model or product type. A giftbox is an ordinary website product that is in the **Gifting** collection: the product's `isGifting` flag is set and `giftingOrder` gives its position on the storefront `/gifting` page. The admin panel's *Gifting* page manages the same collection. Rules carried over from it:
+
+- **Exclusive.** A Gifting product is not shown in the main shop or in New Arrivals. Adding a product to Gifting takes it out of New Arrivals.
+- **Ordered.** Positions are always `0 … n-1`; adding, moving or removing one shifts the others.
+
+The giftbox's name, description, images, category, brand, variants, SKUs, prices and stock are the product's own and are managed with Item Add, Item Edit and Stock Update (Sections 4–6). To create a new giftbox: create the product with Item Add, then add it here. These endpoints manage only membership and position. `{id}` is the website `productId`.
+
+**Giftbox object** — the Item List row (Section 6A) plus:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `position` | integer | Place on `/gifting`, 0 = first |
+| `brandId` | string \| null | The product's brand (Section 10A) |
+
+### 10B.1 Giftbox List — `GET /erp/giftboxes`
+
+Query: `page` (≥ 1, default 1), `limit` (1–100, default 50), `search` (≤ 100 characters; case-insensitive *contains* on product name or SKU). Unknown parameters → `400`. Sorted by `position` (storefront order).
+
+`GET /erp/giftboxes?page=1&limit=20` → `200`
+
+```json
+{
+  "success": true,
+  "message": "Giftboxes fetched",
+  "data": {
+    "giftboxes": [
+      {
+        "productId": "6ae9c44baa53391159c27a09",
+        "name": "Oud Gift Box",
+        "description": "Hamper with three signature items.",
+        "category": "Gift Sets",
+        "images": ["https://res.cloudinary.com/demo/image/upload/GB-OUD-01.jpg"],
+        "status": "In Stock",
+        "updatedAt": "2026-11-03T11:23:55.461Z",
+        "variants": [
+          { "variantId": "6ae9c44baa53391159c27a0a", "sku": "GB-OUD-01", "name": null, "size": "1 box", "flavor": "Default", "offerPrice": 2499, "actualPrice": 2999, "stock": 12, "weight": 0.8, "image": null }
+        ],
+        "position": 0,
+        "brandId": "6ae9c44baa53391159c27a02"
+      },
+      {
+        "productId": "6ae9c44baa53391159c27a04",
+        "name": "Rose Gift Box",
+        "description": "Hamper with three signature items.",
+        "category": "Gift Sets",
+        "images": ["https://res.cloudinary.com/demo/image/upload/GB-ROSE-01.jpg"],
+        "status": "In Stock",
+        "updatedAt": "2026-11-03T11:23:55.461Z",
+        "variants": [
+          { "variantId": "6ae9c44baa53391159c27a05", "sku": "GB-ROSE-01", "name": null, "size": "1 box", "flavor": "Default", "offerPrice": 2499, "actualPrice": 2999, "stock": 12, "weight": 0.8, "image": null }
+        ],
+        "position": 1,
+        "brandId": "6ae9c44baa53391159c27a02"
+      }
+    ],
+    "pagination": { "page": 1, "limit": 20, "total": 2, "pages": 1 }
+  }
+}
+```
+
+Read-only.
+
+### 10B.2 Giftbox Details — `GET /erp/giftboxes/{id}`
+
+`200` returns one giftbox object, `"message": "Giftbox fetched"`.
+
+| HTTP | Case | Body |
+|---|---|---|
+| 400 | Malformed id | `{"success":false,"message":"id must be a 24-character hex id","errors":[{"code":"VALIDATION_ERROR","field":"id"}]}` |
+| 404 | No such product, **or the product is not in Gifting** | `{"success":false,"message":"Giftbox not found (no Gifting product with this productId)","errors":[{"code":"NOT_FOUND","field":"id"}]}` |
+
+### 10B.3 Giftbox Add — `POST /erp/giftboxes`
+
+| Field | Type | Required | Rules |
+|---|---|---|---|
+| `sku` | string | One of `sku` / `productId` | Any variant SKU of the product, 1–64 characters, exact match |
+| `productId` | string | One of `sku` / `productId` | 24-hex website product id |
+| `position` | integer | No | 0–100000; 0 = first; omitted or past the end = last |
+
+```json
+{ "sku": "GB-OUD-01", "position": 0 }
+```
+
+→ `201`, `"message": "Giftbox added"`, `data` = the giftbox object (`"position": 0`). The product appears on `/gifting` at once and leaves New Arrivals.
+
+| HTTP | Case | Body |
+|---|---|---|
+| 400 | Both or neither of `sku`/`productId` | `{"success":false,"message":"Validation failed","errors":[{"code":"VALIDATION_ERROR","message":"send exactly one of productId or sku"}]}` |
+| 400 | Unknown field (e.g. `name`) or bad `position` | `VALIDATION_ERROR` with `field` |
+| 404 | Unknown SKU | `{"success":false,"message":"SKU not found: NO-SUCH-SKU","errors":[{"code":"NOT_FOUND","field":"sku"}]}` |
+| 404 | Unknown `productId` | `{"success":false,"message":"Product not found","errors":[{"code":"NOT_FOUND","field":"productId"}]}` |
+| 409 | SKU on two variants | `DUPLICATE_SKU`, as in Section 4 |
+| 409 | Already in Gifting | `{"success":false,"message":"This product is already in Gifting; use PATCH /erp/giftboxes/:id to move it","errors":[{"code":"ALREADY_IN_GIFTING","productId":"6ae9c44baa53391159c27a04"}]}` |
+
+**Idempotency:** a retried add returns `409 ALREADY_IN_GIFTING`; treat it as success (use PATCH if the position matters).
+
+### 10B.4 Giftbox Update — `PATCH /erp/giftboxes/{id}`
+
+| Field | Type | Required | Rules |
+|---|---|---|---|
+| `position` | integer | **Yes** | 0–100000; 0 = first; past the end = last |
+
+No other fields are accepted (`400`); change the product itself with Item Edit.
+
+```json
+{ "position": 0 }
+```
+
+→ `200`, `"message": "Giftbox updated"`, `data` = the giftbox object with its new `position`. Errors: `400` (`{"success":false,"message":"Validation failed","errors":[{"field":"position","code":"VALIDATION_ERROR","message":"Number must be greater than or equal to 0"}]}`), `404` as in 10B.2. Repeating the same move is harmless.
+
+### 10B.5 Giftbox Remove — `DELETE /erp/giftboxes/{id}`
+
+Takes the product out of Gifting. **The product is not deleted**: it returns to the main shop. No body. → `200`
+
+```json
+{ "success": true, "message": "Removed from Gifting", "data": { "productId": "6ae9c44baa53391159c27a09", "isGifting": false } }
+```
+
+`404` as in 10B.2 if it is not in Gifting (also on a retry).
+
+**Concurrency:** each write re-saves the whole Gifting order, as the admin page does. If an admin saves the Gifting page at the same moment, the later save wins; re-read with Giftbox List if positions matter.
+
+---
+
 ## 11. Postman package
 
 ### 11.1 Files
 
 | File | Contents |
 |---|---|
-| `postman/Luxy-Galleria-ERP-API.postman_collection.json` | Postman Collection v2.1 with the seven requests in a runnable order, automatic signing, and test assertions |
-| `postman/Luxy-Galleria-ERP-Production.postman_environment.json` | Environment template. Credentials and IDs are blank. |
+| `postman/Luxy-Galleria-ERP-API.postman_collection.json` | Postman Collection v2.1: a health check, the eighteen endpoint requests in a runnable order, a *Write checks* folder and a *Negative checks* folder (34 requests), automatic signing, and test assertions |
+| `postman/Luxy-Galleria-ERP-Production.postman_environment.json` | Environment template for production. Credentials and IDs are blank. |
+| `postman/Luxy-Galleria-ERP-Local-Staging.postman_environment.json` | Same variables for a local or staging backend (`baseUrl` defaults to `http://localhost:5000/api/v1`). Credentials and IDs are blank. Use it for all test writes. |
+| `postman/local-mode/` | The same collection and the Local / Staging environment in the YAML format of **Postman Local Mode** (`.postman/resources.yaml`, `postman/collections/…`, `postman/environments/…`), generated with the Postman CLI (`postman collection migrate`, `postman environment new`) and linted with 0 errors. Use it when Postman reports that JSON collections are unsupported in Local Mode. Regenerate it from the JSON collection after any change. |
 
 | Postman request | Function | Section |
 |---|---|---|
@@ -894,8 +1288,22 @@ curl -sS -X POST "$BASE$P" -H "X-ERP-Key-Id: $KEY_ID" -H "X-ERP-Timestamp: $TS" 
 | 5. Order Details | Order Details | 8 |
 | 6. Image Upload | Image Upload | 10 |
 | 7. Order Status Callback | Order Status Callback | 9 |
+| 8. Item List | Item List | 6A |
+| 9. Item Lookup | Item Lookup | 6B |
+| 10. Brand List | Brand List | 10A.1 |
+| 11. Brand Create | Brand Create (creates `{{brandName}}` as `INACTIVE`; stores `brandId`; a re-run's `409 DUPLICATE_BRAND` is accepted) | 10A.3 |
+| 12. Brand Details | Brand Details | 10A.2 |
+| 13. Brand Update | Brand Update | 10A.4 |
+| 14. Giftbox List | Giftbox List | 10B.1 |
+| 15. Giftbox Add | Giftbox Add (adds `{{itemSku}}`; stores `giftboxId`; a re-run's `409 ALREADY_IN_GIFTING` is accepted) | 10B.3 |
+| 16. Giftbox Details | Giftbox Details | 10B.2 |
+| 17. Giftbox Update (position) | Giftbox Update | 10B.4 |
+| 18. Giftbox Remove | Giftbox Remove (cleans up after 15) | 10B.5 |
+| 0. Health check | Connectivity (`GET /health`, no authentication needed) | 1.3 |
+| Write checks (folder) | W1 same `asOf` again (`200`, `applied: false`), W2 older `asOf` (`409 STALE_UPDATE`), W3 same `eventId` again (`200`, `duplicate: true`), W4 backwards status (`409 INVALID_TRANSITION`). They use values captured by requests 3 and 7. Local or staging only. | 4, 9 |
+| Negative checks (folder) | Expected refusals: unsigned request, wrong signature, expired timestamp and unknown key (`401`), unknown SKU (`404`), bad query (`400`), invalid stock body (`400`); N7–N10: invalid brand status (`400`), unknown brand (`404`), giftbox add with both `sku` and `productId` (`400`), product not in Gifting (`404`) | 2.5, 4, 6B, 7, 10A, 10B |
 
-The run order puts Item Add first, because Item Edit and Stock Update need its SKU to exist.
+Run order: `0. Health check`, 1–18, *Write checks*, *Negative checks*. Requests 10–18 carry saved example responses (success and errors) captured from the code. Item Add comes first because Item Edit and Stock Update need its SKU to exist. The *Negative checks* are safe to run anywhere: they are read-only or refused before any data is read or written.
 
 ### 11.2 Setup and secrets
 
@@ -903,6 +1311,12 @@ The run order puts Item Add first, because Item Edit and Stock Update need its S
 2. Select the environment **Luxy Galleria ERP - Production** (environment selector, top right).
 3. Enter `erpKeyId` and `erpSecret` in the **Current value** column only. Postman keeps Current values local by default; Initial values are shared with anyone who can see the environment in a workspace. `erpSecret` is a *secret*-type variable and is masked on screen. Postman Vault is an alternative if your organisation uses it. Never export the environment with the secret filled in, and never paste it into a request, a script or a shared collection.
 4. Make sure the computer clock is correct (within 5 minutes).
+
+**Non-production key (local or staging).** Never use a production key outside production.
+1. Generate a secret on the backend host without printing it, e.g. `openssl rand -hex 32` written straight into the secret store or `.env` of that local/staging backend.
+2. Add it there as `ERP_API_KEYS=<keyId>:<secret>` with a non-production key ID (for example `erp-staging-1`) and restart that backend. `npm run diagnose:erp-keys` prints only `{ valid, keyIds }`.
+3. In Postman select **Luxy Galleria ERP - Local / Staging**, set `baseUrl` to that backend, and enter the key ID and secret as **Current values** only.
+4. Do not reuse the staging key in production, and never add a production key to a local or staging `.env`.
 
 ### 11.3 Variables
 
@@ -918,6 +1332,9 @@ The run order puts Item Add first, because Item Edit and Stock Update need its S
 | `trackingNumber` | `TEST-TRACK-001` | Order Status Callback |
 | `eventId` | blank | Order Status Callback. Blank = a new id per send. Set a fixed value to test redelivery. |
 | `imageSha256` | blank | Image Upload (Section 11.4) |
+| `brandName` | `ERP Test Brand - do not publish` | Brand Create |
+| `brandId` | blank | Brand Details, Brand Update. Set by Brand Create; for production reads, copy one from Brand List. Brand List never sets it, so Brand Update cannot hit a real brand by accident. |
+| `giftboxId` | blank | Giftbox Details, Update, Remove. Set by Giftbox Add; Giftbox List never sets it. |
 
 The collection-level pre-request script signs every request as in Section 2.3. It sets `{{nowIso}}`, and `{{eventId}}` when that is blank, **before** hashing, so the signed bytes equal the sent bytes. Do not put Postman dynamic variables such as `{{$guid}}` or `{{$timestamp}}` in a request body: Postman resolves them again at send time, and the signature no longer matches.
 
@@ -935,24 +1352,26 @@ This procedure was verified on the local test server: the correct hash passed th
 
 ### 11.5 Tests and safe use
 
-Each request runs four tests:
+Each request runs these tests:
 
 - the request was signed;
 - the response uses the standard envelope;
-- the HTTP status is the documented success status;
-- `data` matches the documented JSON schema.
+- the HTTP status is the documented success status (for *Negative checks*: the documented refusal status);
+- `data` matches the documented JSON schema (for *Negative checks*: the documented `errors[0].code`; *9. Item Lookup* also checks the returned SKU).
 
 A failing status test writes the server's `message` to the Postman Console.
 
 | Request | Effect in production |
 |---|---|
-| 4, 5 | Read-only |
+| 4, 5, 8, 9, 10, 12, 14, 16, Negative checks | Read-only, or refused before any change |
+| 11, 13 | Create / change a brand (created `INACTIVE`, so not shown on the storefront) |
+| 15, 17, 18 | Put the test product on the live `/gifting` page, move it, take it off again |
 | 1 | Creates a product **visible on the storefront** (no draft flag) |
 | 2, 3 | Change that SKU's price and stock |
 | 6 | Stores an image in the website's Cloudinary account |
 | 7 | Changes a real order's status and **emails the customer** |
 
-Run requests 1–3, 6 and 7 in production only with a test SKU and test order that Luxy Galleria has approved for the purpose.
+Run requests 1–3, 6, 7, 11, 13, 15, 17 and 18 in production only with a test SKU and test order that Luxy Galleria has approved for the purpose.
 
 Command line (optional):
 
@@ -971,7 +1390,7 @@ Newman cannot open a file picker. For Image Upload, set the form-data `src` to a
 
 | ERP field | Website field | Notes |
 |---|---|---|
-| `variants[].sku` | `Product.variants[].sku` | Matching key; exact, case-sensitive. Must be unique across the site; duplicates return `409`. |
+| `variants[].sku` | `Product.variants[].sku` | Matching key; exact, case-sensitive. Must be unique across the site; duplicates return `409`. Since version 2.1 the website admin refuses a SKU already used by another variant, and can set a SKU only on a variant that has none: an existing SKU cannot be changed or cleared from the website. |
 | `name`, `description` | `Product.name`, `Product.description` | |
 | `category` | `Product.category` (name) + `Product.categoryId` | Must already exist |
 | `brand` / `brandId` | `Product.brandId` | Must already exist |
@@ -989,7 +1408,7 @@ Newman cannot open a file picker. For Image Upload, set the form-data `src` to a
 
 | ERP field | Website field |
 |---|---|
-| `quantity` | `variants[].stock` = `max(0, quantity − pendingOrderQuantity)` |
+| `quantity` | `variants[].stock` = `max(0, quantity − pendingOrderQuantity − reservedQuantity)` (provisional, Section 4) |
 | `asOf` | `variants[].stockAsOf` |
 | — | `Product.stock` = sum of variant stock |
 
@@ -1006,7 +1425,7 @@ Newman cannot open a file picker. For Image Upload, set the form-data `src` to a
 | `subtotal`, `discount`, `shippingFee`, `total` | Same-named `Order` fields (INR) |
 | `currency` | Constant `INR` |
 | `items[].productId`, `variantId`, `quantity`, `unitPrice`, `lineTotal`, `size` | `Order.items[]`: `product`, `variantId`, `quantity`, `price`, `subtotal`, `size` |
-| `items[].sku`, `items[].name` | Current product data, looked up when called |
+| `items[].sku`, `items[].name` | `Order.items[].sku` / `.name` stored at purchase (orders from version 2.1 on); otherwise current product data, looked up when called |
 | `shippingAddress.*` | `Order.shippingAddress` (street, city, state, zipCode, country). `null` for store-pickup orders. |
 | `fulfillment.method` | `Order.fulfillmentMethod`: `delivery` or `pickup`. Orders placed before this field existed report `delivery`. |
 | `fulfillment.shippingMethod`, `fulfillment.zone` | `Order.shippingMethod` (`land`/`air`), `Order.shippingZone` (`kerala`/`outsideKerala`); `null` for pickup and for older orders |
@@ -1051,7 +1470,7 @@ Building it requires the information in Section 14, items 1–3 and 6. Orders pl
 | 1 | Sales Order Create API | Endpoint URL (sandbox and production), request payload schema, required fields (tax/GST/HSN, billing address, order number, etc.), and a sample success response with your order id |
 | 2 | Authentication | How the website must authenticate to your API (method, credentials, rotation), and confirmation that the HMAC scheme in Section 2 is acceptable for your calls to us. If you need IP allow-listing, your outbound IP addresses. |
 | 3 | Idempotency and duplicates | How your API treats a repeated order with the same external reference (`orderId`), and whether you need an `Idempotency-Key` header |
-| 4 | Product, SKU and stock ownership | SKU format, uniqueness and case rules, and whether SKUs can change. Whether the ERP is the master for items, prices and stock, so that admin-panel editing can be locked. Whether your stock figure already excludes website orders (Section 4), and warehouse/unit rules. Whether categories and brands should be auto-created. |
+| 4 | Product, SKU and stock ownership | SKU format (allowed characters, length, case rules) — the website currently accepts any 1–64 character value, matched exactly — uniqueness, and whether SKUs can change. The item code for each existing website variant that has no SKU (list them with Item List, Section 6A). Whether the ERP is the master for items, prices and stock, so that admin-panel editing can be locked. Whether your stock `quantity` is physical on-hand or sellable stock, and whether it already excludes website orders you have received (Section 4), and warehouse/unit rules. Whether categories and brands should be auto-created. |
 | 5 | Order and payment statuses | Your status list and its mapping to `processing` / `shipped` / `delivered` / `cancelled`; your transition rules; ownership of cancellation, refunds and restocking; whether payment status changes must flow either way |
 | 6 | Retry, timeout, errors, reconciliation | Your timeouts, error codes and rate limits; expected retry behaviour on both sides; how and how often orders and stock are reconciled; expected volumes (is a bulk stock endpoint needed?) |
 | 7 | Customer data and privacy | Which customer fields you need and why; whether a customer master sync is required; retention, access control and data-protection obligations for the personal data you receive (name, email, phone, address) |
@@ -1111,6 +1530,34 @@ On 23 October 2026, 62 signed requests covering the success and error cases of a
 | Real image storage (any environment) | NOT TESTED | Needs Cloudinary configured on the target server and an approved test |
 | Website → ERP order push, customer sync | NOT IMPLEMENTED | Section 13 |
 
+### 15.7 Version 2.1 local verification (27 October 2026)
+
+Automated tests against throwaway local MongoDB databases (no production data, email or image storage):
+
+| Suite | Result | Covers |
+|---|---|---|
+| `src/tests/erp.test.ts` | 40 passed, 0 failed | All nine ERP routes including authentication, plus the 2.1 additions: reservations subtracted from stock, `UNMAPPED_PRODUCT` (also for spaces-only SKUs), order-line SKU/name snapshot, a stock update retried concurrently applied once, concurrent updates with different `asOf` (newest wins), `409 CONFLICT` after the retries when stock keeps changing (nothing overwritten) |
+| `src/tests/products.test.ts` | 12 passed, 0 failed | Website admin keeps variant ids, stock and `stockAsOf` on edits; SKU set-once and uniqueness rules, including legacy SKUs stored with surrounding or only spaces |
+| `src/tests/paymentLifecycle.test.ts` | 16 passed, 0 failed | Unknown variant refused at checkout; SKU/name stored on the order line; a stock update arriving while a checkout is creating its payment does not lose that checkout's reservation; admin status changes follow the callback's transition rules, set `statusUpdatedAt`, and make an older callback `stale` |
+
+Postman collection, run with the Postman CLI 1.76 against a local server on a throwaway database with a throwaway key and image storage **stubbed** (27 October 2026): **21 requests, 84 assertions, 0 failures**, from both the classic JSON files and the Local Mode YAML files. Every numbered request returned its documented success status, including *6. Image Upload* with a real PNG file and its `imageSha256` (signature over the file bytes accepted). W1–W4 and N0–N6 returned their documented outcomes. The collection's signing script, run offline against the §2.3 test vector, produces the expected signature. Storing an image in real cloud storage, and opening the Local Mode files in the Postman desktop app, are **not** verified.
+
+Nothing in version 2.1 has been tested in staging (none exists) or production.
+
+### 15.8 Version 2.2 local verification — Brands and Giftboxes (3 November 2026)
+
+All against throwaway local MongoDB databases (`luxy_erp_test`, `luxy_erp_samples_test`, `luxy_erp_postman_test`, each dropped afterwards) with a throwaway key; no production data, email or image storage.
+
+| Check | Result |
+|---|---|
+| `npm run test:erp` (`src/tests/erp.test.ts`) | **48 passed, 0 failed**. New cases: brand create/get/update; duplicate name refused ignoring case and spaces, on create and on rename; validation (missing name, bad status, `http` logo, unknown field, empty update, malformed/unknown id); list pagination, search and status filter; unsigned, admin-JWT, expired-timestamp and tampered-body requests refused with `401` and nothing written. Giftbox add by SKU and by productId, at a position or at the end; leaves New Arrivals; duplicate add `409`; validation; get/list/search/pagination; move; remove keeps the product; unsigned and admin-JWT refused; the admin Gifting page save and the storefront `/gifting` listing still work and agree with the API. |
+| `src/tests/products.test.ts`, `security.test.ts`, `adminData.test.ts`, `collections.test.ts` | 12, 26, 5 passed; collections OK. No failures. |
+| `tsc --noEmit` | No errors |
+| Response capture | Every example in Sections 10A and 10B (23 requests, success and error) |
+| Postman CLI (classic JSON and Local Mode YAML) | Health, Item Add, requests 10–18 and all Negative checks: **22 requests, 90 assertions, 0 failures** from each format; re-running passes (Brand Create answers `409 DUPLICATE_BRAND`, accepted) |
+
+Not run: `collectionFilters.test.ts` (needs a running server on a real database); requests 2–9 and Write checks were not re-run because they are unchanged. Nothing in version 2.2 has been deployed or run against production.
+
 ---
 
 ## 16. Known limitations and open items
@@ -1120,9 +1567,15 @@ On 23 October 2026, 62 signed requests covering the success and error cases of a
 | 1 | Production Item Add returned `401 Invalid ERP credentials` | Re-test with the Postman collection and check its *request was signed* test (Section 2.6) |
 | 2 | No staging environment | **NEEDS CONFIRMATION** — Luxy Galleria to decide on a staging service or approve production test records |
 | 3 | No draft/inactive product flag; created items are public at once | Limitation |
-| 4 | Admin panel can still edit price and stock | To be locked once the ERP is confirmed as master (Section 14, item 4) |
-| 5 | SKUs are not yet guaranteed unique in website data | Duplicates are refused with `409 DUPLICATE_SKU`; Luxy Galleria will clean the data before stock sync goes live |
-| 6 | Orders exist only after the customer's browser completes payment verification | A payment-gateway webhook is planned before the order push |
-| 7 | Tax/GST/HSN, billing address, recipient name/phone, order number are not stored | Add once your requirements are known (Section 8) |
+| 4 | Admin panel can still edit price, and adjust stock | Since version 2.1, admin product edits never overwrite stock or `stockAsOf`; a stock adjustment applies only if stock is unchanged since the admin opened the product. Stock editing can be removed once the ERP is confirmed as master (Section 14, item 4) |
+| 5 | Some existing website variants have no SKU, and SKUs are not yet unique at database level | Existing duplicates are refused with `409 DUPLICATE_SKU`; the website admin refuses new duplicates. A database unique index will be added after the SKU backfill, which needs the mapping in Section 14, item 4 |
+| 6 | Orders are created when payment is verified by the customer's browser or by the Razorpay payment webhook | The webhook is implemented but active only when configured on the server (**NEEDS CONFIRMATION** for production) |
+| 7 | HSN codes, billing address, recipient name/phone, order number are not stored | Add once your requirements are known (Section 8) |
 | 8 | No bulk stock endpoint; 600 requests/minute | **NEEDS CONFIRMATION** of volumes |
 | 9 | Business rules marked **NEEDS CONFIRMATION** above | Awaiting the ERP team (Section 14) |
+| 10 | Stock formula subtracts website orders and open checkouts from your figure | Provisional until stock semantics are confirmed (Section 4) |
+| 11 | Version 2.1 changes are verified locally only | Deploy to a staging or approved production window, then re-run Section 11.5 |
+| 12 | Version 2.2 (Brands, Giftboxes) is verified locally only and not deployed | Deploy, then run Postman 10, 12, 14, 16 and N7–N10 (read-only) against production |
+| 13 | Brand names have no database unique index | The API refuses duplicates (ignoring case), but two creates of the same new name sent at the same instant could both succeed, and the admin panel does not check. Add a unique index after cleaning existing data if needed |
+| 14 | No brand delete in the ERP API | By design: retire a brand with `status: INACTIVE` (Section 10A) |
+| 15 | A giftbox is a product in the Gifting collection, not a separate record | Giftbox-only data (e.g. box contents, wrapping options) does not exist on the website; **NEEDS CONFIRMATION** whether the ERP needs any |

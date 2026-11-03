@@ -1,0 +1,22 @@
+$kind: http-request
+description: |-
+  **GET {{baseUrl}}/erp/brands/{id}** — one brand by its 24-hex `brandId`.
+
+  - Errors: `400` malformed id; `404 NOT_FOUND`.
+  - Read-only.
+
+  *Added in API version 2.2. Verified by a local Postman CLI run (spec Section 15.8); not yet run against production.*
+url: "{{baseUrl}}/erp/brands/{{brandId}}"
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200', function () {
+        pm.expect(pm.response.code).to.be.oneOf([200]);
+      });
+      pm.test('data matches the documented schema', function () {
+        pm.response.to.have.jsonSchema({ type: 'object', required: ['success', 'data'], properties: { success: { const: true }, data: { type: 'object', required: ['brandId', 'name', 'logo', 'status', 'displayOrder'], properties: { brandId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, name: { type: 'string' }, logo: { type: ['string', 'null'] }, status: { enum: ['ACTIVE', 'INACTIVE'] }, displayOrder: { type: 'integer' } } } } });
+      });
+    language: text/javascript
+examples: ./.resources/12. Brand Details.resources/examples
+order: 13000

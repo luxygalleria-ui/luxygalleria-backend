@@ -1,0 +1,20 @@
+$kind: http-request
+description: |-
+  Expects `404 NOT_FOUND`. Assumes no website variant uses the SKU `POSTMAN-NO-SUCH-SKU-0000`.
+
+  Negative check: the request is refused before any data is read or changed. Safe to run in any environment.
+url: "{{baseUrl}}/erp/items/POSTMAN-NO-SUCH-SKU-0000"
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 404', function () {
+        pm.expect(pm.response.code).to.equal(404);
+      });
+      pm.test('error code NOT_FOUND', function () {
+        const body = pm.response.json();
+        pm.expect(body.success).to.equal(false);
+        pm.expect(body.errors[0].code).to.equal('NOT_FOUND');
+      });
+    language: text/javascript
+order: 2000

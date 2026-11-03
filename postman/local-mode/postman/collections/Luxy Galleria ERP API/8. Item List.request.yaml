@@ -1,0 +1,37 @@
+$kind: http-request
+description: |-
+  **GET {{baseUrl}}/erp/items** — website products with all variants, newest change first.
+
+  - Query: `page` (≥1), `limit` (1–100, default 50), optional `search` (≤100 characters; case-insensitive match on product name or SKU). Unknown parameters → `400`.
+  - `pagination` is inside `data`.
+  - `variants[].sku` is `null` for variants that have no SKU yet; agree their item codes with Luxy Galleria using `variantId`.
+  - Read-only.
+
+  *Added in API version 2.1. Verified by a local Postman CLI run (see the spec, Section 15.7); not yet run against production.*
+url: "{{baseUrl}}/erp/items?page=1&limit=10"
+method: GET
+queryParams:
+  page: "1"
+  limit: "10"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200', function () {
+        pm.expect(pm.response.code).to.equal(200);
+      });
+      pm.test('data matches the documented schema', function () {
+        pm.response.to.have.jsonSchema({
+          type: 'object', required: ['success', 'data'],
+          properties: {
+            success: { const: true },
+            data: { type: 'object', required: ['items', 'pagination'], properties: {
+              items: { type: 'array', items: { type: 'object', required: ['productId', 'name', 'images', 'variants'], properties: {
+                productId: { type: 'string', pattern: '^[a-f0-9]{24}$' },
+                variants: { type: 'array', items: { type: 'object', required: ['variantId', 'sku', 'stock'], properties: {
+                  variantId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, sku: { type: ['string', 'null'] }, stock: { type: 'integer' } } } } } } },
+              pagination: { type: 'object', required: ['page', 'limit', 'total', 'pages'] } } },
+          },
+        });
+      });
+    language: text/javascript
+order: 9000

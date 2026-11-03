@@ -1,0 +1,23 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/erp/giftboxes/{{giftboxId}}"
+  method: GET
+response:
+  statusCode: 404
+  statusText: Not Found
+  headers:
+    Content-Type: application/json; charset=utf-8
+  body:
+    type: json
+    content: |-
+      {
+        "success": false,
+        "message": "Giftbox not found (no Gifting product with this productId)",
+        "errors": [
+          {
+            "code": "NOT_FOUND",
+            "field": "id"
+          }
+        ]
+      }
+order: 2000

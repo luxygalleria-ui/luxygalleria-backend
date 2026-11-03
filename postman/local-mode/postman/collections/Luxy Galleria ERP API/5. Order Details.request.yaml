@@ -1,0 +1,149 @@
+$kind: http-request
+description: |-
+  **GET {{baseUrl}}/erp/orders/{orderId}** — one order by website order id (24 hex characters).
+
+  - Adds `customer.phone`, `shippingAddress`, `payment` and `statusUpdatedAt` to the list fields.
+  - `shippingAddress` is `null` for store-pickup orders. GST is returned in `charges.tax` and per item (`taxRate`, `taxAmount`) when enabled.
+  - Not held by the website (so not returned): HSN codes, billing address, recipient name/phone, order number.
+  - Errors: `400` malformed id; `404` not found. Read-only.
+url: "{{baseUrl}}/erp/orders/{{orderId}}"
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200', function () {
+        pm.expect(pm.response.code).to.be.oneOf([200]);
+      });
+      pm.test('data matches the documented schema', function () {
+        pm.response.to.have.jsonSchema({
+          "type": "object",
+          "required": [
+            "success",
+            "data"
+          ],
+          "properties": {
+            "success": {
+              "const": true
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "orderId",
+                "createdAt",
+                "updatedAt",
+                "orderStatus",
+                "paymentStatus",
+                "currency",
+                "subtotal",
+                "total",
+                "customer",
+                "items",
+                "erp",
+                "shippingAddress",
+                "payment",
+                "statusUpdatedAt"
+              ],
+              "properties": {
+                "orderId": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{24}$"
+                },
+                "orderStatus": {
+                  "enum": [
+                    "processing",
+                    "shipped",
+                    "delivered",
+                    "cancelled"
+                  ]
+                },
+                "paymentStatus": {
+                  "enum": [
+                    "pending",
+                    "completed",
+                    "failed",
+                    "refunded"
+                  ]
+                },
+                "currency": {
+                  "const": "INR"
+                },
+                "subtotal": {
+                  "type": "number"
+                },
+                "total": {
+                  "type": "number"
+                },
+                "customer": {
+                  "type": "object",
+                  "required": [
+                    "customerId",
+                    "name",
+                    "email",
+                    "phone"
+                  ]
+                },
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "productId",
+                      "variantId",
+                      "sku",
+                      "name",
+                      "quantity",
+                      "unitPrice",
+                      "lineTotal"
+                    ],
+                    "properties": {
+                      "sku": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "quantity": {
+                        "type": "integer"
+                      },
+                      "unitPrice": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                },
+                "erp": {
+                  "type": "object",
+                  "required": [
+                    "erpOrderId",
+                    "trackingNumber"
+                  ]
+                },
+                "shippingAddress": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "required": [
+                    "street",
+                    "city",
+                    "state",
+                    "zipCode",
+                    "country"
+                  ]
+                },
+                "payment": {
+                  "type": "object",
+                  "required": [
+                    "method",
+                    "status",
+                    "gatewayOrderId",
+                    "gatewayPaymentId"
+                  ]
+                }
+              }
+            }
+          }
+        });
+      });
+    language: text/javascript
+order: 6000

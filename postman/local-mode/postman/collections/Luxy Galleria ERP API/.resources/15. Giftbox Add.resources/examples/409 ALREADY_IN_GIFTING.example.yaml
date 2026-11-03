@@ -1,0 +1,31 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/erp/giftboxes"
+  method: POST
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "sku": "{{itemSku}}"
+      }
+response:
+  statusCode: 409
+  statusText: Conflict
+  headers:
+    Content-Type: application/json; charset=utf-8
+  body:
+    type: json
+    content: |-
+      {
+        "success": false,
+        "message": "This product is already in Gifting; use PATCH /erp/giftboxes/:id to move it",
+        "errors": [
+          {
+            "code": "ALREADY_IN_GIFTING",
+            "productId": "6ae9c44baa53391159c27a04"
+          }
+        ]
+      }
+order: 2000

@@ -1,0 +1,32 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/erp/giftboxes/{{giftboxId}}"
+  method: PATCH
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "position": 0
+      }
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    Content-Type: application/json; charset=utf-8
+  body:
+    type: json
+    content: |-
+      {
+        "success": false,
+        "message": "Validation failed",
+        "errors": [
+          {
+            "field": "position",
+            "code": "VALIDATION_ERROR",
+            "message": "Number must be greater than or equal to 0"
+          }
+        ]
+      }
+order: 2000

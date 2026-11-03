@@ -1,0 +1,69 @@
+$kind: http-request
+description: |-
+  **POST {{baseUrl}}/erp/images** — upload one product image; returns a hosted `https` URL to use in `imageUrls` or `variants[].image`.
+
+  **How to send it from Postman**
+  1. Body → form-data → key `image` (type *File*) → **Select Files** → choose the image. No other form fields.
+  2. Compute the file's SHA-256 and paste it into the environment variable `imageSha256`:
+     - macOS / Linux: `shasum -a 256 /path/to/image.png`
+     - Windows: `certutil -hashfile C:\path\to\image.png SHA256`
+  3. Send. The signature covers the **file bytes**, not the multipart envelope; Postman scripts cannot read the selected file, which is why its hash is supplied. Update `imageSha256` whenever you pick a different file.
+
+  - JPG/JPEG, PNG or WEBP; extension, content type and actual bytes must agree. Max 15 MB.
+  - Errors: `400` no/extra file, wrong type; `401 Invalid X-ERP-Signature` if `imageSha256` is not the selected file's hash; `413` too large; `502` storage failed (retry); `503` storage not configured.
+  - ⚠️ Each successful call stores a new image in the website's Cloudinary account.
+url: "{{baseUrl}}/erp/images"
+method: POST
+body:
+  type: formdata
+  content:
+    - type: file
+      key: image
+      src: []
+      description: Select one JPG, PNG or WEBP file (max 15 MB)
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 201', function () {
+        pm.expect(pm.response.code).to.be.oneOf([201]);
+      });
+      pm.test('data matches the documented schema', function () {
+        pm.response.to.have.jsonSchema({
+          "type": "object",
+          "required": [
+            "success",
+            "data"
+          ],
+          "properties": {
+            "success": {
+              "const": true
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "url",
+                "bytes",
+                "contentType"
+              ],
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "pattern": "^https://"
+                },
+                "bytes": {
+                  "type": "integer"
+                },
+                "contentType": {
+                  "enum": [
+                    "image/jpeg",
+                    "image/png",
+                    "image/webp"
+                  ]
+                }
+              }
+            }
+          }
+        });
+      });
+    language: text/javascript
+order: 7000

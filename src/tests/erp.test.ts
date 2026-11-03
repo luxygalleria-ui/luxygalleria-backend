@@ -29,6 +29,8 @@ import { Category } from '../models/Category';
 import { Brand } from '../models/Brand';
 import Order from '../models/Order';
 import { ErpEvent } from '../models/ErpEvent';
+import { CheckoutSession } from '../models/CheckoutSession';
+import { expireStaleSessions, reserveStock } from '../utils/checkoutSessions';
 import { imageStore } from '../controllers/erpController';
 import { getErpKeyConfigurationStatus } from '../middlewares/erpAuth';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -195,6 +197,41 @@ const run = async () => {
     const res = await fetch(origin + full, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ quantity: 999, asOf: iso(0) }) });
     assert.strictEqual(res.status, 401);
   });
+  await test('audit log names the failure category and never contains secrets, signatures or bodies', async () => {
+    const lines: string[] = [];
+    const realLog = console.log;
+    console.log = (...a: unknown[]) => { lines.push(a.map(String).join(' ')); };
+    const full = '/api/v1/erp/orders';
+    const body = JSON.stringify({ quantity: 7, asOf: iso(0) });
+    const sent: string[] = [];
+    const send = async (headers: Record<string, string>, method = 'GET', path = full, b?: string) => {
+      if (headers['X-ERP-Signature']) sent.push(headers['X-ERP-Signature']);
+      return (await fetch(origin + path, { method, headers: { 'Content-Type': 'application/json', ...headers }, body: b })).status;
+    };
+    let statuses: number[];
+    try {
+      const replayHeaders = signHeaders('GET', full, '');
+      statuses = [
+        await send(signHeaders('GET', full, '', { keyId: 'not-a-key' })),
+        await send({ ...signHeaders('GET', full, ''), 'X-ERP-Timestamp': String(Math.floor(Date.now() / 1000) - 3600) }),
+        await send(signHeaders('GET', full, '', { secret: 'wrong_secret_0123456789abcdef0123456789' })),
+        await send(signHeaders('PUT', '/api/v1/erp/stock/ANY', body), 'PUT', '/api/v1/erp/stock/ANY', body.replace('7', '8')),
+        await send(replayHeaders),
+        await send(replayHeaders),
+      ];
+    } finally { console.log = realLog; }
+    assert.deepStrictEqual(statuses, [401, 401, 401, 401, 200, 401]);
+    const audit = lines.filter((l) => l.includes('"event":"ERP_API"')).map((l) => JSON.parse(l));
+    const reasons = audit.map((a) => a.authFailure?.reason ?? null);
+    assert.deepStrictEqual(reasons, ['unknown_key', 'bad_timestamp', 'bad_signature', 'bad_signature', null, 'replay']);
+    assert.deepStrictEqual(audit.map((a) => a.claimedKeyConfigured), [false, true, true, true, true, true]);
+    assert.ok(Math.abs(audit[1].authFailure.skewSeconds - 3600) <= 5, 'clock difference reported');
+    assert.ok(audit.every((a) => a.configuredKeyCount >= 1));
+    const text = lines.join('\n');
+    for (const secretish of [SECRET, 'wrong_secret_0123456789abcdef0123456789', ...sent, body, '"quantity"']) {
+      assert.ok(!text.includes(secretish), `audit log leaked ${secretish.slice(0, 12)}…`);
+    }
+  });
   await test('an admin JWT is not accepted on ERP routes', async () => {
     const res = await fetch(origin + '/api/v1/erp/orders', { headers: { Authorization: `Bearer ${adminToken}` } });
     assert.strictEqual(res.status, 401);
@@ -277,6 +314,25 @@ const run = async () => {
     const r = await erp('POST', '/items', { variants: [{ sku: 'ROSE-30' }, { sku: 'OTHER-1' }] });
     assert.strictEqual(r.status, 409);
     assert.strictEqual(r.json.errors[0].code, 'CONFLICT');
+  });
+  await test('an item named like a website product whose variants have no SKU is refused, not created twice', async () => {
+    const legacy = await Product.create({ name: 'Legacy Oud', category: 'Skincare', description: 'Created in the admin', variants: [{ volume: '50ml', price: 900, offerPrice: 900, actualPrice: 900, stock: 2, weight: 0.05 }] });
+    const before = await Product.countDocuments();
+    const r = await erp('POST', '/items', { name: 'legacy oud', description: 'From the ERP', category: 'skincare', variants: [{ sku: 'OUD-50', offerPrice: 900, actualPrice: 900 }] });
+    assert.strictEqual(r.status, 409, JSON.stringify(r.json));
+    assert.deepStrictEqual([r.json.errors[0].code, r.json.errors[0].productId], ['UNMAPPED_PRODUCT', String(legacy._id)]);
+    assert.strictEqual(await Product.countDocuments(), before, 'no duplicate product');
+    // Once the website sets the ERP-approved code on that variant, the ERP updates it in place
+    await Product.updateOne({ _id: legacy._id }, { $set: { 'variants.0.sku': 'OUD-50' } });
+    const ok = await erp('POST', '/items', { name: 'Legacy Oud', variants: [{ sku: 'OUD-50', offerPrice: 950, actualPrice: 950 }] });
+    assert.strictEqual(ok.status, 200, JSON.stringify(ok.json));
+    assert.deepStrictEqual([ok.json.data.productId, ok.json.data.variants[0].variantId], [String(legacy._id), String(legacy.variants[0]._id)]);
+    await Product.deleteOne({ _id: legacy._id });
+    // A spaces-only SKU stored by older code also counts as "no SKU"
+    const blank = await Product.create({ name: 'Blank Oud', category: 'Skincare', description: 'x', variants: [{ volume: '50ml', price: 900, offerPrice: 900, actualPrice: 900, stock: 1, weight: 0.05, sku: '   ' }] });
+    const r2 = await erp('POST', '/items', { name: 'Blank Oud', description: 'From the ERP', category: 'skincare', variants: [{ sku: 'BOUD-50', offerPrice: 900, actualPrice: 900 }] });
+    assert.deepStrictEqual([r2.status, r2.json.errors[0].code], [409, 'UNMAPPED_PRODUCT']);
+    await Product.deleteOne({ _id: blank._id });
   });
 
   console.log('\nItem edit');
@@ -365,6 +421,72 @@ const run = async () => {
     assert.strictEqual(r.modifiedCount, 1);
     assert.strictEqual((await Product.findById(productId))!.variants[0].stock, 15);
   });
+  await test('units held by open checkouts are subtracted, so an abandoned reservation never inflates stock', async () => {
+    const p = (await Product.findById(productId))!;
+    const [v, other] = p.variants;
+    assert.ok((await reserveStock([{ product: p._id, variantId: v._id, quantity: 4, name: p.name }])).ok);
+    await CheckoutSession.create({
+      user: alice._id, razorpayOrderId: 'order_erp_hold', expiresAt: new Date(Date.now() + 60_000), stockReserved: true,
+      items: [{ product: p._id, variantId: v._id, name: p.name, price: 450, quantity: 4, weight: 0.05, subtotal: 1800 }],
+      fulfillmentMethod: 'delivery', breakdown: { grandTotal: 1800 }, amountPaise: 180000, settingsVersion: 'test',
+    });
+    const r = await erp('PUT', '/stock/ROSE-30', { quantity: 20, asOf: iso(0) });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.json));
+    assert.deepStrictEqual([r.json.data.quantity, r.json.data.reservedQuantity, r.json.data.pendingOrderQuantity], [16, 4, 0]);
+    // The checkout is abandoned: its 4 units return on top of the figure net of them, giving exactly the ERP's 20
+    await CheckoutSession.updateOne({ razorpayOrderId: 'order_erp_hold' }, { $set: { expiresAt: new Date(Date.now() - 1000) } });
+    await expireStaleSessions();
+    const after = (await Product.findById(productId))!;
+    assert.strictEqual(after.variants[0].stock, 20);
+    assert.strictEqual(after.variants[1].stock, other.stock, 'the other variant is untouched');
+    assert.strictEqual(after.stock, 20 + other.stock, 'product total in step');
+    await CheckoutSession.deleteMany({});
+  });
+  await test('the same stock update retried concurrently is applied once; the others change nothing', async () => {
+    const body = { quantity: 12, asOf: iso(0) };
+    const rs = await Promise.all(Array.from({ length: 5 }, () => erp('PUT', '/stock/ROSE-30', body))); // each freshly signed, as ERP retries are
+    assert.ok(rs.every((r) => r.status === 200), rs.map((r) => r.status).join(','));
+    assert.strictEqual(rs.filter((r) => r.json.data.applied).length, 1, 'exactly one applied');
+    const p = (await Product.findById(productId))!;
+    assert.deepStrictEqual([p.variants[0].stock, p.variants[0].stockAsOf!.toISOString()], [12, new Date(body.asOf).toISOString()]);
+  });
+  await test('concurrent updates with different asOf: the newest figure wins whatever the arrival order', async () => {
+    const older = { quantity: 30, asOf: iso(1000) };
+    const newer = { quantity: 25, asOf: iso(2000) };
+    const [a, b] = await Promise.all([erp('PUT', '/stock/ROSE-30', older), erp('PUT', '/stock/ROSE-30', newer)]);
+    assert.strictEqual(b.status, 200, JSON.stringify(b.json));
+    assert.ok(a.status === 200 || (a.status === 409 && a.json.errors[0].code === 'STALE_UPDATE'), JSON.stringify(a.json));
+    const p = (await Product.findById(productId))!;
+    assert.deepStrictEqual([p.variants[0].stock, p.variants[0].stockAsOf!.toISOString()], [25, new Date(newer.asOf).toISOString()]);
+  });
+  await test('stock that keeps changing during an update: 409 CONFLICT after the retries, and the checkouts are never overwritten', async () => {
+    const before = (await Product.findById(productId))!.variants[0];
+    // Every attempt reads the held units; a checkout takes 1 unit right after that read, so each conditional write misses
+    const aggregate = CheckoutSession.aggregate;
+    let checkouts = 0;
+    (CheckoutSession as any).aggregate = function (...args: any[]) {
+      return (async () => {
+        await Product.updateOne({ _id: productId, 'variants._id': before._id }, { $inc: { 'variants.$.stock': -1, stock: -1 } });
+        checkouts++;
+        return aggregate.apply(CheckoutSession, args as any);
+      })();
+    };
+    let r;
+    try {
+      r = await erp('PUT', '/stock/ROSE-30', { quantity: 99, asOf: iso(3000) });
+    } finally {
+      (CheckoutSession as any).aggregate = aggregate;
+    }
+    assert.strictEqual(r.status, 409, JSON.stringify(r.json));
+    assert.deepStrictEqual([r.json.errors[0].code, r.json.message], ['CONFLICT', 'Stock changed repeatedly while applying this update; retry it']);
+    assert.strictEqual(checkouts, 3, 'three attempts, then it gives up');
+    const after = (await Product.findById(productId))!.variants[0];
+    assert.strictEqual(after.stock, before.stock - 3, 'every concurrent checkout decrement kept; the ERP figure was not written');
+    assert.strictEqual(after.stockAsOf!.toISOString(), before.stockAsOf!.toISOString(), 'stockAsOf unchanged');
+    // Retrying the same request once checkouts settle applies it
+    const retry = await erp('PUT', '/stock/ROSE-30', { quantity: 99, asOf: iso(3000) });
+    assert.deepStrictEqual([retry.status, retry.json.data.applied, retry.json.data.quantity], [200, true, 99]);
+  });
 
   console.log('\nOrders');
   const p = (await Product.findById(productId))!;
@@ -410,6 +532,18 @@ const run = async () => {
     assert.ok(!text.includes('sig_secret') && !text.includes('password'), 'no secrets in the payload');
     assert.strictEqual((await erp('GET', '/orders/123')).status, 400);
     assert.strictEqual((await erp('GET', `/orders/${new mongoose.Types.ObjectId()}`)).status, 404);
+  });
+
+  await test('order lines report the SKU and name as sold; older orders fall back to the current SKU', async () => {
+    const sold = await Order.create({
+      user: alice._id, items: [{ product: p._id, variantId: p.variants[0]._id, name: 'Rose Serum (as sold)', sku: 'ROSE-30-OLD', quantity: 1, price: 450, subtotal: 450 }],
+      shippingAddress: { street: '1 St', city: 'Kochi', state: 'Kerala', zipCode: '682001', country: 'India' },
+      subtotal: 450, total: 490, shippingFee: 40, paymentMethod: 'razorpay', paymentStatus: 'completed', razorpayOrderId: 'order_snapshot',
+    });
+    const line = (await erp('GET', `/orders/${sold._id}`)).json.data.items[0];
+    assert.deepStrictEqual([line.sku, line.name, line.variantId], ['ROSE-30-OLD', 'Rose Serum (as sold)', String(p.variants[0]._id)]);
+    assert.strictEqual((await erp('GET', `/orders/${o1._id}`)).json.data.items[0].sku, 'ROSE-30', 'no snapshot: current SKU');
+    await Order.deleteOne({ _id: sold._id });
   });
 
   console.log('\nOrder-status webhook');
@@ -489,6 +623,115 @@ const run = async () => {
     imageStore.configured = () => false;
     assert.strictEqual((await upload(PNG, 'rose.png', 'image/png')).status, 503);
     assert.strictEqual(stored, 1);
+  });
+
+  console.log('\nBrands');
+  await test('create, duplicate (case-insensitive), get, patch, rename collision', async () => {
+    const c = await erp('POST', '/brands', { name: 'Noir Atelier', logo: 'https://res.cloudinary.com/x/noir.png', displayOrder: 3 });
+    assert.strictEqual(c.status, 201, JSON.stringify(c.json));
+    assert.deepStrictEqual([c.json.data.name, c.json.data.status, c.json.data.displayOrder], ['Noir Atelier', 'ACTIVE', 3]);
+    const id = c.json.data.brandId;
+    const dup = await erp('POST', '/brands', { name: '  noir atelier ' });
+    assert.strictEqual(dup.status, 409);
+    assert.deepStrictEqual([dup.json.errors[0].code, dup.json.errors[0].brandId], ['DUPLICATE_BRAND', id]);
+    assert.strictEqual((await erp('GET', `/brands/${id}`)).json.data.name, 'Noir Atelier');
+    const p = await erp('PATCH', `/brands/${id}`, { status: 'INACTIVE', name: 'Noir Atelier' }); // keeping its own name is fine
+    assert.strictEqual(p.status, 200, JSON.stringify(p.json));
+    assert.strictEqual(p.json.data.status, 'INACTIVE');
+    assert.strictEqual((await erp('PATCH', `/brands/${id}`, { name: 'LUMINA' })).status, 409, 'cannot take another brand\'s name');
+    assert.strictEqual((await Brand.findById(id))!.name, 'Noir Atelier');
+  });
+  await test('brand validation: missing name, bad status, http logo, unknown field, empty patch, bad/unknown id', async () => {
+    assert.strictEqual((await erp('POST', '/brands', {})).status, 400);
+    assert.strictEqual((await erp('POST', '/brands', { name: 'X', status: 'DELETED' })).status, 400);
+    assert.strictEqual((await erp('POST', '/brands', { name: 'X', logo: 'http://insecure/x.png' })).status, 400);
+    assert.strictEqual((await erp('POST', '/brands', { name: 'X', _id: 'abc' })).status, 400);
+    const anyId = String(brand._id);
+    assert.strictEqual((await erp('PATCH', `/brands/${anyId}`, {})).status, 400);
+    assert.strictEqual((await erp('GET', '/brands/not-an-id')).status, 400);
+    assert.strictEqual((await erp('GET', `/brands/${new mongoose.Types.ObjectId()}`)).status, 404);
+    assert.ok(!(await Brand.findOne({ name: 'X' })), 'nothing created');
+  });
+  await test('brand list: pagination, search, status filter', async () => {
+    const all = await erp('GET', '/brands?limit=1&page=2');
+    assert.strictEqual(all.status, 200);
+    assert.strictEqual(all.json.data.brands.length, 1);
+    assert.deepStrictEqual(all.json.data.pagination, { page: 2, limit: 1, total: 2, pages: 2 });
+    assert.deepStrictEqual((await erp('GET', '/brands?search=lum')).json.data.brands.map((b: any) => b.name), ['Lumina']);
+    assert.deepStrictEqual((await erp('GET', '/brands?status=INACTIVE')).json.data.brands.map((b: any) => b.name), ['Noir Atelier']);
+    assert.strictEqual((await erp('GET', '/brands?limit=500')).status, 400);
+    assert.strictEqual((await erp('GET', '/brands?foo=1')).status, 400);
+  });
+  await test('brand routes refuse unsigned, admin-JWT, expired and tampered requests', async () => {
+    assert.strictEqual((await fetch(origin + '/api/v1/erp/brands')).status, 401);
+    assert.strictEqual((await fetch(origin + '/api/v1/erp/brands', { headers: { Authorization: `Bearer ${adminToken}` } })).status, 401);
+    assert.strictEqual((await erp('GET', '/brands', undefined, { ts: Math.floor(Date.now() / 1000) - 600 })).status, 401);
+    const full = '/api/v1/erp/brands';
+    const headers = signHeaders('POST', full, JSON.stringify({ name: 'Signed' }));
+    const tampered = await fetch(origin + full, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Tampered' }) });
+    assert.strictEqual(tampered.status, 401);
+    assert.ok(!(await Brand.findOne({ name: { $in: ['Signed', 'Tampered'] } })));
+  });
+
+  console.log('\nGiftboxes (Gifting collection)');
+  const mk = (name: string, code: string, extra: Record<string, unknown> = {}) => Product.create({ name, category: 'Skincare', description: 'g', ...extra,
+    variants: [{ sku: code, volume: '1 box', price: 10, offerPrice: 10, actualPrice: 12, stock: 3, weight: 0.5 }] });
+  const g1 = await mk('Gift Box Rose', 'GB-ROSE', { isGifting: true, giftingOrder: 0 });
+  const g2 = await mk('Gift Box Oud', 'GB-OUD', { isNewArrival: true, newArrivalOrder: 0 });
+  const g3 = await mk('Gift Box Amber', 'GB-AMBER');
+  const order = async () => (await erp('GET', '/giftboxes')).json.data.giftboxes.map((g: any) => [g.name, g.position]);
+  await test('add by sku and by productId, at the end or at a position; leaves New Arrivals', async () => {
+    const a = await erp('POST', '/giftboxes', { sku: 'GB-OUD' });
+    assert.strictEqual(a.status, 201, JSON.stringify(a.json));
+    assert.strictEqual(a.json.data.productId, String(g2._id));
+    const after = (await Product.findById(g2._id))!;
+    assert.deepStrictEqual([after.isGifting, after.isNewArrival], [true, false], 'Gifting is exclusive');
+    assert.strictEqual((await erp('POST', '/giftboxes', { productId: String(g3._id), position: 0 })).status, 201);
+    assert.deepStrictEqual(await order(), [['Gift Box Amber', 0], ['Gift Box Rose', 1], ['Gift Box Oud', 2]]);
+  });
+  await test('duplicate add is refused; validation errors', async () => {
+    const dup = await erp('POST', '/giftboxes', { sku: 'GB-ROSE' });
+    assert.strictEqual(dup.status, 409);
+    assert.strictEqual(dup.json.errors[0].code, 'ALREADY_IN_GIFTING');
+    assert.strictEqual((await erp('POST', '/giftboxes', {})).status, 400, 'needs productId or sku');
+    assert.strictEqual((await erp('POST', '/giftboxes', { sku: 'GB-ROSE', productId: String(g1._id) })).status, 400, 'not both');
+    assert.strictEqual((await erp('POST', '/giftboxes', { sku: 'NOPE' })).status, 404);
+    assert.strictEqual((await erp('POST', '/giftboxes', { productId: String(new mongoose.Types.ObjectId()) })).status, 404);
+    assert.strictEqual((await erp('POST', '/giftboxes', { sku: 'GB-ROSE', position: -1 })).status, 400);
+    assert.strictEqual((await erp('POST', '/giftboxes', { sku: 'GB-ROSE', name: 'x' })).status, 400, 'product fields go through /items');
+  });
+  await test('get, list with search and pagination, move, remove', async () => {
+    const g = await erp('GET', `/giftboxes/${g1._id}`);
+    assert.strictEqual(g.status, 200);
+    assert.deepStrictEqual([g.json.data.name, g.json.data.variants[0].sku], ['Gift Box Rose', 'GB-ROSE']);
+    assert.strictEqual((await erp('GET', `/giftboxes/${productId}`)).status, 404, 'a product not in Gifting');
+    assert.strictEqual((await erp('GET', '/giftboxes/bad')).status, 400);
+    assert.deepStrictEqual((await erp('GET', '/giftboxes?search=gb-oud')).json.data.giftboxes.map((x: any) => x.name), ['Gift Box Oud']);
+    const pg = await erp('GET', '/giftboxes?page=2&limit=2');
+    assert.deepStrictEqual([pg.json.data.giftboxes.length, pg.json.data.pagination.total], [1, 3]);
+    const mv = await erp('PATCH', `/giftboxes/${g2._id}`, { position: 0 });
+    assert.strictEqual(mv.status, 200);
+    assert.strictEqual(mv.json.data.position, 0);
+    assert.deepStrictEqual(await order(), [['Gift Box Oud', 0], ['Gift Box Amber', 1], ['Gift Box Rose', 2]]);
+    assert.strictEqual((await erp('PATCH', `/giftboxes/${g2._id}`, {})).status, 400);
+    assert.strictEqual((await erp('PATCH', `/giftboxes/${productId}`, { position: 0 })).status, 404);
+    const rm = await erp('DELETE', `/giftboxes/${g3._id}`);
+    assert.strictEqual(rm.status, 200);
+    assert.ok(await Product.findById(g3._id), 'product itself is kept');
+    assert.deepStrictEqual(await order(), [['Gift Box Oud', 0], ['Gift Box Rose', 1]]);
+    assert.strictEqual((await erp('DELETE', `/giftboxes/${g3._id}`)).status, 404);
+  });
+  await test('giftbox routes refuse unsigned and admin-JWT requests; admin Gifting page and storefront still work', async () => {
+    assert.strictEqual((await fetch(origin + '/api/v1/erp/giftboxes')).status, 401);
+    assert.strictEqual((await fetch(`${origin}/api/v1/erp/giftboxes/${g1._id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${adminToken}` } })).status, 401);
+    const adminSave = await fetch(`${origin}/api/v1/products/gifting`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ productIds: [String(g1._id), String(g3._id)] }),
+    });
+    assert.strictEqual(adminSave.status, 200);
+    assert.deepStrictEqual(await order(), [['Gift Box Rose', 0], ['Gift Box Amber', 1]]);
+    const shop = await (await fetch(`${origin}/api/v1/products?gifting=true&sort=featured`)).json();
+    assert.deepStrictEqual(shop.data.map((x: any) => x.name), ['Gift Box Rose', 'Gift Box Amber']);
   });
 
   console.log('\nExisting APIs');

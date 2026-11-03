@@ -1,0 +1,27 @@
+$kind: http-request
+description: "Sends a figure one hour older than the last applied one. Expected: `409 STALE_UPDATE` with `currentAsOf`; stock unchanged. Run after the numbered requests, against a **local or approved staging** database only."
+url: "{{baseUrl}}/erp/stock/{{itemSku}}"
+method: PUT
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "quantity": 1,
+      "asOf": "{{staleStockAsOf}}"
+    }
+scripts:
+  - type: beforeRequest
+    code: if (!pm.collectionVariables.get('staleStockAsOf')) throw new Error('Run 3. Stock Update first');
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 409', function () {
+        pm.expect(pm.response.code).to.equal(409);
+      });
+      pm.test('error code STALE_UPDATE', function () {
+        pm.expect(pm.response.json().errors[0].code).to.equal('STALE_UPDATE');
+      });
+    language: text/javascript
+order: 2000

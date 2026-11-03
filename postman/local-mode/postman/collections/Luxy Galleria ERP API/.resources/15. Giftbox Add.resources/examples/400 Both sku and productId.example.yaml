@@ -1,0 +1,31 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/erp/giftboxes"
+  method: POST
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "sku": "{{itemSku}}"
+      }
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    Content-Type: application/json; charset=utf-8
+  body:
+    type: json
+    content: |-
+      {
+        "success": false,
+        "message": "Validation failed",
+        "errors": [
+          {
+            "code": "VALIDATION_ERROR",
+            "message": "send exactly one of productId or sku"
+          }
+        ]
+      }
+order: 3000

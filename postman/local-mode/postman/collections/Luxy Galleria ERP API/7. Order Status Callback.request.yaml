@@ -1,0 +1,88 @@
+$kind: http-request
+description: |-
+  **POST {{baseUrl}}/erp/webhooks/order-status** — the ERP tells the website an order's fulfilment status changed.
+
+  - `eventId` (unique per event; leave the environment value empty to auto-generate one per send), `orderId`, `status` (`processing` | `shipped` | `delivered` | `cancelled`), `occurredAt`. Optional `erpOrderId`, `trackingNumber`.
+  - Allowed: processing → shipped/delivered/cancelled; shipped → delivered/cancelled. `delivered` and `cancelled` are final.
+  - Outcomes (all `200`): `applied` (customer emailed once), `unchanged`, `stale` (older than last applied), or `duplicate: true` for a repeated `eventId`.
+  - Errors: `400` validation; `404` order not found; `409 INVALID_TRANSITION`; `409 CONFLICT` (erpOrderId mismatch or concurrent change — retry).
+
+  ⚠️ **Production:** an applied change is visible to the customer and **emails them**. Use only an approved test order.
+url: "{{baseUrl}}/erp/webhooks/order-status"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "eventId": "{{eventId}}",
+      "orderId": "{{orderId}}",
+      "status": "{{orderStatus}}",
+      "trackingNumber": "{{trackingNumber}}",
+      "occurredAt": "{{nowIso}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200', function () {
+        pm.expect(pm.response.code).to.be.oneOf([200]);
+      });
+      pm.test('data matches the documented schema', function () {
+        pm.response.to.have.jsonSchema({
+          "type": "object",
+          "required": [
+            "success",
+            "data"
+          ],
+          "properties": {
+            "success": {
+              "const": true
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "eventId",
+                "duplicate"
+              ],
+              "properties": {
+                "eventId": {
+                  "type": "string"
+                },
+                "duplicate": {
+                  "type": "boolean"
+                },
+                "orderId": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{24}$"
+                },
+                "previousStatus": {
+                  "type": "string"
+                },
+                "orderStatus": {
+                  "enum": [
+                    "processing",
+                    "shipped",
+                    "delivered",
+                    "cancelled"
+                  ]
+                },
+                "applied": {
+                  "type": "boolean"
+                },
+                "outcome": {
+                  "enum": [
+                    "applied",
+                    "unchanged",
+                    "stale"
+                  ]
+                }
+              }
+            }
+          }
+        });
+      });
+      // Remember the event id actually sent, for the duplicate check in 'Write checks'
+      pm.collectionVariables.set('lastEventId', JSON.parse(pm.variables.replaceIn(pm.request.body.raw)).eventId);
+    language: text/javascript
+order: 8000

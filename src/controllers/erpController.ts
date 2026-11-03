@@ -10,10 +10,13 @@ import { Brand } from '../models/Brand';
 import { User } from '../models/User';
 import Order from '../models/Order';
 import { ErpEvent } from '../models/ErpEvent';
+import { CheckoutSession } from '../models/CheckoutSession';
+import { ORDER_STATUSES, canMoveOrderStatus as canMove } from '../utils/orderStatus';
 import { asyncHandler } from '../utils/asyncHandler';
 import { successResponse, errorResponse } from '../utils/responseHandler';
 import { parseWeightFromVolume } from '../utils/shippingCalculator';
 import { escapeRegex } from './contactController';
+import { writeCollection } from './productController';
 import { sendOrderStatusEmail } from './paymentController';
 
 // ---------- shared ----------
@@ -31,7 +34,6 @@ const isoDate = z.string().datetime({ offset: true, message: 'must be an ISO 860
 const sku = z.string().trim().min(1).max(64);
 const money = z.number().finite().min(0).max(10_000_000);
 const httpsUrl = z.string().trim().url().max(2048).refine((u) => u.startsWith('https://'), 'must be an https URL');
-const ORDER_STATUSES = ['processing', 'shipped', 'delivered', 'cancelled'] as const;
 const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'refunded'] as const;
 const itemListSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -126,6 +128,29 @@ const variantSummary = (v: any) => ({
   offerPrice: v.offerPrice, actualPrice: v.actualPrice, stock: v.stock, weight: v.weight, image: v.image || null,
 });
 
+/** One website product with all its variants, as the ERP sees it in lists. */
+const itemSummary = (product: any) => ({
+  productId: String(product._id),
+  name: product.name,
+  description: product.description,
+  category: product.category,
+  images: product.images ?? [],
+  status: product.status,
+  updatedAt: product.updatedAt,
+  variants: product.variants.map((variant: any) => ({
+    variantId: String(variant._id),
+    sku: variant.sku ?? null,
+    name: variant.name ?? null,
+    size: variant.size || variant.volume || null,
+    flavor: variant.flavor ?? null,
+    offerPrice: variant.offerPrice ?? variant.price,
+    actualPrice: variant.actualPrice ?? variant.oldPrice ?? null,
+    stock: variant.stock,
+    weight: variant.weight,
+    image: variant.image ?? null,
+  })),
+});
+
 // GET /erp/items/:sku — return the exact product variant addressed by SKU.
 export const getItemBySku = asyncHandler(async (req: Request, res: Response) => {
   const code = req.params.sku.trim();
@@ -143,7 +168,7 @@ export const getItemBySku = asyncHandler(async (req: Request, res: Response) => 
   });
 });
 
-// POST /erp/items — create, or update the product that already carries these SKUs
+// GET /erp/items
 export const listItems = asyncHandler(async (req: Request, res: Response) => {
   const parsed = itemListSchema.safeParse(req.query);
   if (!parsed.success) return invalid(res, parsed.error);
@@ -158,31 +183,12 @@ export const listItems = asyncHandler(async (req: Request, res: Response) => {
   ]);
 
   successResponse(res, 200, 'Items fetched', {
-    items: products.map((product: any) => ({
-      productId: String(product._id),
-      name: product.name,
-      description: product.description,
-      category: product.category,
-      images: product.images ?? [],
-      status: product.status,
-      updatedAt: product.updatedAt,
-      variants: product.variants.map((variant: any) => ({
-        variantId: String(variant._id),
-        sku: variant.sku ?? null,
-        name: variant.name ?? null,
-        size: variant.size || variant.volume || null,
-        flavor: variant.flavor ?? null,
-        offerPrice: variant.offerPrice ?? variant.price,
-        actualPrice: variant.actualPrice ?? variant.oldPrice ?? null,
-        stock: variant.stock,
-        weight: variant.weight,
-        image: variant.image ?? null,
-      })),
-    })),
+    items: products.map(itemSummary),
     pagination: { page, limit, total, pages: Math.ceil(total / limit) },
   });
 });
 
+// POST /erp/items — create, or update the product that already carries these SKUs
 export const upsertItem = asyncHandler(async (req: Request, res: Response) => {
   const parsed = upsertSchema.safeParse(req.body);
   if (!parsed.success) return invalid(res, parsed.error);
@@ -206,6 +212,17 @@ export const upsertItem = asyncHandler(async (req: Request, res: Response) => {
     const missing = (['name', 'description', 'category'] as const).filter((f) => input[f] === undefined);
     if (missing.length) {
       return errorResponse(res, 400, 'Validation failed', missing.map((field) => ({ field, code: 'VALIDATION_ERROR', message: 'required when creating an item' })));
+    }
+    // A website product of this name whose variants have no SKU yet is most likely this item: creating another would
+    // duplicate it in the catalogue. The website team sets the ERP-approved SKU on it instead (no mapping is guessed here).
+    const unmapped = await Product.findOne({
+      name: { $regex: `^${escapeRegex(input.name!)}$`, $options: 'i' },
+      variants: { $elemMatch: { $or: [{ sku: { $exists: false } }, { sku: null }, { sku: { $regex: '^\\s*$' } }] } },
+    }).select('_id').lean();
+    if (unmapped) {
+      return errorResponse(res, 409, `Website product "${input.name}" already exists with variants that have no SKU. Ask the website team to set the SKUs on it instead of creating a new item`, [
+        { code: 'UNMAPPED_PRODUCT', field: 'name', productId: String(unmapped._id) },
+      ]);
     }
   }
   const product = isNew ? new Product({ ...update.fields, variants: [] }) : products[0];
@@ -304,6 +321,20 @@ const pendingQuantity = async (variantId: unknown, since: Date) => {
   return row?.qty || 0;
 };
 
+/** Units of this variant held right now by unpaid or finishing checkouts. The ERP never sees these reservations. */
+const reservedQuantity = async (variantId: unknown) => {
+  const id = new mongoose.Types.ObjectId(String(variantId));
+  const [row] = await CheckoutSession.aggregate([
+    { $match: { stockReserved: true, status: { $in: ['pending', 'processing'] }, 'items.variantId': id } },
+    { $unwind: '$items' },
+    { $match: { 'items.variantId': id } },
+    { $group: { _id: null, qty: { $sum: '$items.quantity' } } },
+  ]);
+  return row?.qty || 0;
+};
+
+const STOCK_WRITE_ATTEMPTS = 3;
+
 // PUT /erp/stock/:sku — absolute sellable quantity for one variant
 export const updateStock = asyncHandler(async (req: Request, res: Response) => {
   const parsed = stockSchema.safeParse(req.body);
@@ -315,35 +346,54 @@ export const updateStock = asyncHandler(async (req: Request, res: Response) => {
   const hits = await findSku(code);
   if (hits.length !== 1) return skuLookupError(res, code, hits.length);
   const { product, variant } = hits[0];
-
-  // ponytail: provisional reconcile rule (ERP to confirm). A checkout landing between this read and the
-  // write below can be counted twice (under-sells, never over-sells); a transaction removes that window.
-  const pending = await pendingQuantity(variant._id, asOf);
-  const quantity = Math.max(0, parsed.data.quantity - pending);
-
-  // Only this variant's stock, and only if no newer ERP figure was applied — checkout's $inc on other fields is untouched.
-  const r = await Product.updateOne(
-    { _id: product._id, variants: { $elemMatch: { _id: variant._id, sku: code, $or: [{ stockAsOf: { $exists: false } }, { stockAsOf: null }, { stockAsOf: { $lt: asOf } }] } } },
-    { $set: { 'variants.$.stock': quantity, 'variants.$.stockAsOf': asOf } }
-  );
-
   const base = { sku: code, productId: String(product._id), variantId: String(variant._id), asOf: asOf.toISOString() };
-  if (!r.matchedCount) {
-    const current: any = (await Product.findById(product._id))?.variants.find((v) => String(v._id) === String(variant._id));
-    if (current?.stockAsOf && current.stockAsOf.getTime() === asOf.getTime()) {
+  const newerOrSame = (v: any) => v?.stockAsOf && v.stockAsOf.getTime() >= asOf.getTime();
+
+  // ponytail: provisional reconcile rule (ERP to confirm physical vs sellable). Stored = ERP figure minus website orders
+  // after asOf minus units held by open checkouts (the ERP knows neither). Sessions are read before orders, so a checkout
+  // finishing between the two reads is counted twice (under-sells), never missed. The write only applies if the stock
+  // is still what it was when read, so a reservation or release in between is never overwritten; a transaction would
+  // remove the double-count window too.
+  let current: any = variant;
+  let reserved = 0;
+  let pending = 0;
+  let quantity = 0;
+  let applied = false;
+  for (let attempt = 0; attempt < STOCK_WRITE_ATTEMPTS && current && !newerOrSame(current); attempt++) {
+    reserved = await reservedQuantity(variant._id);
+    pending = await pendingQuantity(variant._id, asOf);
+    quantity = Math.max(0, parsed.data.quantity - pending - reserved);
+
+    // Only this variant's stock, only if no newer ERP figure was applied, and only if nothing moved its stock since the read.
+    const r = await Product.updateOne(
+      { _id: product._id, variants: { $elemMatch: { _id: variant._id, sku: code, stock: current.stock, $or: [{ stockAsOf: { $exists: false } }, { stockAsOf: null }, { stockAsOf: { $lt: asOf } }] } } },
+      { $set: { 'variants.$.stock': quantity, 'variants.$.stockAsOf': asOf } }
+    );
+    if (r.matchedCount) { applied = true; break; }
+    const fresh: any = await Product.findById(product._id, { variants: 1 }).lean();
+    current = fresh?.variants?.find((v: any) => String(v._id) === String(variant._id) && v.sku === code);
+  }
+
+  if (!applied) {
+    if (!current) return fail(res, 404, `SKU not found: ${code}`, 'NOT_FOUND', 'sku');
+    if (current.stockAsOf && current.stockAsOf.getTime() === asOf.getTime()) {
       // Same update delivered again: answer as before, change nothing
       return successResponse(res, 200, 'Stock already at this update', { ...base, previousQuantity: current.stock, quantity: current.stock, applied: false, updatedAt: new Date().toISOString() });
     }
-    return errorResponse(res, 409, 'A newer stock update has already been applied', [{ code: 'STALE_UPDATE', field: 'asOf', currentAsOf: current?.stockAsOf?.toISOString() ?? null }]);
+    if (newerOrSame(current)) {
+      return errorResponse(res, 409, 'A newer stock update has already been applied', [{ code: 'STALE_UPDATE', field: 'asOf', currentAsOf: current.stockAsOf.toISOString() }]);
+    }
+    return errorResponse(res, 409, 'Stock changed repeatedly while applying this update; retry it', [{ code: 'CONFLICT' }]);
   }
   await syncProductStock(product._id);
 
   return successResponse(res, 200, 'Stock updated', {
     ...base,
-    previousQuantity: variant.stock,
+    previousQuantity: current.stock,
     quantity,
     erpQuantity: parsed.data.quantity,
     pendingOrderQuantity: pending,
+    reservedQuantity: reserved,
     applied: true,
     updatedAt: new Date().toISOString(),
   });
@@ -379,8 +429,8 @@ const orderLines = (order: any, products: Map<string, any>) => order.items.map((
   return {
     productId: String(it.product),
     variantId: String(it.variantId),
-    sku: v?.sku || null, // current SKU of the variant; not stored on the order
-    name: p?.name ?? null,
+    sku: it.sku || v?.sku || null, // SKU as sold; older orders fall back to the variant's current SKU
+    name: it.name ?? p?.name ?? null,
     size: it.size ?? null,
     quantity: it.quantity,
     unitPrice: it.price,
@@ -479,10 +529,6 @@ const webhookSchema = z.object({
   occurredAt: isoDate,
 }); // unknown fields are ignored so the ERP can add data without breaking delivery
 
-const RANK: Record<string, number> = { processing: 0, shipped: 1, delivered: 2 };
-/** Forward only; cancel allowed until delivered; delivered and cancelled are final. */
-const canMove = (from: string, to: string) =>
-  to === 'cancelled' ? from === 'processing' || from === 'shipped' : from !== 'cancelled' && RANK[to] > RANK[from];
 
 // POST /erp/webhooks/order-status
 export const orderStatusWebhook = asyncHandler(async (req: Request, res: Response) => {
@@ -542,6 +588,176 @@ export const orderStatusWebhook = asyncHandler(async (req: Request, res: Respons
     outcome,
     duplicate: false,
   });
+});
+
+// ---------- brands ----------
+
+const BRAND_STATUSES = ['ACTIVE', 'INACTIVE'] as const; // the admin panel's choices; the storefront hides INACTIVE brands
+const brandFields = {
+  logo: z.union([httpsUrl, z.literal('')]).optional(), // upload through POST /erp/images first; '' clears it
+  status: z.enum(BRAND_STATUSES).optional(),
+  displayOrder: z.number().int().min(0).max(100_000).optional(),
+};
+const brandName = z.string().trim().min(1).max(100);
+const brandCreateSchema = z.object({ name: brandName, ...brandFields }).strict();
+const brandPatchSchema = z.object({ name: brandName.optional(), ...brandFields }).strict()
+  .refine((o) => Object.keys(o).length > 0, 'send at least one field to change');
+const brandListSchema = itemListSchema.extend({ status: z.enum(BRAND_STATUSES).optional() }).strict();
+
+const brandSummary = (b: any) => ({
+  brandId: String(b._id), name: b.name, logo: b.logo || null, status: b.status, displayOrder: b.displayOrder,
+  createdAt: b.createdAt, updatedAt: b.updatedAt,
+});
+
+const badId = (res: Response, id: string, field: string) =>
+  /^[a-f\d]{24}$/i.test(id) ? null : fail(res, 400, `${field} must be a 24-character hex id`, 'VALIDATION_ERROR', field);
+
+// ponytail: duplicate check in code (no unique index: live data may already hold case-variants); two racing creates could both pass.
+const brandNameTaken = async (name: string, exceptId?: unknown) => {
+  const other = await byName(Brand, name).select('_id').lean();
+  return other && String(other._id) !== String(exceptId) ? String(other._id) : null;
+};
+const duplicateBrand = (res: Response, brandId: string) =>
+  errorResponse(res, 409, 'A brand with this name already exists', [{ code: 'DUPLICATE_BRAND', field: 'name', brandId }]);
+
+// GET /erp/brands
+export const listBrands = asyncHandler(async (req: Request, res: Response) => {
+  const parsed = brandListSchema.safeParse(req.query);
+  if (!parsed.success) return invalid(res, parsed.error);
+  const { page, limit, search, status } = parsed.data;
+  const filter: Record<string, unknown> = {};
+  if (search) filter.name = { $regex: escapeRegex(search), $options: 'i' };
+  if (status) filter.status = status;
+
+  const [total, brands] = await Promise.all([
+    Brand.countDocuments(filter),
+    Brand.find(filter).sort({ displayOrder: 1, name: 1, _id: 1 }).skip((page - 1) * limit).limit(limit).lean(),
+  ]);
+  successResponse(res, 200, 'Brands fetched', { brands: brands.map(brandSummary), pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
+});
+
+// GET /erp/brands/:id
+export const getBrand = asyncHandler(async (req: Request, res: Response) => {
+  if (badId(res, req.params.id, 'id')) return;
+  const brand = await Brand.findById(req.params.id).lean();
+  if (!brand) return fail(res, 404, 'Brand not found', 'NOT_FOUND', 'id');
+  successResponse(res, 200, 'Brand fetched', brandSummary(brand));
+});
+
+// POST /erp/brands
+export const createBrand = asyncHandler(async (req: Request, res: Response) => {
+  const parsed = brandCreateSchema.safeParse(req.body);
+  if (!parsed.success) return invalid(res, parsed.error);
+  const taken = await brandNameTaken(parsed.data.name);
+  if (taken) return duplicateBrand(res, taken);
+  const brand = await Brand.create(parsed.data);
+  successResponse(res, 201, 'Brand created', brandSummary(brand));
+});
+
+// PATCH /erp/brands/:id — only supplied fields change. No DELETE: products keep brandId; set status INACTIVE instead.
+export const patchBrand = asyncHandler(async (req: Request, res: Response) => {
+  if (badId(res, req.params.id, 'id')) return;
+  const parsed = brandPatchSchema.safeParse(req.body);
+  if (!parsed.success) return invalid(res, parsed.error);
+  const brand = await Brand.findById(req.params.id);
+  if (!brand) return fail(res, 404, 'Brand not found', 'NOT_FOUND', 'id');
+  if (parsed.data.name) {
+    const taken = await brandNameTaken(parsed.data.name, brand._id);
+    if (taken) return duplicateBrand(res, taken);
+  }
+  brand.set(parsed.data);
+  await brand.save();
+  successResponse(res, 200, 'Brand updated', { ...brandSummary(brand), updatedFields: Object.keys(parsed.data) });
+});
+
+// ---------- giftboxes (the storefront Gifting collection) ----------
+// A giftbox is an existing website product flagged isGifting, shown on /gifting in giftingOrder. Products themselves are
+// created and edited through /erp/items; these routes only manage membership and position, exactly like the admin Gifting page.
+
+const position = z.number().int().min(0).max(100_000);
+const giftboxAddSchema = z.object({ productId: objectId.optional(), sku: sku.optional(), position: position.optional() }).strict()
+  .refine((o) => (o.productId === undefined) !== (o.sku === undefined), 'send exactly one of productId or sku');
+const giftboxPatchSchema = z.object({ position }).strict();
+
+const giftboxSummary = (p: any) => ({ ...itemSummary(p), position: p.giftingOrder ?? 0, brandId: p.brandId ? String(p.brandId) : null });
+/** Same order as the storefront /gifting page. */
+const GIFTING_SORT = { giftingOrder: 1, createdAt: -1, _id: 1 } as const;
+
+// ponytail: read-then-rewrite of the whole order, like the admin page; a concurrent admin save can interleave. Fine at this scale.
+const placeInGifting = async (productId: mongoose.Types.ObjectId, at?: number) => {
+  const current = await Product.find({ isGifting: true }).sort(GIFTING_SORT).select('_id').lean();
+  const ids = current.map((p) => p._id as mongoose.Types.ObjectId).filter((id) => !id.equals(productId));
+  ids.splice(at ?? ids.length, 0, productId); // past the end = last
+  await writeCollection('isGifting', 'giftingOrder', ids);
+  return Product.findById(productId).lean();
+};
+
+const findGiftbox = (id: string) => Product.findOne({ _id: id, isGifting: true });
+
+// GET /erp/giftboxes
+export const listGiftboxes = asyncHandler(async (req: Request, res: Response) => {
+  const parsed = itemListSchema.safeParse(req.query);
+  if (!parsed.success) return invalid(res, parsed.error);
+  const { page, limit, search } = parsed.data;
+  const filter: Record<string, unknown> = { isGifting: true };
+  if (search) filter.$or = [{ name: { $regex: escapeRegex(search), $options: 'i' } }, { 'variants.sku': { $regex: escapeRegex(search), $options: 'i' } }];
+
+  const [total, products] = await Promise.all([
+    Product.countDocuments(filter),
+    Product.find(filter).sort(GIFTING_SORT).skip((page - 1) * limit).limit(limit).lean(),
+  ]);
+  successResponse(res, 200, 'Giftboxes fetched', { giftboxes: products.map(giftboxSummary), pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
+});
+
+// GET /erp/giftboxes/:id — id is the website productId
+export const getGiftbox = asyncHandler(async (req: Request, res: Response) => {
+  if (badId(res, req.params.id, 'id')) return;
+  const product = await findGiftbox(req.params.id).lean();
+  if (!product) return fail(res, 404, 'Giftbox not found (no Gifting product with this productId)', 'NOT_FOUND', 'id');
+  successResponse(res, 200, 'Giftbox fetched', giftboxSummary(product));
+});
+
+// POST /erp/giftboxes — add an existing product to Gifting (it leaves New Arrivals, as on the admin page)
+export const addGiftbox = asyncHandler(async (req: Request, res: Response) => {
+  const parsed = giftboxAddSchema.safeParse(req.body);
+  if (!parsed.success) return invalid(res, parsed.error);
+  const { productId, sku: code, position: at } = parsed.data;
+
+  let product: any;
+  if (code) {
+    const hits = await findSku(code);
+    if (hits.length !== 1) return skuLookupError(res, code, hits.length);
+    product = hits[0].product;
+  } else {
+    product = await Product.findById(productId);
+    if (!product) return fail(res, 404, 'Product not found', 'NOT_FOUND', 'productId');
+  }
+  if (product.isGifting) {
+    return errorResponse(res, 409, 'This product is already in Gifting; use PATCH /erp/giftboxes/:id to move it', [
+      { code: 'ALREADY_IN_GIFTING', productId: String(product._id) },
+    ]);
+  }
+  successResponse(res, 201, 'Giftbox added', giftboxSummary(await placeInGifting(product._id, at)));
+});
+
+// PATCH /erp/giftboxes/:id — move within Gifting. Product details change through PATCH /erp/items/:sku.
+export const patchGiftbox = asyncHandler(async (req: Request, res: Response) => {
+  if (badId(res, req.params.id, 'id')) return;
+  const parsed = giftboxPatchSchema.safeParse(req.body);
+  if (!parsed.success) return invalid(res, parsed.error);
+  const product = await findGiftbox(req.params.id);
+  if (!product) return fail(res, 404, 'Giftbox not found (no Gifting product with this productId)', 'NOT_FOUND', 'id');
+  successResponse(res, 200, 'Giftbox updated', giftboxSummary(await placeInGifting(product._id, parsed.data.position)));
+});
+
+// DELETE /erp/giftboxes/:id — removes the product from Gifting only; the product stays in the catalogue.
+export const removeGiftbox = asyncHandler(async (req: Request, res: Response) => {
+  if (badId(res, req.params.id, 'id')) return;
+  const product = await findGiftbox(req.params.id);
+  if (!product) return fail(res, 404, 'Giftbox not found (no Gifting product with this productId)', 'NOT_FOUND', 'id');
+  const rest = await Product.find({ isGifting: true, _id: { $ne: product._id } }).sort(GIFTING_SORT).select('_id').lean();
+  await writeCollection('isGifting', 'giftingOrder', rest.map((p) => p._id as mongoose.Types.ObjectId));
+  successResponse(res, 200, 'Removed from Gifting', { productId: String(product._id), isGifting: false });
 });
 
 // ---------- images ----------
