@@ -499,6 +499,15 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
 // Replaces a whole collection (Gifting / New Arrivals) in one call; array order becomes the display order.
 // Gifting is exclusive: adding a product to Gifting removes it from New Arrivals,
 // and Gifting products are refused when saving New Arrivals.
+/** Makes `ids` the whole collection, in this order. Shared by the admin pages and the ERP Gifting API. */
+export const writeCollection = (flag: 'isGifting' | 'isNewArrival', orderField: 'giftingOrder' | 'newArrivalOrder', ids: mongoose.Types.ObjectId[]) => {
+  const exclusive = flag === 'isGifting' ? { isNewArrival: false, newArrivalOrder: 0 } : {};
+  return Product.bulkWrite([
+    { updateMany: { filter: { _id: { $nin: ids }, [flag]: true }, update: { $set: { [flag]: false, [orderField]: 0 } } } },
+    ...ids.map((_id, index) => ({ updateOne: { filter: { _id }, update: { $set: { [flag]: true, [orderField]: index, ...exclusive } } } })),
+  ]);
+};
+
 const setCollectionProducts = (flag: 'isGifting' | 'isNewArrival', orderField: 'giftingOrder' | 'newArrivalOrder') =>
   asyncHandler(async (req: Request, res: Response) => {
     const { productIds } = req.body;
@@ -513,12 +522,7 @@ const setCollectionProducts = (flag: 'isGifting' | 'isNewArrival', orderField: '
         return errorResponse(res, 400, `Already in Gifting (remove from Gifting first): ${conflicts.map(p => p.name).join(', ')}`);
       }
     }
-    const exclusive = flag === 'isGifting' ? { isNewArrival: false, newArrivalOrder: 0 } : {};
-
-    await Product.bulkWrite([
-      { updateMany: { filter: { _id: { $nin: ids }, [flag]: true }, update: { $set: { [flag]: false, [orderField]: 0 } } } },
-      ...ids.map((_id, index) => ({ updateOne: { filter: { _id }, update: { $set: { [flag]: true, [orderField]: index, ...exclusive } } } })),
-    ]);
+    await writeCollection(flag, orderField, ids);
 
     const products = await Product.find({ [flag]: true }).sort({ [orderField]: 1 });
     successResponse(res, 200, 'Collection updated successfully', products);

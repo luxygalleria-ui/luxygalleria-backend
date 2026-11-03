@@ -34,3 +34,12 @@ values:
   - key: imageSha256
     value: ''
     enabled: true
+  - key: brandName
+    value: ERP Test Brand - do not publish
+    enabled: true
+  - key: brandId
+    value: ''
+    enabled: true
+  - key: giftboxId
+    value: ''
+    enabled: true

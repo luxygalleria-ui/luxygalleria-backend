@@ -1,14 +1,14 @@
 $kind: collection
 name: Luxy Galleria ERP API
 description: |-
-  Machine-to-machine ERP API for luxygalleria.com, generated from `luxy-backend` source (`src/routes/erpRoutes.ts`, `src/controllers/erpController.ts`, `src/middlewares/erpAuth.ts`). Full specification: `docs/ERP-INTEGRATION-API-SPEC.md` (version 2.1).
+  Machine-to-machine ERP API for luxygalleria.com, generated from `luxy-backend` source (`src/routes/erpRoutes.ts`, `src/controllers/erpController.ts`, `src/middlewares/erpAuth.ts`). Full specification: `docs/ERP-INTEGRATION-API-SPEC.md` (version 2.2).
 
   **Setup**
   1. Import this collection and an environment: **Luxy Galleria ERP - Local / Staging** for all testing, *Luxy Galleria ERP - Production* only for approved production reads. Select it (top right).
   2. Set `erpKeyId` and `erpSecret` (Current value only; do not sync or share the secret). They are issued by Luxy Galleria through a secure channel.
-  3. Set `itemSku`, `categoryName`, `orderId` as needed. Your computer clock must be within 5 minutes of real time.
+  3. Set `itemSku`, `categoryName`, `orderId`, `brandName` as needed (`brandId` and `giftboxId` are filled in by requests 11 and 15). Your computer clock must be within 5 minutes of real time.
 
-  **Run order:** `0. Health check`, then 1–9, then *Write checks (local / staging only)*, then *Negative checks*. Write requests change data: never run them against production without an approved test SKU and test order.
+  **Run order:** `0. Health check`, then 1–18, then *Write checks (local / staging only)*, then *Negative checks*. Write requests change data: never run them against production without an approved test SKU and test order.
 
   **Authentication** — every request is HMAC-signed by the collection pre-request script; no manual headers are needed:
   - `X-ERP-Key-Id`: your key id

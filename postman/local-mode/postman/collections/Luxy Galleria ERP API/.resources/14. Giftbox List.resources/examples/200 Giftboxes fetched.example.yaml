@@ -1,0 +1,84 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/erp/giftboxes?page=1&limit=20"
+  method: GET
+  queryParams:
+    page: "1"
+    limit: "20"
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    Content-Type: application/json; charset=utf-8
+  body:
+    type: json
+    content: |-
+      {
+        "success": true,
+        "message": "Giftboxes fetched",
+        "data": {
+          "giftboxes": [
+            {
+              "productId": "6ae9c44baa53391159c27a09",
+              "name": "Oud Gift Box",
+              "description": "Hamper with three signature items.",
+              "category": "Gift Sets",
+              "images": [
+                "https://res.cloudinary.com/demo/image/upload/GB-OUD-01.jpg"
+              ],
+              "status": "In Stock",
+              "updatedAt": "2026-11-03T11:23:55.461Z",
+              "variants": [
+                {
+                  "variantId": "6ae9c44baa53391159c27a0a",
+                  "sku": "GB-OUD-01",
+                  "name": null,
+                  "size": "1 box",
+                  "flavor": "Default",
+                  "offerPrice": 2499,
+                  "actualPrice": 2999,
+                  "stock": 12,
+                  "weight": 0.8,
+                  "image": null
+                }
+              ],
+              "position": 0,
+              "brandId": "6ae9c44baa53391159c27a02"
+            },
+            {
+              "productId": "6ae9c44baa53391159c27a04",
+              "name": "Rose Gift Box",
+              "description": "Hamper with three signature items.",
+              "category": "Gift Sets",
+              "images": [
+                "https://res.cloudinary.com/demo/image/upload/GB-ROSE-01.jpg"
+              ],
+              "status": "In Stock",
+              "updatedAt": "2026-11-03T11:23:55.461Z",
+              "variants": [
+                {
+                  "variantId": "6ae9c44baa53391159c27a05",
+                  "sku": "GB-ROSE-01",
+                  "name": null,
+                  "size": "1 box",
+                  "flavor": "Default",
+                  "offerPrice": 2499,
+                  "actualPrice": 2999,
+                  "stock": 12,
+                  "weight": 0.8,
+                  "image": null
+                }
+              ],
+              "position": 1,
+              "brandId": "6ae9c44baa53391159c27a02"
+            }
+          ],
+          "pagination": {
+            "page": 1,
+            "limit": 20,
+            "total": 2,
+            "pages": 1
+          }
+        }
+      }
+order: 1000

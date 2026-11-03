@@ -1,0 +1,21 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/erp/giftboxes/{{giftboxId}}"
+  method: DELETE
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    Content-Type: application/json; charset=utf-8
+  body:
+    type: json
+    content: |-
+      {
+        "success": true,
+        "message": "Removed from Gifting",
+        "data": {
+          "productId": "6ae9c44baa53391159c27a09",
+          "isGifting": false
+        }
+      }
+order: 1000

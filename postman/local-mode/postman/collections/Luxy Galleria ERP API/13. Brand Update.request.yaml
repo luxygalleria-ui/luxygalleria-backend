@@ -1,0 +1,35 @@
+$kind: http-request
+description: |-
+  **PATCH {{baseUrl}}/erp/brands/{id}** — change only the supplied fields: `name`, `logo`, `status`, `displayOrder` (rules as in *11. Brand Create*). At least one field.
+
+  - Renaming to another brand's name (ignoring case) → `409 DUPLICATE_BRAND`.
+  - There is no delete: products keep their `brandId`. To retire a brand set `status` to `INACTIVE`.
+  - Response adds `updatedFields`.
+
+  **Write request — local / staging only.** Never run against production without approval.
+
+  *Added in API version 2.2. Verified by a local Postman CLI run (spec Section 15.8); not yet run against production.*
+url: "{{baseUrl}}/erp/brands/{{brandId}}"
+method: PATCH
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "status": "INACTIVE",
+      "displayOrder": 999
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200', function () {
+        pm.expect(pm.response.code).to.be.oneOf([200]);
+      });
+      pm.test('data matches the documented schema', function () {
+        pm.response.to.have.jsonSchema({ type: 'object', required: ['success', 'data'], properties: { success: { const: true }, data: { type: 'object', required: ['brandId', 'name', 'logo', 'status', 'displayOrder'], properties: { brandId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, name: { type: 'string' }, logo: { type: ['string', 'null'] }, status: { enum: ['ACTIVE', 'INACTIVE'] }, displayOrder: { type: 'integer' } } } } });
+      });
+      pm.test('updatedFields lists the change', function () { pm.expect(pm.response.json().data.updatedFields).to.include('displayOrder'); });
+    language: text/javascript
+examples: ./.resources/13. Brand Update.resources/examples
+order: 14000

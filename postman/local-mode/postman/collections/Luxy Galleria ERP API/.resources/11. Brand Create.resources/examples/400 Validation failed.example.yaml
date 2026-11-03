@@ -1,0 +1,39 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/erp/brands"
+  method: POST
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "name": "{{brandName}}",
+        "status": "INACTIVE",
+        "displayOrder": 999
+      }
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    Content-Type: application/json; charset=utf-8
+  body:
+    type: json
+    content: |-
+      {
+        "success": false,
+        "message": "Validation failed",
+        "errors": [
+          {
+            "field": "name",
+            "code": "VALIDATION_ERROR",
+            "message": "String must contain at least 1 character(s)"
+          },
+          {
+            "field": "status",
+            "code": "VALIDATION_ERROR",
+            "message": "Invalid enum value. Expected 'ACTIVE' | 'INACTIVE', received 'DELETED'"
+          }
+        ]
+      }
+order: 3000

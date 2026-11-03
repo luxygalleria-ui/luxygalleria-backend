@@ -1,0 +1,17 @@
+$kind: http-request
+description: Expects `404 NOT_FOUND`. Read-only; safe to run in any environment.
+url: "{{baseUrl}}/erp/giftboxes/000000000000000000000000"
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 404', function () {
+        pm.expect(pm.response.code).to.be.oneOf([404]);
+      });
+      pm.test('error code NOT_FOUND', function () {
+        const body = pm.response.json();
+        pm.expect(body.success).to.equal(false);
+        pm.expect(body.errors[0].code).to.equal('NOT_FOUND');
+      });
+    language: text/javascript
+order: 11000

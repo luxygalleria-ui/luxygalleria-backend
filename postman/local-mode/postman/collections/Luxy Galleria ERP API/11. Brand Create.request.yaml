@@ -1,0 +1,43 @@
+$kind: http-request
+description: |-
+  **POST {{baseUrl}}/erp/brands** — create a brand.
+
+  | Field | Type | Required | Rules |
+  |---|---|---|---|
+  | `name` | string | **Yes** | 1–100 characters, trimmed. Must not match an existing brand name, ignoring case → else `409 DUPLICATE_BRAND` (the existing `brandId` is returned) |
+  | `logo` | string | No | `https://` URL (upload with *6. Image Upload* first), or `""` for none. Default `""` |
+  | `status` | string | No | `ACTIVE` (default; shown on the storefront) or `INACTIVE` (hidden) |
+  | `displayOrder` | integer | No | 0–100000, default 0; lower shows first |
+
+  Unknown fields → `400`. This request creates the brand `INACTIVE` so it never appears on the storefront. Re-running it returns `409 DUPLICATE_BRAND`, which is accepted here; `brandId` is stored either way.
+
+  **Write request — local / staging only.** Never run against production without approval.
+
+  *Added in API version 2.2. Verified by a local Postman CLI run (spec Section 15.8); not yet run against production.*
+url: "{{baseUrl}}/erp/brands"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "name": "{{brandName}}",
+      "status": "INACTIVE",
+      "displayOrder": 999
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 201 or 409', function () {
+        pm.expect(pm.response.code).to.be.oneOf([201, 409]);
+      });
+      const body = pm.response.json();
+      const id = pm.response.code === 201 ? body.data.brandId : body.errors[0].brandId;
+      if (pm.response.code === 409) pm.test('duplicate refused with DUPLICATE_BRAND', function () { pm.expect(body.errors[0].code).to.equal('DUPLICATE_BRAND'); });
+      else pm.test('data matches the documented schema', function () { pm.response.to.have.jsonSchema({ type: 'object', required: ['data'], properties: { data: { type: 'object', required: ['brandId', 'name', 'logo', 'status', 'displayOrder'], properties: { brandId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, name: { type: 'string' }, logo: { type: ['string', 'null'] }, status: { enum: ['ACTIVE', 'INACTIVE'] }, displayOrder: { type: 'integer' } } } } }); });
+      pm.test('brandId returned', function () { pm.expect(id).to.match(/^[a-f0-9]{24}$/); });
+      pm.environment.set('brandId', id);
+    language: text/javascript
+examples: ./.resources/11. Brand Create.resources/examples
+order: 12000

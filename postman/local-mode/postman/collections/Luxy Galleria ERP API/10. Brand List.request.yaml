@@ -1,0 +1,25 @@
+$kind: http-request
+description: |-
+  **GET {{baseUrl}}/erp/brands** — website brands, in storefront order (`displayOrder`, then name).
+
+  - Query: `page` (≥1), `limit` (1–100, default 50), optional `search` (≤100 characters; case-insensitive *contains* on name), optional `status` (`ACTIVE` | `INACTIVE`). Unknown parameters → `400`.
+  - Read-only. Does not set `brandId`: for production reads, copy a `brandId` from here into the environment by hand.
+
+  *Added in API version 2.2. Verified by a local Postman CLI run (spec Section 15.8); not yet run against production.*
+url: "{{baseUrl}}/erp/brands?page=1&limit=20"
+method: GET
+queryParams:
+  page: "1"
+  limit: "20"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200', function () {
+        pm.expect(pm.response.code).to.be.oneOf([200]);
+      });
+      pm.test('data matches the documented schema', function () {
+        pm.response.to.have.jsonSchema({ type: 'object', required: ['success', 'data'], properties: { success: { const: true }, data: { type: 'object', required: ['brands', 'pagination'], properties: { brands: { type: 'array', items: { type: 'object', required: ['brandId', 'name', 'logo', 'status', 'displayOrder'], properties: { brandId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, name: { type: 'string' }, logo: { type: ['string', 'null'] }, status: { enum: ['ACTIVE', 'INACTIVE'] }, displayOrder: { type: 'integer' } } } }, pagination: { type: 'object', required: ['page', 'limit', 'total', 'pages'] } } } } });
+      });
+    language: text/javascript
+examples: ./.resources/10. Brand List.resources/examples
+order: 11000

@@ -1,0 +1,36 @@
+$kind: http-request
+description: |-
+  **PATCH {{baseUrl}}/erp/giftboxes/{id}** — move a giftbox within Gifting.
+
+  | Field | Type | Required | Rules |
+  |---|---|---|---|
+  | `position` | integer | **Yes** | 0–100000; 0 = first; past the end = last |
+
+  No other fields (`400`): change name, price, images etc. with *2. Item Edit*. Other giftboxes shift to make room; positions are always 0…n-1.
+
+  **Write request — local / staging only.** Never run against production without approval.
+
+  *Added in API version 2.2. Verified by a local Postman CLI run (spec Section 15.8); not yet run against production.*
+url: "{{baseUrl}}/erp/giftboxes/{{giftboxId}}"
+method: PATCH
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "position": 0
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200', function () {
+        pm.expect(pm.response.code).to.be.oneOf([200]);
+      });
+      pm.test('data matches the documented schema', function () {
+        pm.response.to.have.jsonSchema({ type: 'object', required: ['success', 'data'], properties: { success: { const: true }, data: { type: 'object', required: ['productId', 'name', 'images', 'variants', 'position', 'brandId'], properties: { productId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, position: { type: 'integer', minimum: 0 }, brandId: { type: ['string', 'null'] }, variants: { type: 'array', items: { type: 'object', required: ['variantId', 'sku', 'stock'] } } } } } });
+      });
+      pm.test('moved to position 0', function () { pm.expect(pm.response.json().data.position).to.equal(0); });
+    language: text/javascript
+examples: ./.resources/17. Giftbox Update (position).resources/examples
+order: 18000

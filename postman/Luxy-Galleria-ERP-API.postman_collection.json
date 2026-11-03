@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Luxy Galleria ERP API",
-    "description": "Machine-to-machine ERP API for luxygalleria.com, generated from `luxy-backend` source (`src/routes/erpRoutes.ts`, `src/controllers/erpController.ts`, `src/middlewares/erpAuth.ts`). Full specification: `docs/ERP-INTEGRATION-API-SPEC.md` (version 2.1).\n\n**Setup**\n1. Import this collection and an environment: **Luxy Galleria ERP - Local / Staging** for all testing, *Luxy Galleria ERP - Production* only for approved production reads. Select it (top right).\n2. Set `erpKeyId` and `erpSecret` (Current value only; do not sync or share the secret). They are issued by Luxy Galleria through a secure channel.\n3. Set `itemSku`, `categoryName`, `orderId` as needed. Your computer clock must be within 5 minutes of real time.\n\n**Run order:** `0. Health check`, then 1–9, then *Write checks (local / staging only)*, then *Negative checks*. Write requests change data: never run them against production without an approved test SKU and test order.\n\n**Authentication** — every request is HMAC-signed by the collection pre-request script; no manual headers are needed:\n- `X-ERP-Key-Id`: your key id\n- `X-ERP-Timestamp`: Unix seconds\n- `X-ERP-Signature`: hex HMAC-SHA256(secret, `timestamp.METHOD.pathWithQuery.sha256hex(body)`)\n\n`pathWithQuery` is e.g. `/api/v1/erp/orders?page=1&limit=10`. The body is the exact raw JSON sent, empty for GET, or the image file bytes for Image Upload (see that request).\n\n| HTTP | message | Cause |\n|---|---|---|\n| 401 | `Invalid ERP credentials` | `X-ERP-Key-Id` missing or not configured on the server |\n| 401 | `X-ERP-Timestamp missing or more than 300s from server time` | Computer clock wrong or request re-sent much later |\n| 401 | `Invalid X-ERP-Signature` | Wrong secret, or body/path changed after signing |\n| 401 | `Replayed request: …` | Same signature sent twice (re-send generates a new one automatically) |\n| 503 | `ERP integration is not configured` | Server has no ERP keys |\n| 429 | `Too many ERP requests…` | More than 600 requests/minute |\n\nResponses: `{ \"success\": true, \"message\": \"…\", \"data\": … }` or `{ \"success\": false, \"message\": \"…\", \"errors\": [{ \"code\": \"…\", \"field\": \"…\" }] }`.",
+    "description": "Machine-to-machine ERP API for luxygalleria.com, generated from `luxy-backend` source (`src/routes/erpRoutes.ts`, `src/controllers/erpController.ts`, `src/middlewares/erpAuth.ts`). Full specification: `docs/ERP-INTEGRATION-API-SPEC.md` (version 2.2).\n\n**Setup**\n1. Import this collection and an environment: **Luxy Galleria ERP - Local / Staging** for all testing, *Luxy Galleria ERP - Production* only for approved production reads. Select it (top right).\n2. Set `erpKeyId` and `erpSecret` (Current value only; do not sync or share the secret). They are issued by Luxy Galleria through a secure channel.\n3. Set `itemSku`, `categoryName`, `orderId`, `brandName` as needed (`brandId` and `giftboxId` are filled in by requests 11 and 15). Your computer clock must be within 5 minutes of real time.\n\n**Run order:** `0. Health check`, then 1–18, then *Write checks (local / staging only)*, then *Negative checks*. Write requests change data: never run them against production without an approved test SKU and test order.\n\n**Authentication** — every request is HMAC-signed by the collection pre-request script; no manual headers are needed:\n- `X-ERP-Key-Id`: your key id\n- `X-ERP-Timestamp`: Unix seconds\n- `X-ERP-Signature`: hex HMAC-SHA256(secret, `timestamp.METHOD.pathWithQuery.sha256hex(body)`)\n\n`pathWithQuery` is e.g. `/api/v1/erp/orders?page=1&limit=10`. The body is the exact raw JSON sent, empty for GET, or the image file bytes for Image Upload (see that request).\n\n| HTTP | message | Cause |\n|---|---|---|\n| 401 | `Invalid ERP credentials` | `X-ERP-Key-Id` missing or not configured on the server |\n| 401 | `X-ERP-Timestamp missing or more than 300s from server time` | Computer clock wrong or request re-sent much later |\n| 401 | `Invalid X-ERP-Signature` | Wrong secret, or body/path changed after signing |\n| 401 | `Replayed request: …` | Same signature sent twice (re-send generates a new one automatically) |\n| 503 | `ERP integration is not configured` | Server has no ERP keys |\n| 429 | `Too many ERP requests…` | More than 600 requests/minute |\n\nResponses: `{ \"success\": true, \"message\": \"…\", \"data\": … }` or `{ \"success\": false, \"message\": \"…\", \"errors\": [{ \"code\": \"…\", \"field\": \"…\" }] }`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -1073,6 +1073,1155 @@
       }
     },
     {
+      "name": "10. Brand List",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () {",
+              "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+              "});",
+              "pm.test('data matches the documented schema', function () {",
+              "  pm.response.to.have.jsonSchema({ type: 'object', required: ['success', 'data'], properties: { success: { const: true }, data: { type: 'object', required: ['brands', 'pagination'], properties: { brands: { type: 'array', items: { type: 'object', required: ['brandId', 'name', 'logo', 'status', 'displayOrder'], properties: { brandId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, name: { type: 'string' }, logo: { type: ['string', 'null'] }, status: { enum: ['ACTIVE', 'INACTIVE'] }, displayOrder: { type: 'integer' } } } }, pagination: { type: 'object', required: ['page', 'limit', 'total', 'pages'] } } } } });",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/erp/brands?page=1&limit=20",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "erp",
+            "brands"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "20"
+            }
+          ]
+        },
+        "description": "**GET {{baseUrl}}/erp/brands** — website brands, in storefront order (`displayOrder`, then name).\n\n- Query: `page` (≥1), `limit` (1–100, default 50), optional `search` (≤100 characters; case-insensitive *contains* on name), optional `status` (`ACTIVE` | `INACTIVE`). Unknown parameters → `400`.\n- Read-only. Does not set `brandId`: for production reads, copy a `brandId` from here into the environment by hand.\n\n*Added in API version 2.2. Verified by a local Postman CLI run (spec Section 15.8); not yet run against production.*"
+      },
+      "response": [
+        {
+          "name": "200 Brands fetched (search=noir)",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/erp/brands?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "brands"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": true,\n  \"message\": \"Brands fetched\",\n  \"data\": {\n    \"brands\": [\n      {\n        \"brandId\": \"6ae9c44baa53391159c27a0e\",\n        \"name\": \"Maison Noir\",\n        \"logo\": \"https://res.cloudinary.com/demo/image/upload/maison-noir.png\",\n        \"status\": \"ACTIVE\",\n        \"displayOrder\": 2,\n        \"createdAt\": \"2026-11-03T11:23:55.400Z\",\n        \"updatedAt\": \"2026-11-03T11:23:55.400Z\"\n      }\n    ],\n    \"pagination\": {\n      \"page\": 1,\n      \"limit\": 20,\n      \"total\": 1,\n      \"pages\": 1\n    }\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "11. Brand Create",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201 or 409', function () {",
+              "  pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
+              "});",
+              "const body = pm.response.json();",
+              "const id = pm.response.code === 201 ? body.data.brandId : body.errors[0].brandId;",
+              "if (pm.response.code === 409) pm.test('duplicate refused with DUPLICATE_BRAND', function () { pm.expect(body.errors[0].code).to.equal('DUPLICATE_BRAND'); });",
+              "else pm.test('data matches the documented schema', function () { pm.response.to.have.jsonSchema({ type: 'object', required: ['data'], properties: { data: { type: 'object', required: ['brandId', 'name', 'logo', 'status', 'displayOrder'], properties: { brandId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, name: { type: 'string' }, logo: { type: ['string', 'null'] }, status: { enum: ['ACTIVE', 'INACTIVE'] }, displayOrder: { type: 'integer' } } } } }); });",
+              "pm.test('brandId returned', function () { pm.expect(id).to.match(/^[a-f0-9]{24}$/); });",
+              "pm.environment.set('brandId', id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/erp/brands",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "erp",
+            "brands"
+          ]
+        },
+        "description": "**POST {{baseUrl}}/erp/brands** — create a brand.\n\n| Field | Type | Required | Rules |\n|---|---|---|---|\n| `name` | string | **Yes** | 1–100 characters, trimmed. Must not match an existing brand name, ignoring case → else `409 DUPLICATE_BRAND` (the existing `brandId` is returned) |\n| `logo` | string | No | `https://` URL (upload with *6. Image Upload* first), or `\"\"` for none. Default `\"\"` |\n| `status` | string | No | `ACTIVE` (default; shown on the storefront) or `INACTIVE` (hidden) |\n| `displayOrder` | integer | No | 0–100000, default 0; lower shows first |\n\nUnknown fields → `400`. This request creates the brand `INACTIVE` so it never appears on the storefront. Re-running it returns `409 DUPLICATE_BRAND`, which is accepted here; `brandId` is stored either way.\n\n**Write request — local / staging only.** Never run against production without approval.\n\n*Added in API version 2.2. Verified by a local Postman CLI run (spec Section 15.8); not yet run against production.*",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"{{brandName}}\",\n  \"status\": \"INACTIVE\",\n  \"displayOrder\": 999\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "201 Brand created",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/erp/brands",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "brands"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{brandName}}\",\n  \"status\": \"INACTIVE\",\n  \"displayOrder\": 999\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "Created",
+          "code": 201,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": true,\n  \"message\": \"Brand created\",\n  \"data\": {\n    \"brandId\": \"6ae9c44baa53391159c27a0e\",\n    \"name\": \"Maison Noir\",\n    \"logo\": \"https://res.cloudinary.com/demo/image/upload/maison-noir.png\",\n    \"status\": \"ACTIVE\",\n    \"displayOrder\": 2,\n    \"createdAt\": \"2026-11-03T11:23:55.400Z\",\n    \"updatedAt\": \"2026-11-03T11:23:55.400Z\"\n  }\n}"
+        },
+        {
+          "name": "409 DUPLICATE_BRAND (same name, any case)",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/erp/brands",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "brands"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{brandName}}\",\n  \"status\": \"INACTIVE\",\n  \"displayOrder\": 999\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "Conflict",
+          "code": 409,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": false,\n  \"message\": \"A brand with this name already exists\",\n  \"errors\": [\n    {\n      \"code\": \"DUPLICATE_BRAND\",\n      \"field\": \"name\",\n      \"brandId\": \"6ae9c44baa53391159c27a0e\"\n    }\n  ]\n}"
+        },
+        {
+          "name": "400 Validation failed",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/erp/brands",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "brands"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{brandName}}\",\n  \"status\": \"INACTIVE\",\n  \"displayOrder\": 999\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "Bad Request",
+          "code": 400,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"field\": \"name\",\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"String must contain at least 1 character(s)\"\n    },\n    {\n      \"field\": \"status\",\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"Invalid enum value. Expected 'ACTIVE' | 'INACTIVE', received 'DELETED'\"\n    }\n  ]\n}"
+        }
+      ]
+    },
+    {
+      "name": "12. Brand Details",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () {",
+              "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+              "});",
+              "pm.test('data matches the documented schema', function () {",
+              "  pm.response.to.have.jsonSchema({ type: 'object', required: ['success', 'data'], properties: { success: { const: true }, data: { type: 'object', required: ['brandId', 'name', 'logo', 'status', 'displayOrder'], properties: { brandId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, name: { type: 'string' }, logo: { type: ['string', 'null'] }, status: { enum: ['ACTIVE', 'INACTIVE'] }, displayOrder: { type: 'integer' } } } } });",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/erp/brands/{{brandId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "erp",
+            "brands",
+            "{{brandId}}"
+          ]
+        },
+        "description": "**GET {{baseUrl}}/erp/brands/{id}** — one brand by its 24-hex `brandId`.\n\n- Errors: `400` malformed id; `404 NOT_FOUND`.\n- Read-only.\n\n*Added in API version 2.2. Verified by a local Postman CLI run (spec Section 15.8); not yet run against production.*"
+      },
+      "response": [
+        {
+          "name": "200 Brand fetched",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/erp/brands/{{brandId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "brands",
+                "{{brandId}}"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": true,\n  \"message\": \"Brand fetched\",\n  \"data\": {\n    \"brandId\": \"6ae9c44baa53391159c27a0e\",\n    \"name\": \"Maison Noir\",\n    \"logo\": \"https://res.cloudinary.com/demo/image/upload/maison-noir.png\",\n    \"status\": \"ACTIVE\",\n    \"displayOrder\": 2,\n    \"createdAt\": \"2026-11-03T11:23:55.400Z\",\n    \"updatedAt\": \"2026-11-03T11:23:55.400Z\"\n  }\n}"
+        },
+        {
+          "name": "404 Brand not found",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/erp/brands/{{brandId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "brands",
+                "{{brandId}}"
+              ]
+            }
+          },
+          "status": "Not Found",
+          "code": 404,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": false,\n  \"message\": \"Brand not found\",\n  \"errors\": [\n    {\n      \"code\": \"NOT_FOUND\",\n      \"field\": \"id\"\n    }\n  ]\n}"
+        },
+        {
+          "name": "400 Malformed id",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/erp/brands/{{brandId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "brands",
+                "{{brandId}}"
+              ]
+            }
+          },
+          "status": "Bad Request",
+          "code": 400,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": false,\n  \"message\": \"id must be a 24-character hex id\",\n  \"errors\": [\n    {\n      \"code\": \"VALIDATION_ERROR\",\n      \"field\": \"id\"\n    }\n  ]\n}"
+        }
+      ]
+    },
+    {
+      "name": "13. Brand Update",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () {",
+              "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+              "});",
+              "pm.test('data matches the documented schema', function () {",
+              "  pm.response.to.have.jsonSchema({ type: 'object', required: ['success', 'data'], properties: { success: { const: true }, data: { type: 'object', required: ['brandId', 'name', 'logo', 'status', 'displayOrder'], properties: { brandId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, name: { type: 'string' }, logo: { type: ['string', 'null'] }, status: { enum: ['ACTIVE', 'INACTIVE'] }, displayOrder: { type: 'integer' } } } } });",
+              "});",
+              "pm.test('updatedFields lists the change', function () { pm.expect(pm.response.json().data.updatedFields).to.include('displayOrder'); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/erp/brands/{{brandId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "erp",
+            "brands",
+            "{{brandId}}"
+          ]
+        },
+        "description": "**PATCH {{baseUrl}}/erp/brands/{id}** — change only the supplied fields: `name`, `logo`, `status`, `displayOrder` (rules as in *11. Brand Create*). At least one field.\n\n- Renaming to another brand's name (ignoring case) → `409 DUPLICATE_BRAND`.\n- There is no delete: products keep their `brandId`. To retire a brand set `status` to `INACTIVE`.\n- Response adds `updatedFields`.\n\n**Write request — local / staging only.** Never run against production without approval.\n\n*Added in API version 2.2. Verified by a local Postman CLI run (spec Section 15.8); not yet run against production.*",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"INACTIVE\",\n  \"displayOrder\": 999\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "200 Brand updated",
+          "originalRequest": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/erp/brands/{{brandId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "brands",
+                "{{brandId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"INACTIVE\",\n  \"displayOrder\": 999\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": true,\n  \"message\": \"Brand updated\",\n  \"data\": {\n    \"brandId\": \"6ae9c44baa53391159c27a0e\",\n    \"name\": \"Maison Noir\",\n    \"logo\": \"https://res.cloudinary.com/demo/image/upload/maison-noir.png\",\n    \"status\": \"INACTIVE\",\n    \"displayOrder\": 5,\n    \"createdAt\": \"2026-11-03T11:23:55.400Z\",\n    \"updatedAt\": \"2026-11-03T11:23:55.444Z\",\n    \"updatedFields\": [\n      \"status\",\n      \"displayOrder\"\n    ]\n  }\n}"
+        },
+        {
+          "name": "409 DUPLICATE_BRAND (rename to an existing name)",
+          "originalRequest": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/erp/brands/{{brandId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "brands",
+                "{{brandId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"INACTIVE\",\n  \"displayOrder\": 999\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "Conflict",
+          "code": 409,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": false,\n  \"message\": \"A brand with this name already exists\",\n  \"errors\": [\n    {\n      \"code\": \"DUPLICATE_BRAND\",\n      \"field\": \"name\",\n      \"brandId\": \"6ae9c44baa53391159c27a02\"\n    }\n  ]\n}"
+        },
+        {
+          "name": "400 Empty body",
+          "originalRequest": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/erp/brands/{{brandId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "brands",
+                "{{brandId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"INACTIVE\",\n  \"displayOrder\": 999\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "Bad Request",
+          "code": 400,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"send at least one field to change\"\n    }\n  ]\n}"
+        }
+      ]
+    },
+    {
+      "name": "14. Giftbox List",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () {",
+              "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+              "});",
+              "pm.test('data matches the documented schema', function () {",
+              "  pm.response.to.have.jsonSchema({ type: 'object', required: ['success', 'data'], properties: { success: { const: true }, data: { type: 'object', required: ['giftboxes', 'pagination'], properties: { giftboxes: { type: 'array', items: { type: 'object', required: ['productId', 'name', 'images', 'variants', 'position', 'brandId'], properties: { productId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, position: { type: 'integer', minimum: 0 }, brandId: { type: ['string', 'null'] }, variants: { type: 'array', items: { type: 'object', required: ['variantId', 'sku', 'stock'] } } } } }, pagination: { type: 'object', required: ['page', 'limit', 'total', 'pages'] } } } } });",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/erp/giftboxes?page=1&limit=20",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "erp",
+            "giftboxes"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "20"
+            }
+          ]
+        },
+        "description": "**GET {{baseUrl}}/erp/giftboxes** — the Gifting collection in storefront order.\n\nA giftbox is an existing website product that is in the storefront **Gifting** collection (`/gifting`), at a `position` (0 = first). Its product details, variants, prices and stock are managed with the Item endpoints (1–3, 8, 9); these requests only manage membership and order, like the admin Gifting page. `id` in the path is the website `productId`.\n\n- Query: `page` (≥1), `limit` (1–100, default 50), optional `search` (≤100 characters; case-insensitive on product name or SKU). Unknown parameters → `400`.\n- Each row is the Item List row plus `position` and `brandId`.\n- Read-only. Does not set `giftboxId`: for production reads, copy a `productId` from here into `giftboxId` by hand.\n\n*Added in API version 2.2. Verified by a local Postman CLI run (spec Section 15.8); not yet run against production.*"
+      },
+      "response": [
+        {
+          "name": "200 Giftboxes fetched",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/erp/giftboxes?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "giftboxes"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": true,\n  \"message\": \"Giftboxes fetched\",\n  \"data\": {\n    \"giftboxes\": [\n      {\n        \"productId\": \"6ae9c44baa53391159c27a09\",\n        \"name\": \"Oud Gift Box\",\n        \"description\": \"Hamper with three signature items.\",\n        \"category\": \"Gift Sets\",\n        \"images\": [\n          \"https://res.cloudinary.com/demo/image/upload/GB-OUD-01.jpg\"\n        ],\n        \"status\": \"In Stock\",\n        \"updatedAt\": \"2026-11-03T11:23:55.461Z\",\n        \"variants\": [\n          {\n            \"variantId\": \"6ae9c44baa53391159c27a0a\",\n            \"sku\": \"GB-OUD-01\",\n            \"name\": null,\n            \"size\": \"1 box\",\n            \"flavor\": \"Default\",\n            \"offerPrice\": 2499,\n            \"actualPrice\": 2999,\n            \"stock\": 12,\n            \"weight\": 0.8,\n            \"image\": null\n          }\n        ],\n        \"position\": 0,\n        \"brandId\": \"6ae9c44baa53391159c27a02\"\n      },\n      {\n        \"productId\": \"6ae9c44baa53391159c27a04\",\n        \"name\": \"Rose Gift Box\",\n        \"description\": \"Hamper with three signature items.\",\n        \"category\": \"Gift Sets\",\n        \"images\": [\n          \"https://res.cloudinary.com/demo/image/upload/GB-ROSE-01.jpg\"\n        ],\n        \"status\": \"In Stock\",\n        \"updatedAt\": \"2026-11-03T11:23:55.461Z\",\n        \"variants\": [\n          {\n            \"variantId\": \"6ae9c44baa53391159c27a05\",\n            \"sku\": \"GB-ROSE-01\",\n            \"name\": null,\n            \"size\": \"1 box\",\n            \"flavor\": \"Default\",\n            \"offerPrice\": 2499,\n            \"actualPrice\": 2999,\n            \"stock\": 12,\n            \"weight\": 0.8,\n            \"image\": null\n          }\n        ],\n        \"position\": 1,\n        \"brandId\": \"6ae9c44baa53391159c27a02\"\n      }\n    ],\n    \"pagination\": {\n      \"page\": 1,\n      \"limit\": 20,\n      \"total\": 2,\n      \"pages\": 1\n    }\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "15. Giftbox Add",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201 or 409', function () {",
+              "  pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
+              "});",
+              "const body = pm.response.json();",
+              "const id = pm.response.code === 201 ? body.data.productId : body.errors[0].productId;",
+              "if (pm.response.code === 409) pm.test('duplicate refused with ALREADY_IN_GIFTING', function () { pm.expect(body.errors[0].code).to.equal('ALREADY_IN_GIFTING'); });",
+              "else pm.test('data matches the documented schema', function () { pm.response.to.have.jsonSchema({ type: 'object', required: ['data'], properties: { data: { type: 'object', required: ['productId', 'name', 'images', 'variants', 'position', 'brandId'], properties: { productId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, position: { type: 'integer', minimum: 0 }, brandId: { type: ['string', 'null'] }, variants: { type: 'array', items: { type: 'object', required: ['variantId', 'sku', 'stock'] } } } } } }); });",
+              "pm.environment.set('giftboxId', id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/erp/giftboxes",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "erp",
+            "giftboxes"
+          ]
+        },
+        "description": "**POST {{baseUrl}}/erp/giftboxes** — add an existing product to Gifting.\n\nA giftbox is an existing website product that is in the storefront **Gifting** collection (`/gifting`), at a `position` (0 = first). Its product details, variants, prices and stock are managed with the Item endpoints (1–3, 8, 9); these requests only manage membership and order, like the admin Gifting page. `id` in the path is the website `productId`.\n\n| Field | Type | Required | Rules |\n|---|---|---|---|\n| `sku` | string | One of `sku` / `productId` | SKU of any variant of the product (1–64 characters, exact) |\n| `productId` | string | One of `sku` / `productId` | 24-hex website product id |\n| `position` | integer | No | 0–100000; 0 = first. Omitted or past the end = last |\n\n- Like the admin page, Gifting is exclusive: the product leaves New Arrivals.\n- Already in Gifting → `409 ALREADY_IN_GIFTING` (accepted here so re-runs pass; `giftboxId` is stored either way). Unknown SKU/product → `404`; SKU on two variants → `409 DUPLICATE_SKU`.\n- This request uses the test item from *1. Item Add*; it **puts that product on the live /gifting page** of the target server.\n\n**Write request — local / staging only.** Never run against production without approval.\n\n*Added in API version 2.2. Verified by a local Postman CLI run (spec Section 15.8); not yet run against production.*",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sku\": \"{{itemSku}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "201 Giftbox added (sku, position 0)",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/erp/giftboxes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "giftboxes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{itemSku}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "Created",
+          "code": 201,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": true,\n  \"message\": \"Giftbox added\",\n  \"data\": {\n    \"productId\": \"6ae9c44baa53391159c27a09\",\n    \"name\": \"Oud Gift Box\",\n    \"description\": \"Hamper with three signature items.\",\n    \"category\": \"Gift Sets\",\n    \"images\": [\n      \"https://res.cloudinary.com/demo/image/upload/GB-OUD-01.jpg\"\n    ],\n    \"status\": \"In Stock\",\n    \"updatedAt\": \"2026-11-03T11:23:55.461Z\",\n    \"variants\": [\n      {\n        \"variantId\": \"6ae9c44baa53391159c27a0a\",\n        \"sku\": \"GB-OUD-01\",\n        \"name\": null,\n        \"size\": \"1 box\",\n        \"flavor\": \"Default\",\n        \"offerPrice\": 2499,\n        \"actualPrice\": 2999,\n        \"stock\": 12,\n        \"weight\": 0.8,\n        \"image\": null\n      }\n    ],\n    \"position\": 0,\n    \"brandId\": \"6ae9c44baa53391159c27a02\"\n  }\n}"
+        },
+        {
+          "name": "409 ALREADY_IN_GIFTING",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/erp/giftboxes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "giftboxes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{itemSku}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "Conflict",
+          "code": 409,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": false,\n  \"message\": \"This product is already in Gifting; use PATCH /erp/giftboxes/:id to move it\",\n  \"errors\": [\n    {\n      \"code\": \"ALREADY_IN_GIFTING\",\n      \"productId\": \"6ae9c44baa53391159c27a04\"\n    }\n  ]\n}"
+        },
+        {
+          "name": "400 Both sku and productId",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/erp/giftboxes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "giftboxes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{itemSku}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "Bad Request",
+          "code": 400,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"send exactly one of productId or sku\"\n    }\n  ]\n}"
+        },
+        {
+          "name": "404 Unknown SKU",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/erp/giftboxes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "giftboxes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{itemSku}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "Not Found",
+          "code": 404,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": false,\n  \"message\": \"SKU not found: NO-SUCH-SKU\",\n  \"errors\": [\n    {\n      \"code\": \"NOT_FOUND\",\n      \"field\": \"sku\"\n    }\n  ]\n}"
+        }
+      ]
+    },
+    {
+      "name": "16. Giftbox Details",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () {",
+              "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+              "});",
+              "pm.test('data matches the documented schema', function () {",
+              "  pm.response.to.have.jsonSchema({ type: 'object', required: ['success', 'data'], properties: { success: { const: true }, data: { type: 'object', required: ['productId', 'name', 'images', 'variants', 'position', 'brandId'], properties: { productId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, position: { type: 'integer', minimum: 0 }, brandId: { type: ['string', 'null'] }, variants: { type: 'array', items: { type: 'object', required: ['variantId', 'sku', 'stock'] } } } } } });",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/erp/giftboxes/{{giftboxId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "erp",
+            "giftboxes",
+            "{{giftboxId}}"
+          ]
+        },
+        "description": "**GET {{baseUrl}}/erp/giftboxes/{id}** — one Gifting product by `productId`.\n\n- `404 NOT_FOUND` if the product does not exist **or is not in Gifting**; `400` malformed id.\n- Read-only.\n\n*Added in API version 2.2. Verified by a local Postman CLI run (spec Section 15.8); not yet run against production.*"
+      },
+      "response": [
+        {
+          "name": "200 Giftbox fetched",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/erp/giftboxes/{{giftboxId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "giftboxes",
+                "{{giftboxId}}"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": true,\n  \"message\": \"Giftbox fetched\",\n  \"data\": {\n    \"productId\": \"6ae9c44baa53391159c27a04\",\n    \"name\": \"Rose Gift Box\",\n    \"description\": \"Hamper with three signature items.\",\n    \"category\": \"Gift Sets\",\n    \"images\": [\n      \"https://res.cloudinary.com/demo/image/upload/GB-ROSE-01.jpg\"\n    ],\n    \"status\": \"In Stock\",\n    \"updatedAt\": \"2026-11-03T11:23:55.461Z\",\n    \"variants\": [\n      {\n        \"variantId\": \"6ae9c44baa53391159c27a05\",\n        \"sku\": \"GB-ROSE-01\",\n        \"name\": null,\n        \"size\": \"1 box\",\n        \"flavor\": \"Default\",\n        \"offerPrice\": 2499,\n        \"actualPrice\": 2999,\n        \"stock\": 12,\n        \"weight\": 0.8,\n        \"image\": null\n      }\n    ],\n    \"position\": 1,\n    \"brandId\": \"6ae9c44baa53391159c27a02\"\n  }\n}"
+        },
+        {
+          "name": "404 Not in Gifting",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/erp/giftboxes/{{giftboxId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "giftboxes",
+                "{{giftboxId}}"
+              ]
+            }
+          },
+          "status": "Not Found",
+          "code": 404,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": false,\n  \"message\": \"Giftbox not found (no Gifting product with this productId)\",\n  \"errors\": [\n    {\n      \"code\": \"NOT_FOUND\",\n      \"field\": \"id\"\n    }\n  ]\n}"
+        }
+      ]
+    },
+    {
+      "name": "17. Giftbox Update (position)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () {",
+              "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+              "});",
+              "pm.test('data matches the documented schema', function () {",
+              "  pm.response.to.have.jsonSchema({ type: 'object', required: ['success', 'data'], properties: { success: { const: true }, data: { type: 'object', required: ['productId', 'name', 'images', 'variants', 'position', 'brandId'], properties: { productId: { type: 'string', pattern: '^[a-f0-9]{24}$' }, position: { type: 'integer', minimum: 0 }, brandId: { type: ['string', 'null'] }, variants: { type: 'array', items: { type: 'object', required: ['variantId', 'sku', 'stock'] } } } } } });",
+              "});",
+              "pm.test('moved to position 0', function () { pm.expect(pm.response.json().data.position).to.equal(0); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/erp/giftboxes/{{giftboxId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "erp",
+            "giftboxes",
+            "{{giftboxId}}"
+          ]
+        },
+        "description": "**PATCH {{baseUrl}}/erp/giftboxes/{id}** — move a giftbox within Gifting.\n\n| Field | Type | Required | Rules |\n|---|---|---|---|\n| `position` | integer | **Yes** | 0–100000; 0 = first; past the end = last |\n\nNo other fields (`400`): change name, price, images etc. with *2. Item Edit*. Other giftboxes shift to make room; positions are always 0…n-1.\n\n**Write request — local / staging only.** Never run against production without approval.\n\n*Added in API version 2.2. Verified by a local Postman CLI run (spec Section 15.8); not yet run against production.*",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"position\": 0\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "200 Giftbox updated",
+          "originalRequest": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/erp/giftboxes/{{giftboxId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "giftboxes",
+                "{{giftboxId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"position\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": true,\n  \"message\": \"Giftbox updated\",\n  \"data\": {\n    \"productId\": \"6ae9c44baa53391159c27a04\",\n    \"name\": \"Rose Gift Box\",\n    \"description\": \"Hamper with three signature items.\",\n    \"category\": \"Gift Sets\",\n    \"images\": [\n      \"https://res.cloudinary.com/demo/image/upload/GB-ROSE-01.jpg\"\n    ],\n    \"status\": \"In Stock\",\n    \"updatedAt\": \"2026-11-03T11:23:55.490Z\",\n    \"variants\": [\n      {\n        \"variantId\": \"6ae9c44baa53391159c27a05\",\n        \"sku\": \"GB-ROSE-01\",\n        \"name\": null,\n        \"size\": \"1 box\",\n        \"flavor\": \"Default\",\n        \"offerPrice\": 2499,\n        \"actualPrice\": 2999,\n        \"stock\": 12,\n        \"weight\": 0.8,\n        \"image\": null\n      }\n    ],\n    \"position\": 0,\n    \"brandId\": \"6ae9c44baa53391159c27a02\"\n  }\n}"
+        },
+        {
+          "name": "400 Invalid position",
+          "originalRequest": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/erp/giftboxes/{{giftboxId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "giftboxes",
+                "{{giftboxId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"position\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "Bad Request",
+          "code": 400,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"field\": \"position\",\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"Number must be greater than or equal to 0\"\n    }\n  ]\n}"
+        }
+      ]
+    },
+    {
+      "name": "18. Giftbox Remove",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () {",
+              "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+              "});",
+              "pm.test('removed from Gifting', function () { pm.expect(pm.response.json().data.isGifting).to.equal(false); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/erp/giftboxes/{{giftboxId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "erp",
+            "giftboxes",
+            "{{giftboxId}}"
+          ]
+        },
+        "description": "**DELETE {{baseUrl}}/erp/giftboxes/{id}** — take the product out of Gifting. The product itself is **not** deleted and stays in the shop; the remaining giftboxes close the gap.\n\n- `404` if it is not in Gifting. No body.\n- Run this after 15–17 to clean up the test item.\n\n**Write request — local / staging only.** Never run against production without approval.\n\n*Added in API version 2.2. Verified by a local Postman CLI run (spec Section 15.8); not yet run against production.*"
+      },
+      "response": [
+        {
+          "name": "200 Removed from Gifting",
+          "originalRequest": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/erp/giftboxes/{{giftboxId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "giftboxes",
+                "{{giftboxId}}"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"success\": true,\n  \"message\": \"Removed from Gifting\",\n  \"data\": {\n    \"productId\": \"6ae9c44baa53391159c27a09\",\n    \"isGifting\": false\n  }\n}"
+        }
+      ]
+    },
+    {
       "name": "Write checks (local / staging only)",
       "description": "Retry, stale and transition rules, using values captured from requests 3 and 7. Run after the numbered requests, against a **local or approved staging** database only. Never run against production: they change stock and order status.",
       "item": [
@@ -1646,6 +2795,184 @@
             },
             "description": "Expects `401 Invalid ERP credentials`.\n\nNegative check: the request is refused before any data is read or changed. Safe to run in any environment."
           }
+        },
+        {
+          "name": "N7. Brand Create — invalid status → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([400]);",
+                  "});",
+                  "pm.test('error code VALIDATION_ERROR', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.success).to.equal(false);",
+                  "  pm.expect(body.errors[0].code).to.equal('VALIDATION_ERROR');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/erp/brands",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "brands"
+              ]
+            },
+            "description": "Expects `400 VALIDATION_ERROR` (`status` must be `ACTIVE` or `INACTIVE`).\n\nNegative check: refused before any data is read or changed. Safe to run in any environment.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"POSTMAN NEGATIVE CHECK\",\n  \"status\": \"DELETED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "N8. Brand Details — unknown id → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([404]);",
+                  "});",
+                  "pm.test('error code NOT_FOUND', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.success).to.equal(false);",
+                  "  pm.expect(body.errors[0].code).to.equal('NOT_FOUND');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/erp/brands/000000000000000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "brands",
+                "000000000000000000000000"
+              ]
+            },
+            "description": "Expects `404 NOT_FOUND`. Read-only; safe to run in any environment."
+          },
+          "response": []
+        },
+        {
+          "name": "N9. Giftbox Add — sku and productId both → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([400]);",
+                  "});",
+                  "pm.test('error code VALIDATION_ERROR', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.success).to.equal(false);",
+                  "  pm.expect(body.errors[0].code).to.equal('VALIDATION_ERROR');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/erp/giftboxes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "giftboxes"
+              ]
+            },
+            "description": "Expects `400 VALIDATION_ERROR` (send exactly one of `sku`, `productId`).\n\nNegative check: refused before any data is read or changed. Safe to run in any environment.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"POSTMAN-NO-SUCH-SKU-0000\",\n  \"productId\": \"000000000000000000000000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "N10. Giftbox Details — not in Gifting → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([404]);",
+                  "});",
+                  "pm.test('error code NOT_FOUND', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.success).to.equal(false);",
+                  "  pm.expect(body.errors[0].code).to.equal('NOT_FOUND');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/erp/giftboxes/000000000000000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "erp",
+                "giftboxes",
+                "000000000000000000000000"
+              ]
+            },
+            "description": "Expects `404 NOT_FOUND`. Read-only; safe to run in any environment."
+          },
+          "response": []
         }
       ]
     }

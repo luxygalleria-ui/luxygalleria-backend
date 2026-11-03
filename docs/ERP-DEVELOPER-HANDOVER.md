@@ -7,7 +7,7 @@ For the ERP development team. This guide gets you connected and testing. The ful
 | Item | File |
 |---|---|
 | API specification | `docs/ERP-INTEGRATION-API-SPEC.md` |
-| Postman collection, classic JSON (21 requests, automatic signing, tests) | `postman/Luxy-Galleria-ERP-API.postman_collection.json` |
+| Postman collection, classic JSON (34 requests, automatic signing, tests, saved example responses for Brands and Giftboxes) | `postman/Luxy-Galleria-ERP-API.postman_collection.json` |
 | Postman environments, classic JSON (credentials blank) | `postman/Luxy-Galleria-ERP-Local-Staging.postman_environment.json` (use for all testing); `postman/Luxy-Galleria-ERP-Production.postman_environment.json` |
 | The same collection and Local / Staging environment for **Postman Local Mode** (YAML) | `postman/local-mode/` |
 | Node.js signing example | `docs/erp-signing-client.mjs` |
@@ -36,6 +36,21 @@ Paths below are relative to `baseUrl`, which already ends in `/api/v1`. For exam
 | 7 | Order Details | `GET /erp/orders/{orderId}` | ERP reads website | 8 |
 | 8 | Order Status Callback | `POST /erp/webhooks/order-status` | ERP → website | 9 |
 | 9 | Image Upload | `POST /erp/images` (multipart, one file in field `image`) | ERP → website | 10 |
+| 10 | Brand List | `GET /erp/brands?page=&limit=&search=&status=` | ERP reads website | 10A.1 |
+| 11 | Brand Details | `GET /erp/brands/{brandId}` | ERP reads website | 10A.2 |
+| 12 | Brand Create | `POST /erp/brands` | ERP → website | 10A.3 |
+| 13 | Brand Update | `PATCH /erp/brands/{brandId}` | ERP → website | 10A.4 |
+| 14 | Giftbox List | `GET /erp/giftboxes?page=&limit=&search=` | ERP reads website | 10B.1 |
+| 15 | Giftbox Details | `GET /erp/giftboxes/{productId}` | ERP reads website | 10B.2 |
+| 16 | Giftbox Add | `POST /erp/giftboxes` | ERP → website | 10B.3 |
+| 17 | Giftbox Update (position) | `PATCH /erp/giftboxes/{productId}` | ERP → website | 10B.4 |
+| 18 | Giftbox Remove | `DELETE /erp/giftboxes/{productId}` | ERP → website | 10B.5 |
+
+Rows 10–18 are new in API version 2.2 and **not yet deployed** to production (until then production answers `404`).
+
+**Brands:** body fields `name` (required on create, unique ignoring case → else `409 DUPLICATE_BRAND` with the existing `brandId`), `logo` (https URL from Image Upload, or `""`), `status` (`ACTIVE` shown on the storefront / `INACTIVE` hidden), `displayOrder` (integer ≥ 0). No delete: set `INACTIVE`.
+
+**Giftboxes:** a giftbox is a normal website product placed in the storefront **Gifting** collection (`/gifting`); there is no separate giftbox record. Create or edit the product with Item Add / Item Edit / Stock Update, then add it with `POST /erp/giftboxes {"sku": "…", "position": 0}` (or `productId` instead of `sku`). PATCH accepts only `position`; DELETE takes it out of Gifting but keeps the product in the shop. Adding a product to Gifting removes it from New Arrivals, as in the admin panel.
 
 **Orders:** the ERP **pulls** orders (6, 7). The website does **not** push orders to the ERP; automatic outbound order push is not implemented.
 
@@ -164,7 +179,7 @@ Check, in order:
 
 ## 8. Test sequence
 
-Run against a **local or approved staging** database. Write requests (1–3, 6, 7, W1–W4) change data; never run them against production without an approved test SKU and test order.
+Run against a **local or approved staging** database. Write requests (1–3, 6, 7, 11, 13, 15, 17, 18, W1–W4) change data; never run them against production without an approved test SKU and test order.
 
 | Step | Request | Expected |
 |---|---|---|
@@ -176,13 +191,15 @@ Run against a **local or approved staging** database. Write requests (1–3, 6, 
 | 6 | `4. Order Checking`, `5. Order Details` | `200` |
 | 7 | `7. Order Status Callback`, then `W3` (same `eventId`), `W4` (backwards) | `200 applied`; `200 duplicate: true`; `409 INVALID_TRANSITION` |
 | 8 | `6. Image Upload` with a real approved test image and `imageSha256` set | `201` with `data.url` (stores the image in the configured test storage) |
-| 9 | `N0` unsigned, `N4` wrong signature, `N5` expired timestamp, `N6` unknown key, `N2`/`N3` validation | `401` ×4, `400` ×2 |
+| 8a | `10. Brand List`, `11. Brand Create` (makes `{{brandName}}` as `INACTIVE`), `12. Brand Details`, `13. Brand Update` | `200`; `201` (or `409 DUPLICATE_BRAND` on a re-run); `200`; `200` |
+| 8b | `14. Giftbox List`, `15. Giftbox Add` (adds `itemSku`), `16. Giftbox Details`, `17. Giftbox Update`, `18. Giftbox Remove` | `200`; `201` (or `409 ALREADY_IN_GIFTING`); `200`; `200`; `200` |
+| 9 | `N0` unsigned, `N4` wrong signature, `N5` expired timestamp, `N6` unknown key, `N2`/`N3`/`N7`/`N9` validation, `N8`/`N10` not found | `401` ×4, `400` ×4, `404` ×2 |
 
 `409 CONFLICT` on stock (stock changing during the update) cannot be triggered safely from Postman. It is covered by Luxy Galleria's automated tests.
 
 ## 9. Not supported yet / awaiting decisions
 
-- **Not implemented:** website → ERP order push; customer master sync; deleting or deactivating products; setting GST/HSN, variant name or description via the API; refunds and payment status; restocking on cancellation.
+- **Not implemented:** website → ERP order push; customer master sync; deleting or deactivating products; deleting brands (set `INACTIVE` instead); giftbox-only data such as box contents or wrapping options (a giftbox is a product in the Gifting collection); setting GST/HSN, variant name or description via the API; refunds and payment status; restocking on cancellation.
 - **Needs your answers** (spec §14):
   1. Is `quantity` physical or sellable stock, and are website orders already deducted?
   2. SKU format, and the codes for existing website variants.
@@ -195,6 +212,7 @@ Run against a **local or approved staging** database. Write requests (1–3, 6, 
 ## 10. Verification status
 
 - **Local test server** (throwaway database and key, image storage stubbed): every request in the collection passes, run with the Postman CLI from both the classic JSON files and the Local Mode YAML files (21 requests, 84 assertions). Luxy Galleria's automated tests cover all nine endpoints.
+- **Brands and Giftboxes (version 2.2, 3 November 2026, local only):** automated tests 48 passed / 0 failed; Postman CLI run of Health, Item Add, 10–18 and all Negative checks: 22 requests, 90 assertions, 0 failures from both the JSON and the Local Mode YAML files. Not deployed; not run against production.
 - **Not yet verified:** staging (not available yet); signed production requests; a real image stored in cloud storage; opening the Local Mode files in the Postman desktop app.
 
 Contact: **NEEDS CONFIRMATION** — Luxy Galleria technical contact to be added before sending.
