@@ -47,6 +47,7 @@ export interface CheckoutOption {
 
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 const METHOD_NAME: Record<ShippingMethod, string> = { land: 'road', air: 'air' };
+const ZONE_NAME: Record<Zone, string> = { kerala: 'Kerala', outsideKerala: 'addresses outside Kerala' };
 
 const rateConfig = (r: ShippingRate, fallbackItemWeightKg: number): ShippingConfig => ({
   WEIGHT_THRESHOLD_KG: r.weightThresholdG / 1000,
@@ -68,16 +69,18 @@ const specialLines = (lines: PricedLine[], s: CheckoutSettings) => (chocolateAct
 /** Every way this cart could be received, with the reason when one is not allowed. */
 export const checkoutOptions = (lines: PricedLine[], s: CheckoutSettings, zone: Zone, now = new Date()): CheckoutOption[] => {
   const special = specialLines(lines, s).length > 0;
+  // Name the products the chocolate rule covers: the flag is "needs special packaging", not a temperature-control requirement
+  const covered = `${[...new Set(specialLines(lines, s).map((l) => l.name))].join(', ')} (special packaging)`;
   const blockedMonth = special && s.chocolate.blockedMonths.includes(monthInIndia(now));
   const z = s.shipping.zones[zone];
   const delivery = (['land', 'air'] as ShippingMethod[]).map((m): CheckoutOption => {
     const offered = z.enabled && z[m].enabled;
     let reason = '';
-    if (!z.enabled) reason = 'We do not deliver to this destination yet';
+    if (!z.enabled) reason = `We do not deliver to ${ZONE_NAME[zone]} yet`;
     else if (!z[m].enabled) reason = `${METHOD_NAME[m] === 'air' ? 'Air' : 'Road'} shipping is not available for this destination`;
-    else if (blockedMonth) reason = 'Temperature-sensitive items cannot be delivered this month; choose store pickup';
-    else if (special && !s.chocolate.allowedZones[zone]) reason = 'Temperature-sensitive items cannot be delivered to this destination';
-    else if (special && !s.chocolate.allowedMethods[m]) reason = `Temperature-sensitive items cannot be sent by ${METHOD_NAME[m]}`;
+    else if (blockedMonth) reason = `${covered} cannot be delivered this month under the store's chocolate shipping rules; choose store pickup`;
+    else if (special && !s.chocolate.allowedZones[zone]) reason = `${covered} cannot be delivered to ${ZONE_NAME[zone]} under the store's chocolate shipping rules`;
+    else if (special && !s.chocolate.allowedMethods[m]) reason = `${covered} cannot be sent by ${METHOD_NAME[m]} under the store's chocolate shipping rules`;
     return { fulfillment: 'delivery', shippingMethod: m, offered, allowed: !reason, reason, eta: z[m].eta };
   });
   const pickup: CheckoutOption = {
@@ -166,12 +169,14 @@ export const priceOrder = (lines: PricedLine[], s: CheckoutSettings, sel: Select
     throw new CheckoutRuleError(weightReason || 'No delivery or pickup option is available for this order', weightReason ? 'WEIGHT_MISSING' : 'NO_OPTION', options);
   }
   if (!chosen.allowed) {
-    // A destination with no delivery method at all: say that, rather than naming one method as if another might work
-    const noMethodAtAll = chosen.fulfillment === 'delivery' && s.shipping.zones[zone].enabled && !options.some((o) => o.fulfillment === 'delivery' && o.offered);
-    if (noMethodAtAll) {
-      const where = zone === 'kerala' ? 'Kerala' : 'addresses outside Kerala';
-      const pickupOk = options.some((o) => o.fulfillment === 'pickup' && o.allowed);
-      throw new CheckoutRuleError(`No delivery method is currently available for ${where}. ${pickupOk ? 'Choose store pickup, or contact the store.' : 'Please contact the store.'}`, 'NO_DELIVERY_METHOD', options);
+    // Nothing can be delivered here: say why (destination switched off vs no method enabled), and whether pickup is the way out
+    const zoneOn = s.shipping.zones[zone].enabled;
+    const next = options.some((o) => o.fulfillment === 'pickup' && o.allowed) ? 'Choose store pickup, or contact the store.' : 'Please contact the store.';
+    if (chosen.fulfillment === 'delivery' && !zoneOn && chosen.reason === `We do not deliver to ${ZONE_NAME[zone]} yet`) {
+      throw new CheckoutRuleError(`${chosen.reason}. ${next}`, 'OPTION_UNAVAILABLE', options);
+    }
+    if (chosen.fulfillment === 'delivery' && zoneOn && !options.some((o) => o.fulfillment === 'delivery' && o.offered)) {
+      throw new CheckoutRuleError(`No delivery method is currently available for ${ZONE_NAME[zone]}. ${next}`, 'NO_DELIVERY_METHOD', options);
     }
     throw new CheckoutRuleError(chosen.reason || 'This option is not available', chosen.reason === weightReason && weightReason ? 'WEIGHT_MISSING' : 'OPTION_UNAVAILABLE', options);
   }

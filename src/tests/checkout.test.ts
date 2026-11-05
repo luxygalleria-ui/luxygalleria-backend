@@ -20,11 +20,12 @@ import { ENV } from '../config/env';
 import { User } from '../models/User';
 import { Product } from '../models/Product';
 import { Banner } from '../models/Banner';
+import { Settings } from '../models/Settings';
 import Order from '../models/Order';
 import crypto from 'crypto';
 import { isMockPaymentMode, razorpayInstance } from '../controllers/paymentController';
 import { DEFAULT_SHIPPING_CONFIG, calculateShippingPure } from '../utils/shippingCalculator';
-import { CheckoutSettings, chocolateSchema, defaultCheckoutSettings, publicCheckoutSettings, zoneOfState } from '../utils/checkoutSettings';
+import { CheckoutSettings, chocolateSchema, configurationWarnings, defaultCheckoutSettings, publicCheckoutSettings, zoneOfState } from '../utils/checkoutSettings';
 import { CheckoutRuleError, PricedLine, priceOrder } from '../utils/orderPricing';
 
 let passed = 0;
@@ -260,7 +261,7 @@ const pure = async () => {
     assert.deepStrictEqual([q.specialPackaging.items, q.specialPackagingFee], [['Dairy Milk'], 0]);
     // Restricted destination and month: delivery refused with the reason; pickup allowed
     const restricted = withChocolate(fixture(), { allowedZones: { kerala: true, outsideKerala: false }, blockedMonths: [5] });
-    assert.match(rejects(() => quote(restricted, [bar()], { fulfillment: 'delivery', state: 'Goa' }), 'OPTION_UNAVAILABLE').message, /cannot be delivered to this destination/);
+    assert.match(rejects(() => quote(restricted, [bar()], { fulfillment: 'delivery', state: 'Goa' }), 'OPTION_UNAVAILABLE').message, /cannot be delivered to addresses outside Kerala under the store's chocolate shipping rules/);
     const may = new Date('2026-05-10T06:00:00Z');
     assert.match(rejects(() => priceOrder([bar()], restricted, { fulfillment: 'delivery', state: 'Kerala' }, { now: may }), 'OPTION_UNAVAILABLE').message, /this month/);
     assert.strictEqual(priceOrder([bar()], restricted, { fulfillment: 'pickup' }, { now: may }).fulfillmentMethod, 'pickup');
@@ -277,6 +278,30 @@ const pure = async () => {
     assert.deepStrictEqual([q.shipping, q.freeShippingApplied, q.specialPackagingFee, q.grandTotal], [0, true, 10, 510]);
   });
 
+  await test('admin warnings: chocolate allowed only where delivery is off (local config, Nov 2026); cleared when Kerala road or pickup is on', () => {
+    const s = withChocolate(fixture(), { allowedMethods: { land: true, air: false }, allowedZones: { kerala: true, outsideKerala: false } });
+    s.pickup.enabled = false;
+    s.shipping.zones.kerala.enabled = false;
+    assert.deepStrictEqual(configurationWarnings(s), [
+      'No delivery to Kerala (Shipping & Delivery). Store pickup is off too, so these customers cannot place an order.',
+      'Products marked for special packaging cannot be delivered anywhere: Chocolate Shipping allows Kerala by road, but Shipping & Delivery does not offer it. Store pickup is off too, so carts with these products cannot be checked out.',
+    ]);
+    // The checkout enforces exactly what the warning says: chocolate refused everywhere, normal products still go outside Kerala
+    rejects(() => priceOrder([choc(200)], s, { fulfillment: 'delivery', state: 'Kerala' }), 'OPTION_UNAVAILABLE');
+    const outside: any = rejects(() => priceOrder([choc(200, { name: 'Lindt Lindor' }), choc(50, { name: 'Diary Milk' }), line({ name: 'RedBull' })], s, { fulfillment: 'delivery', state: 'Tamil Nadu' }), 'OPTION_UNAVAILABLE');
+    assert.strictEqual(outside.message, "Lindt Lindor, Diary Milk (special packaging) cannot be delivered to addresses outside Kerala under the store's chocolate shipping rules", 'names only the covered products, not the normal one');
+    assert.strictEqual(priceOrder([line({})], s, { fulfillment: 'delivery', state: 'Tamil Nadu' }).shippingMethod, 'land');
+    s.pickup.enabled = true;
+    assert.match(configurationWarnings(s)[1], /can only use store pickup\.$/);
+    s.pickup.enabled = false;
+    s.shipping.zones.kerala.enabled = true; // road is on in the fixture
+    assert.deepStrictEqual(configurationWarnings(s), []);
+    assert.strictEqual(priceOrder([choc(200)], s, { fulfillment: 'delivery', state: 'Kerala' }).specialPackagingFee, 10);
+    s.chocolate.enabled = false;
+    s.shipping.zones.kerala.land.enabled = false;
+    assert.deepStrictEqual(configurationWarnings(s), ['No delivery to Kerala (Shipping & Delivery). Store pickup is off too, so these customers cannot place an order.'], 'chocolate off: no chocolate warning');
+  });
+
   await test('no delivery method for the destination: one clear message; pickup suggested only when it is available', () => {
     const s = fixture();
     s.shipping.zones.outsideKerala.land.enabled = false; s.shipping.zones.outsideKerala.air.enabled = false;
@@ -286,6 +311,42 @@ const pure = async () => {
     e = rejects(() => priceOrder([line({})], s, { fulfillment: 'delivery', state: 'Goa' }), 'NO_DELIVERY_METHOD');
     assert.match(e.message, /Please contact the store\.$/);
     assert.strictEqual(priceOrder([line({})], s, { fulfillment: 'delivery', state: 'Kerala' }).shipping, 40, 'Kerala unaffected');
+  });
+
+  await test('Kerala delivery switched off (local 400, Nov 2026): named refusal, any spelling of Kerala; road/air/both priced once switched back on', () => {
+    const s = fixture();
+    s.pickup.enabled = false;
+    s.shipping.zones.kerala.enabled = false;
+    // Two products, different weights: 0.2 kg × 2 + 0.75 kg = 1.15 kg, subtotal ₹1,100
+    const cart = [line({ name: 'A', price: 300, weight: 0.2, quantity: 2 }), line({ name: 'B', price: 500, weight: 0.75 })];
+    for (const state of ['Kerala', ' kerala ', 'KERALA', 'KL']) {
+      const e: any = rejects(() => priceOrder(cart, s, { fulfillment: 'delivery', state, country: 'India' }), 'OPTION_UNAVAILABLE');
+      assert.strictEqual(e.message, 'We do not deliver to Kerala yet. Please contact the store.', state);
+      assert.ok(e.options.every((o: any) => !o.allowed), 'nothing allowed, so checkout stays disabled');
+      assert.ok(e.options.filter((o: any) => o.fulfillment === 'delivery').every((o: any) => o.reason === 'We do not deliver to Kerala yet'));
+    }
+    assert.strictEqual(priceOrder(cart, s, { fulfillment: 'delivery', state: 'Tamil Nadu' }).shipping, 140, 'outside Kerala unchanged: ₹120 + ₹20 for the started kg over 1 kg');
+    s.pickup.enabled = true;
+    let e: any = rejects(() => priceOrder(cart, s, { fulfillment: 'delivery', state: 'Kerala' }), 'OPTION_UNAVAILABLE');
+    assert.strictEqual(e.message, 'We do not deliver to Kerala yet. Choose store pickup, or contact the store.');
+    assert.strictEqual(priceOrder(cart, s, { fulfillment: 'pickup' }).shipping, 0, 'pickup still works');
+    e = rejects(() => priceOrder(cart, s, { fulfillment: 'delivery', state: 'Kerala', country: 'France' }), 'OPTION_UNAVAILABLE');
+    assert.strictEqual(e.message, 'We currently deliver within India only', 'abroad keeps its own reason');
+
+    // Back on with road only: ₹80 at/above 500 g + ₹20 for the started kg over 1 kg
+    s.shipping.zones.kerala.enabled = true;
+    assert.deepStrictEqual([priceOrder(cart, s, { fulfillment: 'delivery', state: 'Kerala' })].map((q) => [q.shippingMethod, q.shipping, q.grandTotal]), [['land', 100, 1200]]);
+    // Air only (own rate): ₹200 + ₹50 per started kg over 1 kg
+    s.shipping.zones.kerala.air = { ...s.shipping.zones.kerala.land, enabled: true, chargeBelow: 120, chargeAtOrAbove: 200, extraPerKg: 50 };
+    s.shipping.zones.kerala.land.enabled = false;
+    assert.deepStrictEqual([priceOrder(cart, s, { fulfillment: 'delivery', state: 'Kerala' })].map((q) => [q.shippingMethod, q.shipping]), [['air', 250]]);
+    rejects(() => priceOrder(cart, s, { fulfillment: 'delivery', shippingMethod: 'land', state: 'Kerala' }), 'OPTION_UNAVAILABLE');
+    // Both on: road by default, air when chosen; road's free-shipping tier (₹1,000) applies to road only
+    s.shipping.zones.kerala.land = { ...s.shipping.zones.kerala.land, enabled: true, freeShippingThreshold: 1000 };
+    const road = priceOrder(cart, s, { fulfillment: 'delivery', state: 'Kerala' });
+    assert.deepStrictEqual([road.shippingMethod, road.shipping, road.freeShippingApplied, road.grandTotal], ['land', 0, true, 1100]);
+    const air = priceOrder(cart, s, { fulfillment: 'delivery', shippingMethod: 'air', state: 'Kerala' });
+    assert.deepStrictEqual([air.shippingMethod, air.shipping, air.grandTotal], ['air', 250, 1350]);
   });
 
   await test('public settings: only customer-facing data', () => {
@@ -401,6 +462,48 @@ const api = async () => {
       const pub = await call('GET', '/settings');
       assert.deepStrictEqual(pub.json.data.checkout.shipping.zones.outsideKerala.methods.map((m: any) => m.method), ['land', 'air']);
       assert.ok(!('shipping' in pub.json.data) && !JSON.stringify(pub.json.data).includes('rateConfirmed'), 'public view only');
+    });
+
+    await test('Kerala "Deliver here": admin save -> database -> admin and public API -> checkout quote, off and back on', async () => {
+      const original = (await call('GET', '/settings/checkout', undefined, adminT)).json.data.settings.shipping;
+      const put = async (ship: any) => {
+        const r = await call('PUT', '/settings/checkout/shipping', ship, adminT);
+        assert.strictEqual(r.status, 200, JSON.stringify(r.json));
+        return r.json.data.settings.shipping;
+      };
+      const quote = (fulfillment?: any) => call('POST', '/payments/calculate-shipping', { items: [item(product)], shippingAddress: { ...kerala, city: 'Kozhikode', zipCode: '673007' }, ...(fulfillment ? { fulfillment } : {}) });
+      try {
+        // Off (the reported local configuration). Road/air values are kept even while the destination is off
+        const off = structuredClone(original); off.zones.kerala.enabled = false;
+        assert.strictEqual((await put(off)).zones.kerala.enabled, false);
+        const stored: any = await Settings.findOne().lean();
+        assert.strictEqual(stored.shipping.zones.kerala.enabled, false, 'persisted in MongoDB');
+        assert.deepStrictEqual(stored.shipping.zones.kerala.land, original.zones.kerala.land, 'method settings saved untouched');
+        assert.strictEqual((await call('GET', '/settings/checkout', undefined, adminT)).json.data.settings.shipping.zones.kerala.enabled, false, 'admin reload shows it');
+        assert.strictEqual((await call('GET', '/settings')).json.data.checkout.shipping.zones.kerala.enabled, false, 'storefront sees it');
+        const refused = await quote({ method: 'delivery' });
+        assert.strictEqual(refused.status, 400);
+        assert.strictEqual(refused.json.code, 'OPTION_UNAVAILABLE');
+        assert.match(refused.json.message, /^We do not deliver to Kerala yet\./);
+        assert.ok(refused.json.data.options.length === 3, 'options returned so checkout can explain each method');
+
+        // On, both methods: road by default, air on request, each at its own saved rate
+        const on = structuredClone(original);
+        on.zones.kerala.enabled = true;
+        on.zones.kerala.air = { ...on.zones.kerala.land, enabled: true, chargeBelow: 120, chargeAtOrAbove: 200, eta: 'Next day' };
+        const saved = await put(on);
+        assert.deepStrictEqual([saved.zones.kerala.enabled, saved.zones.kerala.land.enabled, saved.zones.kerala.air.enabled], [true, true, true]);
+        assert.deepStrictEqual((await call('GET', '/settings')).json.data.checkout.shipping.zones.kerala.methods.map((m: any) => m.method), ['land', 'air']);
+        const road = await quote({ method: 'delivery' });
+        assert.strictEqual(road.status, 200, JSON.stringify(road.json));
+        assert.strictEqual(road.json.data.shippingMethod, 'land');
+        assert.strictEqual(road.json.data.shipping, original.zones.kerala.land.chargeBelow);
+        const air = await quote({ method: 'delivery', shippingMethod: 'air' });
+        assert.deepStrictEqual([air.status, air.json.data.shippingMethod, air.json.data.shipping], [200, 'air', 120]);
+        assert.strictEqual(air.json.data.grandTotal, air.json.data.subtotal + 120);
+      } finally {
+        await put(original);
+      }
     });
 
     await test('4. store pickup with Pay Now: no address, no delivery fee, pickup details saved on the order', async () => {
