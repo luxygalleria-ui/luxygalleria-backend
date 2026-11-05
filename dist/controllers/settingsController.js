@@ -57,7 +57,7 @@ exports.updateSettings = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
 });
 const checkoutResponse = (doc) => {
     const { settings, saved } = (0, checkoutSettings_1.effectiveCheckoutSettings)(doc);
-    return { settings, saved, updatedAt: doc?.updatedAt ?? null };
+    return { settings, saved, warnings: (0, checkoutSettings_1.configurationWarnings)(settings), updatedAt: doc?.updatedAt ?? null };
 };
 /** Admin: full checkout & fulfilment settings, with which sections are still on derived defaults. */
 exports.getCheckoutSettings = (0, asyncHandler_1.asyncHandler)(async (req, res) => {

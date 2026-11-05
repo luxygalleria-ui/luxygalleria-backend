@@ -114,7 +114,19 @@ const run = async () => {
       assert.strictEqual(r.status, 503); assert.match(j.message, /placeholder/); assert.ok(!j.data, 'no figures');
     }));
 
-    await test('production mode: history never initialised even when enabled', () => withEnv({ ...on(uri('reader', 'readerpw')), NODE_ENV: 'production' }, async () => {
+    await test('unreachable history, two requests at once (admin dev double fetch): both 503 with the reason, never a raw 500', () => withEnv(on('mongodb://reader:readerpw@127.0.0.1:1/luxy?authSource=admin'), async () => {
+      const get = async () => { const r = await fetch(`${base}/dashboard/history/orders?page=1&limit=100`, { headers: { Authorization: `Bearer ${token}` } }); return { status: r.status, j: await r.json() }; };
+      const both = await Promise.all([get(), get()]);
+      for (const { status, j } of both) {
+        assert.strictEqual(status, 503, JSON.stringify(j));
+        assert.strictEqual(j.errors?.[0]?.code, 'HISTORY_UNAVAILABLE');
+        assert.match(j.message, /could not reach the database server/);
+        assert.ok(!j.message.includes('127.0.0.1') && !j.message.includes('readerpw'), 'no host or credentials');
+      }
+      const again = await get(); assert.strictEqual(again.status, 503, 'within 30 s the same explained 503, no reconnect storm');
+    }));
+
+    await test('production mode: history never initialised even when enabled',() => withEnv({ ...on(uri('reader', 'readerpw')), NODE_ENV: 'production' }, async () => {
       const r = await stats(); assert.strictEqual(JSON.parse(r.text).data.orderDataSource, 'local');
     }));
 

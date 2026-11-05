@@ -1,8 +1,12 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.resetHistoryForTests = exports.checkHistoryConnection = exports.historyCustomers = exports.historyOrders = exports.historyOrderStats = exports.historyStatus = exports.HistoryUnavailableError = exports.historyConfig = exports.explainHistoryError = void 0;
 const mongodb_1 = require("mongodb");
 const dashboardStats_1 = require("../utils/dashboardStats");
+const logger_1 = __importDefault(require("../utils/logger"));
 /**
  * Optional, strictly READ-ONLY connection to historical business data (orders, customers) for the LOCAL dashboard.
  *
@@ -102,8 +106,11 @@ const historyDb = async () => {
             throw new HistoryUnavailableError(cfg.reason);
         return null;
     }
-    if (cached?.uri === cfg.uri)
-        return cached.db;
+    // A request arriving while the first connect is still pending shares it; if that connect fails, this request gets the
+    // same explained 503 (never the raw driver error, which names the host, as a 500)
+    if (cached?.uri === cfg.uri) {
+        return cached.db.catch((err) => { throw new HistoryUnavailableError(redact((0, exports.explainHistoryError)(err), cfg.uri)); });
+    }
     if (Date.now() - failedAt < RETRY_AFTER_MS)
         throw new HistoryUnavailableError(lastError);
     const db = connect(cfg.uri, cfg.dbName);
@@ -115,7 +122,8 @@ const historyDb = async () => {
         cached = null;
         failedAt = Date.now();
         lastError = redact((0, exports.explainHistoryError)(err), cfg.uri);
-        console.error(`⚠️  Historical data (read-only) unavailable: ${lastError}`);
+        // Recorded in logs/ too: the admin only sees a 503, and the cause (network, Atlas IP list, login) is needed afterwards
+        logger_1.default.warn(`Historical data (read-only) unavailable: ${lastError}`);
         throw new HistoryUnavailableError(lastError);
     }
 };
@@ -134,7 +142,9 @@ const readHistory = async (read) => {
     }
     catch (err) {
         const cfg = (0, exports.historyConfig)();
-        throw new HistoryUnavailableError(cfg.enabled ? redact((0, exports.explainHistoryError)(err), cfg.uri) : 'history disabled');
+        const reason = cfg.enabled ? redact((0, exports.explainHistoryError)(err), cfg.uri) : 'history disabled';
+        logger_1.default.warn(`Historical data (read-only) query failed: ${reason}`);
+        throw new HistoryUnavailableError(reason);
     }
 };
 /** Aggregate figures for the dashboard. */

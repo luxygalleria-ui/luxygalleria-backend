@@ -6,7 +6,7 @@ import { Product } from '../models/Product';
 import { asyncHandler } from '../utils/asyncHandler';
 import { successResponse, errorResponse } from '../utils/responseHandler';
 import {
-  SECTIONS, SECTION_SCHEMAS, Section, CheckoutSettingsError, effectiveCheckoutSettings, fulfilmentAvailable, loadCheckoutSettings, publicCheckoutSettings,
+  SECTIONS, SECTION_SCHEMAS, Section, CheckoutSettingsError, configurationWarnings, effectiveCheckoutSettings, fulfilmentAvailable, loadCheckoutSettings, publicCheckoutSettings,
 } from '../utils/checkoutSettings';
 
 // Checkout sections are only written through their validated endpoints below, never through the general settings PUT
@@ -58,7 +58,7 @@ export const updateSettings = asyncHandler(async (req: Request, res: Response) =
 
 const checkoutResponse = (doc: any) => {
   const { settings, saved } = effectiveCheckoutSettings(doc);
-  return { settings, saved, updatedAt: doc?.updatedAt ?? null };
+  return { settings, saved, warnings: configurationWarnings(settings), updatedAt: doc?.updatedAt ?? null };
 };
 
 /** Admin: full checkout & fulfilment settings, with which sections are still on derived defaults. */

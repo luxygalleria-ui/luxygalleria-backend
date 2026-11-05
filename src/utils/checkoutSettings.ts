@@ -186,6 +186,33 @@ export const loadCheckoutSettings = async () => {
 export const fulfilmentAvailable = (s: CheckoutSettings) =>
   s.pickup.enabled || (['kerala', 'outsideKerala'] as Zone[]).some((z) => s.shipping.zones[z].enabled && (s.shipping.zones[z].land.enabled || s.shipping.zones[z].air.enabled));
 
+/**
+ * Settings that are each valid but together leave some customers no way to receive an order.
+ * Shown to admins on every checkout settings tab; checkout enforces the same rules regardless.
+ */
+export const configurationWarnings = (s: CheckoutSettings): string[] => {
+  const ZONES: [Zone, string][] = [['kerala', 'Kerala'], ['outsideKerala', 'outside Kerala']];
+  const METHODS: [ShippingMethod, string][] = [['land', 'road'], ['air', 'air']];
+  const offered = (z: Zone, m: ShippingMethod) => s.shipping.zones[z].enabled && s.shipping.zones[z][m].enabled;
+  const pickup = s.pickup.enabled ? 'Store pickup is the only option there.' : 'Store pickup is off too, so these customers cannot place an order.';
+  const warnings: string[] = [];
+
+  const noDelivery = ZONES.filter(([z]) => !METHODS.some(([m]) => offered(z, m))).map(([, name]) => name);
+  if (noDelivery.length) warnings.push(`No delivery to ${noDelivery.join(' or ')} (Shipping & Delivery). ${pickup}`);
+
+  if (s.chocolate.enabled && s.chocolate.rateConfirmed) {
+    const routes = (ok: (z: Zone, m: ShippingMethod) => boolean) =>
+      ZONES.flatMap(([z, zn]) => METHODS.filter(([m]) => ok(z, m)).map(([, mn]) => `${zn} by ${mn}`));
+    const allowed = routes((z, m) => s.chocolate.allowedZones[z] && s.chocolate.allowedMethods[m]);
+    const usable = routes((z, m) => s.chocolate.allowedZones[z] && s.chocolate.allowedMethods[m] && offered(z, m));
+    if (!usable.length) {
+      warnings.push(`Products marked for special packaging cannot be delivered anywhere: Chocolate Shipping allows ${allowed.length ? allowed.join(', ') : 'no destination or method'}, `
+        + `but Shipping & Delivery does not offer ${allowed.length > 1 ? 'any of these' : 'it'}. ${s.pickup.enabled ? 'Carts with these products can only use store pickup.' : 'Store pickup is off too, so carts with these products cannot be checked out.'}`);
+    }
+  }
+  return warnings;
+};
+
 /** What the storefront may see: what customers are charged and told, nothing internal. */
 export const publicCheckoutSettings = (s: CheckoutSettings) => {
   const zone = (z: ShippingSettings['zones'][Zone]) => ({
