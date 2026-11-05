@@ -34,7 +34,7 @@ const generalSettingsSchema = z.object({
   isBannerActive: z.boolean(),
   footerText: z.string().max(500),
   // Stored as digits only (the storefront builds wa.me links from it); spaces, + and dashes are tolerated on input
-  whatsappNumber: z.string().transform((v) => v.replace(/[\s+()-]/g, '')).pipe(z.string().regex(/^\d{8,15}$/, 'WhatsApp number: 8-15 digits including the country code, e.g. 919847978098')),
+  whatsappNumber: z.string().transform((v) => v.replace(/[\s+()-]/g, '')).pipe(z.string().regex(/^\d{8,15}$/, 'WhatsApp number: 8-15 digits including the country code, e.g. 917736989068')),
   primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Colour must be like #8B5E34'),
   secondaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Colour must be like #F5F1E8'),
   shippingBelow500g: z.number().finite().min(0),
