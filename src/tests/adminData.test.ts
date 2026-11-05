@@ -74,7 +74,7 @@ const run = async () => {
     });
 
     await test('Settings: saving edited fields keeps every other field and one document', async () => {
-      await Settings.create({ primaryColor: '#123456', whatsappNumber: '919847978098', shippingWeightThreshold: 500, freeShippingThreshold: 999, giftingTitle: 'Gifts',
+      await Settings.create({ primaryColor: '#123456', whatsappNumber: '917736989068', shippingWeightThreshold: 500, freeShippingThreshold: 999, giftingTitle: 'Gifts',
         shipping: { marker: 'checkout section must survive' } });
       const before = await Settings.findOne().lean() as any;
       const r = await call('PUT', '/settings', { bannerText: 'Hello\nWorld', isBannerActive: true }, adminT);
@@ -95,7 +95,7 @@ const run = async () => {
       assert.strictEqual(bad.status, 400); assert.strictEqual(bad.json.errors[0].field, 'whatsappNumber');
       assert.strictEqual((await call('PUT', '/settings', { primaryColor: 'red' }, adminT)).status, 400);
       assert.strictEqual((await call('PUT', '/settings', { isBannerActive: 'yes' }, adminT)).status, 400);
-      assert.strictEqual((await call('PUT', '/settings', { whatsappNumber: '+91 98479-78098' }, adminT)).json.data.whatsappNumber, '919847978098', 'stored as digits');
+      assert.strictEqual((await call('PUT', '/settings', { whatsappNumber: '+91 77369-89068' }, adminT)).json.data.whatsappNumber, '917736989068', 'stored as digits');
       const unknown = await call('PUT', '/settings', { evil: 1, isAdmin: true }, adminT);
       assert.strictEqual(unknown.status, 200); assert.ok(!('evil' in (await Settings.findOne().lean() as any)), 'unknown keys dropped');
       assert.strictEqual((await call('PUT', '/settings', { bannerText: 'x' })).status, 401);

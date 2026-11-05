@@ -71,7 +71,7 @@ const run = async () => {
             assert_1.default.strictEqual((await call('POST', '/contacts', { name: 'X', email: 'x@example.com', message: 'hi', status: 'RESOLVED' })).json.data.status, 'NEW', 'status is server-owned');
         });
         await test('Settings: saving edited fields keeps every other field and one document', async () => {
-            await Settings_1.Settings.create({ primaryColor: '#123456', whatsappNumber: '919847978098', shippingWeightThreshold: 500, freeShippingThreshold: 999, giftingTitle: 'Gifts',
+            await Settings_1.Settings.create({ primaryColor: '#123456', whatsappNumber: '917736989068', shippingWeightThreshold: 500, freeShippingThreshold: 999, giftingTitle: 'Gifts',
                 shipping: { marker: 'checkout section must survive' } });
             const before = await Settings_1.Settings.findOne().lean();
             const r = await call('PUT', '/settings', { bannerText: 'Hello\nWorld', isBannerActive: true }, adminT);
@@ -92,7 +92,7 @@ const run = async () => {
             assert_1.default.strictEqual(bad.json.errors[0].field, 'whatsappNumber');
             assert_1.default.strictEqual((await call('PUT', '/settings', { primaryColor: 'red' }, adminT)).status, 400);
             assert_1.default.strictEqual((await call('PUT', '/settings', { isBannerActive: 'yes' }, adminT)).status, 400);
-            assert_1.default.strictEqual((await call('PUT', '/settings', { whatsappNumber: '+91 98479-78098' }, adminT)).json.data.whatsappNumber, '919847978098', 'stored as digits');
+            assert_1.default.strictEqual((await call('PUT', '/settings', { whatsappNumber: '+91 77369-89068' }, adminT)).json.data.whatsappNumber, '917736989068', 'stored as digits');
             const unknown = await call('PUT', '/settings', { evil: 1, isAdmin: true }, adminT);
             assert_1.default.strictEqual(unknown.status, 200);
             assert_1.default.ok(!('evil' in await Settings_1.Settings.findOne().lean()), 'unknown keys dropped');
