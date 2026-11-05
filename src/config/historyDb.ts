@@ -1,5 +1,6 @@
 import { MongoClient, Db } from 'mongodb';
 import { orderAndCustomerStats } from '../utils/dashboardStats';
+import logger from '../utils/logger';
 
 /**
  * Optional, strictly READ-ONLY connection to historical business data (orders, customers) for the LOCAL dashboard.
@@ -93,7 +94,11 @@ const historyDb = async (): Promise<Db | null> => {
     if (optedIn) throw new HistoryUnavailableError(cfg.reason);
     return null;
   }
-  if (cached?.uri === cfg.uri) return cached.db;
+  // A request arriving while the first connect is still pending shares it; if that connect fails, this request gets the
+  // same explained 503 (never the raw driver error, which names the host, as a 500)
+  if (cached?.uri === cfg.uri) {
+    return cached.db.catch((err) => { throw new HistoryUnavailableError(redact(explainHistoryError(err), cfg.uri)); });
+  }
   if (Date.now() - failedAt < RETRY_AFTER_MS) throw new HistoryUnavailableError(lastError);
   const db = connect(cfg.uri, cfg.dbName);
   cached = { uri: cfg.uri, db };
@@ -101,7 +106,8 @@ const historyDb = async (): Promise<Db | null> => {
     return await db;
   } catch (err: any) {
     cached = null; failedAt = Date.now(); lastError = redact(explainHistoryError(err), cfg.uri);
-    console.error(`⚠️  Historical data (read-only) unavailable: ${lastError}`);
+    // Recorded in logs/ too: the admin only sees a 503, and the cause (network, Atlas IP list, login) is needed afterwards
+    logger.warn(`Historical data (read-only) unavailable: ${lastError}`);
     throw new HistoryUnavailableError(lastError);
   }
 };
@@ -119,7 +125,9 @@ const readHistory = async <T>(read: (db: Db) => Promise<T>): Promise<T | null> =
     return await read(db);
   } catch (err: any) {
     const cfg = historyConfig();
-    throw new HistoryUnavailableError(cfg.enabled ? redact(explainHistoryError(err), cfg.uri) : 'history disabled');
+    const reason = cfg.enabled ? redact(explainHistoryError(err), cfg.uri) : 'history disabled';
+    logger.warn(`Historical data (read-only) query failed: ${reason}`);
+    throw new HistoryUnavailableError(reason);
   }
 };
 
