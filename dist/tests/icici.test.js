@@ -90,6 +90,18 @@ const run = async () => {
             paymentMode: 'CARD', amount: total.toFixed(2), ...extra });
         console.log('Initiate and return URL');
         let txnNo = '';
+        await test('UAT URLs on a production server: only ICICI_PG_UAT_TEST_EMAILS customers may pay', async () => {
+            const saved = { ...process.env };
+            Object.assign(process.env, { NODE_ENV: 'production', ICICI_PG_INITIATE_SALE_URL: 'https://pgpayuat.icicibank.com/x', ICICI_PG_UAT_TEST_EMAILS: 'someone@else.test' });
+            try {
+                assert_1.default.strictEqual((await initiate()).status, 403);
+                process.env.ICICI_PG_UAT_TEST_EMAILS = ' ANN@test.local ,someone@else.test';
+                assert_1.default.notStrictEqual((await initiate()).status, 403); // passes the gate (the fake URL then fails upstream)
+            }
+            finally {
+                Object.assign(process.env, { NODE_ENV: saved.NODE_ENV, ICICI_PG_INITIATE_SALE_URL: saved.ICICI_PG_INITIATE_SALE_URL, ICICI_PG_UAT_TEST_EMAILS: saved.ICICI_PG_UAT_TEST_EMAILS ?? '' });
+            }
+        });
         await test('initiate prices on the server, reserves stock and returns redirectURI?tranCtx=', async () => {
             const r = await initiate();
             assert_1.default.strictEqual(r.status, 200, JSON.stringify(r.json));
@@ -136,9 +148,9 @@ const run = async () => {
             assert_1.default.strictEqual(await stock(), 8);
             assert_1.default.strictEqual(await Order_1.default.countDocuments({ razorpayOrderId: t }), 0);
         });
-        await test('UPI R1000 (pending) on the return URL is "unconfirmed"; the later payment advice completes the order', async () => {
+        await test('UPI R1000 (pending) on the return URL goes to the pending page; the later payment advice completes the order', async () => {
             const t = (await initiate()).json.data.merchantTxnNo;
-            assert_1.default.strictEqual((await formPost('/payments/icici/callback', paid(t, { responseCode: 'R1000' }))).location, 'https://shop.test/order-failure?reason=unconfirmed');
+            assert_1.default.strictEqual((await formPost('/payments/icici/callback', paid(t, { responseCode: 'R1000' }))).location, 'https://shop.test/order-failure?reason=pending');
             assert_1.default.strictEqual(await Order_1.default.countDocuments({ razorpayOrderId: t }), 0);
             // Advice in JSON (merchant opted for JSON at onboarding)
             const r = await fetch(`${base}/payments/icici/payment-advice`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(paid(t)) });

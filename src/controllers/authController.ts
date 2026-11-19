@@ -273,9 +273,8 @@ export const loginCustomer = asyncHandler(async (req: Request, res: Response) =>
       return errorResponse(res, 401, 'Invalid email or password');
     }
 
-    if (!user.isVerified) {
-      return errorResponse(res, 403, 'Please verify your email to continue. We have sent an OTP to your email during registration.');
-    }
+    // No isVerified check: registration verifies accounts itself and the site has no OTP screen, so older unverified
+    // accounts were locked out with a 403 they could never clear. The correct password is the proof here.
 
     if (!user.isActive) {
       return errorResponse(res, 403, 'Your account has been deactivated');
@@ -283,7 +282,7 @@ export const loginCustomer = asyncHandler(async (req: Request, res: Response) =>
 
     // Only allow customers to use this endpoint
     if (user.role !== 'customer') {
-      return errorResponse(res, 403, 'Please use the admin portal to login');
+      return errorResponse(res, 403, 'This is a staff account. Please sign in through the admin portal.', { code: 'USE_ADMIN_PORTAL' });
     }
 
     const token = generateToken(user._id.toString(), user.role);
@@ -374,7 +373,7 @@ export const googleAuth = asyncHandler(async (req: Request, res: Response) => {
       }
       // Admin accounts sign in through the admin portal only, like loginCustomer
       if (user.role !== 'customer') {
-        return errorResponse(res, 403, 'Please use the admin portal to login');
+        return errorResponse(res, 403, 'This is a staff account. Please sign in through the admin portal.', { code: 'USE_ADMIN_PORTAL' });
       }
       // Update Google ID if not set, and make sure user is marked verified
       if (!user.googleId || !user.isVerified) {

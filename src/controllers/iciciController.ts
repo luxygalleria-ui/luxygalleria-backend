@@ -92,9 +92,11 @@ const handleGatewayPost = async (p: Record<string, any>, source: 'icici-callback
 export const iciciInitiate = async (req: Request, res: Response) => {
   try {
     if (!iciciConfigured()) return res.status(503).json({ success: false, message: 'ICICI payments are not available' });
-    // UAT credentials on the live server: test-card "payments" must never become real customer orders. Staff only.
-    if (icici().initiateSaleUrl.includes('pgpayuat') && process.env.NODE_ENV === 'production' && !['admin', 'superadmin'].includes(String(req.user?.role))) {
-      return res.status(403).json({ success: false, message: 'ICICI payments are not available yet' });
+    // UAT credentials on the live server: test-card "payments" must never become real customer orders, so only the
+    // customer accounts listed in ICICI_PG_UAT_TEST_EMAILS may pay. Admin accounts cannot sign in on the storefront.
+    const uatTesters = (process.env.ICICI_PG_UAT_TEST_EMAILS || '').toLowerCase().split(',').map((e) => e.trim()).filter(Boolean);
+    if (icici().initiateSaleUrl.includes('pgpayuat') && process.env.NODE_ENV === 'production' && !uatTesters.includes(String(req.user?.email).toLowerCase())) {
+      return res.status(403).json({ success: false, message: 'Online payment is being set up and is not available yet. Please try again later.' });
     }
     // Back from ICICI's page without paying and trying again: release this customer's earlier unpaid holds first, so
     // the last unit is not blocked by their own reservation. If an earlier one is paid after all, it re-reserves.
@@ -158,8 +160,9 @@ export const iciciCallback = async (req: Request, res: Response) => {
     if (outcome === 'created' || outcome === 'existing') return to('/order-success');
     if (outcome === 'unfulfillable') return to('/order-failure?reason=paid_out_of_stock');
     if (outcome === 'processing') return to('/order-failure?reason=processing');
-    if (outcome === 'failed') return to('/order-failure'); // a verified decline: safe to try again
-    // Pending (UPI R1000), wrong amount, unknown session or an unverifiable post: money may have moved
+    if (outcome === 'failed') return to('/order-failure'); // a verified decline or cancel: safe to try again
+    if (outcome === 'pending') return to('/order-failure?reason=pending'); // UPI R1000: awaiting the customer's approval
+    // Wrong amount, unknown session or an unverifiable post: money may have moved
     return to('/order-failure?reason=unconfirmed');
   } catch (error: any) {
     console.error('Error handling ICICI callback:', error?.message);
