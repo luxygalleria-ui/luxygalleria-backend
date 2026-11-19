@@ -89,6 +89,10 @@ const iciciInitiate = async (req, res) => {
     try {
         if (!(0, iciciPg_1.iciciConfigured)())
             return res.status(503).json({ success: false, message: 'ICICI payments are not available' });
+        // UAT credentials on the live server: test-card "payments" must never become real customer orders. Staff only.
+        if ((0, iciciPg_1.icici)().initiateSaleUrl.includes('pgpayuat') && process.env.NODE_ENV === 'production' && !['admin', 'superadmin'].includes(String(req.user?.role))) {
+            return res.status(403).json({ success: false, message: 'ICICI payments are not available yet' });
+        }
         // Back from ICICI's page without paying and trying again: release this customer's earlier unpaid holds first, so
         // the last unit is not blocked by their own reservation. If an earlier one is paid after all, it re-reserves.
         const earlier = await CheckoutSession_1.CheckoutSession.find({ user: req.user._id, gateway: 'icici', status: 'pending' }, { _id: 1 }).lean();
