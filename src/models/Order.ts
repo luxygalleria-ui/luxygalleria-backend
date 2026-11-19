@@ -39,7 +39,11 @@ export interface IOrder extends Document {
   paymentMethod: string;
   paymentStatus: 'pending' | 'completed' | 'failed' | 'refunded';
   orderStatus: 'processing' | 'shipped' | 'delivered' | 'cancelled';
+  /** Gateway order reference: Razorpay order id, or the ICICI merchantTxnNo for paymentMethod "icici". */
   razorpayOrderId?: string;
+  iciciTxnId?: string;
+  iciciRefundTxnNo?: string;
+  iciciSettlement?: Record<string, unknown>;
   razorpayPaymentId?: string;
   razorpaySignature?: string;
   erpOrderId?: string;
@@ -124,6 +128,10 @@ const OrderSchema: Schema = new Schema(
     razorpayOrderId: { type: String },
     razorpayPaymentId: { type: String },
     razorpaySignature: { type: String },
+    // ICICI Orange PG: txnID from the gateway, the refund request's merchantTxnNo (reused on retry), settlement advice
+    iciciTxnId: { type: String },
+    iciciRefundTxnNo: { type: String },
+    iciciSettlement: { type: Schema.Types.Mixed },
     // Set by the ERP order-status webhook
     erpOrderId: { type: String },
     trackingNumber: { type: String },

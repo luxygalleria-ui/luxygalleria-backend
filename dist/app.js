@@ -64,7 +64,11 @@ const corsConfig = {
     credentials: true,
     optionsSuccessStatus: 200,
 };
-app.use((0, cors_1.default)(corsConfig));
+// ICICI posts here from its own pages and servers (the customer's browser carries ICICI's Origin). No CORS on these:
+// they never read a cookie and are authenticated by the gateway's secureHash (controllers/iciciController.ts).
+const iciciInbound = /^\/api\/v1\/payments\/icici\/(callback|payment-advice|settlement-advice)\/?$/;
+const corsMiddleware = (0, cors_1.default)(corsConfig);
+app.use((req, res, next) => (iciciInbound.test(req.path) ? next() : corsMiddleware(req, res, next)));
 app.options("*", (0, cors_1.default)(corsConfig));
 // Health Check Route (for monitoring and Render wake-up)
 app.get('/', (req, res) => {
@@ -85,7 +89,8 @@ app.get('/api/v1/health', (req, res) => {
 // Body parsers with size limits
 // rawBody: the exact bytes the ERP signed (middlewares/erpAuth.ts)
 app.use(express_1.default.json({ limit: '1mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
-app.use(express_1.default.urlencoded({ extended: true, limit: '1mb' }));
+// rawBody also for form posts: ICICI's secureHash is checked against the bytes it sent, before the sanitizers below
+app.use(express_1.default.urlencoded({ extended: true, limit: '1mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.use((0, cookie_parser_1.default)());
 // Sanitization middleware - prevent NoSQL injection and XSS
 app.use(sanitize_1.sanitizeInput);

@@ -39,6 +39,7 @@ const itemSchema = new mongoose_1.Schema({
     product: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Product', required: true },
     variantId: { type: mongoose_1.Schema.Types.ObjectId, required: true },
     name: { type: String, required: true },
+    sku: String,
     price: { type: Number, required: true },
     quantity: { type: Number, required: true },
     weight: { type: Number, required: true },
@@ -52,6 +53,7 @@ const itemSchema = new mongoose_1.Schema({
 const sessionSchema = new mongoose_1.Schema({
     user: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
     razorpayOrderId: { type: String, required: true, unique: true },
+    gateway: { type: String, enum: ['razorpay', 'icici'], default: 'razorpay' },
     isMock: { type: Boolean, default: false },
     status: { type: String, enum: ['pending', 'processing', 'paid', 'expired', 'unfulfillable'], default: 'pending', index: true },
     stockReserved: { type: Boolean, default: false },

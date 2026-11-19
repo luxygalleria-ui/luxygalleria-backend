@@ -27,7 +27,9 @@ export interface ISessionItem {
 
 export interface ICheckoutSession extends Document {
   user: mongoose.Types.ObjectId;
+  /** Gateway order reference: the Razorpay order id, or the ICICI merchantTxnNo when gateway is "icici". */
   razorpayOrderId: string;
+  gateway: 'razorpay' | 'icici';
   isMock: boolean;
   status: SessionStatus;
   stockReserved: boolean;
@@ -75,6 +77,7 @@ const itemSchema = new Schema<ISessionItem>({
 const sessionSchema = new Schema<ICheckoutSession>({
   user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   razorpayOrderId: { type: String, required: true, unique: true },
+  gateway: { type: String, enum: ['razorpay', 'icici'], default: 'razorpay' },
   isMock: { type: Boolean, default: false },
   status: { type: String, enum: ['pending', 'processing', 'paid', 'expired', 'unfulfillable'], default: 'pending', index: true },
   stockReserved: { type: Boolean, default: false },

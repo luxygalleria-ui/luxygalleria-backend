@@ -15,6 +15,15 @@ router.patch('/items/:sku', erpAuth_1.erpAuth, erpController_1.patchItem);
 router.get('/orders', erpAuth_1.erpAuth, erpController_1.listOrders);
 router.get('/orders/:orderId', erpAuth_1.erpAuth, erpController_1.getOrder);
 router.post('/webhooks/order-status', erpAuth_1.erpAuth, erpController_1.orderStatusWebhook);
+router.get('/brands', erpAuth_1.erpAuth, erpController_1.listBrands);
+router.get('/brands/:id', erpAuth_1.erpAuth, erpController_1.getBrand);
+router.post('/brands', erpAuth_1.erpAuth, erpController_1.createBrand);
+router.patch('/brands/:id', erpAuth_1.erpAuth, erpController_1.patchBrand);
+router.get('/giftboxes', erpAuth_1.erpAuth, erpController_1.listGiftboxes);
+router.get('/giftboxes/:id', erpAuth_1.erpAuth, erpController_1.getGiftbox);
+router.post('/giftboxes', erpAuth_1.erpAuth, erpController_1.addGiftbox);
+router.patch('/giftboxes/:id', erpAuth_1.erpAuth, erpController_1.patchGiftbox);
+router.delete('/giftboxes/:id', erpAuth_1.erpAuth, erpController_1.removeGiftbox);
 // Key and timestamp are checked before the upload is read; the signature then covers the file bytes.
 router.post('/images', erpAuth_1.erpHeaders, erpController_1.readImage, (0, erpAuth_1.erpSignature)((req) => req.file?.buffer), erpController_1.uploadImage);
 exports.default = router;

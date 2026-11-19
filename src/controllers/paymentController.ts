@@ -15,6 +15,8 @@ import { CheckoutSettingsError } from '../utils/checkoutSettings';
 import { CheckoutSession, ICheckoutSession } from '../models/CheckoutSession';
 import { expireStaleSessions, finalizeSession, reserveStock, settingsFingerprint, snapshotFromQuote } from '../utils/checkoutSessions';
 import { ORDER_STATUSES, canMoveOrderStatus } from '../utils/orderStatus';
+import { iciciConfigured } from '../utils/iciciPg';
+import { checkIciciStatus } from './iciciController';
 dotenv.config();
 
 export const razorpayInstance = new Razorpay({
@@ -96,7 +98,7 @@ const chargeRows = (o: any) => {
 };
 
 /** Order confirmation email. Never throws: a mail failure must not fail the order. */
-const sendOrderConfirmationEmail = async (newOrder: any, user: { _id: unknown; name?: string; email?: string; role?: string }) => {
+export const sendOrderConfirmationEmail = async (newOrder: any, user: { _id: unknown; name?: string; email?: string; role?: string }) => {
       try {
         if (user && user.email) {
           const autoLoginToken = jwt.sign({ id: user._id, role: user.role || 'customer' }, ENV.JWT_SECRET, { expiresIn: '7d' });
@@ -217,48 +219,88 @@ export const paymentMatchesSession = (payment: any, session: Pick<ICheckoutSessi
   return ok;
 };
 
+/**
+ * Validates a checkout request and prices it on the server. Shared by every gateway. Sends the error response and
+ * returns null when the request cannot be paid.
+ */
+export const priceCheckout = async (req: Request, res: Response) => {
+  const { total, items, shippingAddress } = req.body;
+  const selection = selectionFrom(req.body, true);
+  if (typeof selection === 'string') { res.status(400).json({ success: false, message: selection }); return null; }
+
+  // Refuse to start a delivery payment without a deliverable address (pickup orders need none)
+  if (selection.fulfillment === 'delivery' && !hasDeliveryAddress(shippingAddress)) {
+    res.status(400).json({ success: false, message: 'Please select or add a shipping address' }); return null;
+  }
+  if (typeof total !== 'number' || Number.isNaN(total) || total <= 0) {
+    res.status(400).json({ success: false, message: 'Invalid order total. Please refresh and try again.' }); return null;
+  }
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    res.status(400).json({ success: false, message: 'No items in order to validate.' }); return null;
+  }
+
+  // Server-side amount validation: shipping, packaging, pickup charge and tax are all recomputed here
+  let totals;
+  try {
+    totals = await calculateShippingForItems(items, selection);
+  } catch (err: any) {
+    pricingError(res, err); return null;
+  }
+
+  // The client shows the server's own quote, so the totals must agree to the paisa; any difference is stale or tampered
+  if (Math.round(totals.grandTotal * 100) !== Math.round(total * 100)) {
+    res.status(400).json({
+      success: false,
+      message: `Order total validation failed. Server calculated total of ${totals.grandTotal} differs from client total of ${total}. Please refresh and try again.`
+    });
+    return null;
+  }
+
+  await expireStaleSessions();
+  return { totals, items, shippingAddress };
+};
+
+/**
+ * Saves the immutable quote a payment will be verified against, then reserves its stock. Returns the session, or null
+ * after answering OUT_OF_STOCK. `gatewayOrderId` is the Razorpay order id or the ICICI merchantTxnNo.
+ */
+export const openSession = async (
+  req: Request, res: Response, priced: NonNullable<Awaited<ReturnType<typeof priceCheckout>>>,
+  gatewayOrderId: string, gateway: 'razorpay' | 'icici', isMock = false,
+) => {
+  // Saved as holding stock BEFORE the stock is taken, so an ERP stock update (erpController.updateStock) always either
+  // counts this hold or sees the stock change and retries: it can never overwrite a reservation it did not count.
+  // A failed reservation briefly under-counts, never over.
+  const fp = await settingsFingerprint();
+  const session = await CheckoutSession.create(snapshotFromQuote(priced.totals, priced.items, {
+    user: req.user!._id, razorpayOrderId: gatewayOrderId, gateway, isMock, shippingAddress: priced.shippingAddress,
+    settingsVersion: fp.version, settingsUpdatedAt: fp.updatedAt,
+  }));
+
+  // Reserve stock now (atomic, all or nothing) so concurrent checkouts can never sell the same units
+  const reserved = await reserveStock(priced.totals.lines);
+  if (!reserved.ok) {
+    // Nothing was taken; the unused gateway order is never shown to the customer and lapses unpaid
+    await CheckoutSession.updateOne({ _id: session._id }, {
+      $set: { status: 'expired', stockReserved: false }, $push: { events: { at: new Date(), type: 'out-of-stock', detail: reserved.name } },
+    });
+    res.status(400).json({ success: false, code: 'OUT_OF_STOCK', message: `Only ${reserved.available} of ${reserved.name} left in stock` });
+    return null;
+  }
+  return session;
+};
+
 // Create Order — Only creates a Razorpay order, does NOT save to DB yet
 export const createOrder = async (req: Request, res: Response) => {
   try {
-    const { total, items, shippingAddress } = req.body;
-    const selection = selectionFrom(req.body, true);
-    if (typeof selection === 'string') return res.status(400).json({ success: false, message: selection });
-
-    // Refuse to start a delivery payment without a deliverable address (pickup orders need none)
-    if (selection.fulfillment === 'delivery' && !hasDeliveryAddress(shippingAddress)) {
-      return res.status(400).json({ success: false, message: 'Please select or add a shipping address' });
-    }
-
-    if (typeof total !== 'number' || Number.isNaN(total) || total <= 0) {
-      return res.status(400).json({ success: false, message: 'Invalid order total. Please refresh and try again.' });
-    }
-
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ success: false, message: 'No items in order to validate.' });
-    }
-
-    // Server-side amount validation: shipping, packaging, pickup charge and tax are all recomputed here
-    let totals;
-    try {
-      totals = await calculateShippingForItems(items, selection);
-    } catch (err: any) {
-      return pricingError(res, err);
-    }
-
-    // The client shows the server's own quote, so the totals must agree to the paisa; any difference is stale or tampered
-    if (Math.round(totals.grandTotal * 100) !== Math.round(total * 100)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: `Order total validation failed. Server calculated total of ${totals.grandTotal} differs from client total of ${total}. Please refresh and try again.` 
-      });
-    }
-
-    await expireStaleSessions();
+    const priced = await priceCheckout(req, res);
+    if (!priced) return;
+    const amountPaise = Math.round(priced.totals.grandTotal * 100);
 
     let razorpayOrder;
     let isMock = false;
     if (isMockPaymentMode()) {
-      razorpayOrder = { id: `mock_order_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`, amount: Math.round(totals.grandTotal * 100), currency: 'INR' };
+      razorpayOrder = { id: `mock_order_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`, amount: amountPaise, currency: 'INR' };
       isMock = true;
     } else if (razorpayKeysMissing()) {
       console.error('Razorpay keys are not configured; refusing to create a payment');
@@ -266,30 +308,15 @@ export const createOrder = async (req: Request, res: Response) => {
     } else {
       razorpayOrder = await razorpayInstance.orders.create({
         // Charge the server-calculated amount, never the client's number
-        amount: Math.round(totals.grandTotal * 100),
+        amount: amountPaise,
         currency: 'INR',
         receipt: `receipt_order_${Date.now()}`,
-        notes: { fulfillment: totals.fulfillmentMethod, shippingMethod: totals.shippingMethod || '' },
+        notes: { fulfillment: priced.totals.fulfillmentMethod, shippingMethod: priced.totals.shippingMethod || '' },
       });
     }
 
-    // The immutable quote this payment will be verified against. It is saved as holding stock BEFORE the stock is taken,
-    // so an ERP stock update (erpController.updateStock) always either counts this hold or sees the stock change and
-    // retries: it can never overwrite a reservation it did not count. A failed reservation briefly under-counts, never over.
-    const fp = await settingsFingerprint();
-    const session = await CheckoutSession.create(snapshotFromQuote(totals, items, {
-      user: req.user!._id, razorpayOrderId: razorpayOrder.id, isMock, shippingAddress, settingsVersion: fp.version, settingsUpdatedAt: fp.updatedAt,
-    }));
-
-    // Reserve stock now (atomic, all or nothing) so concurrent checkouts can never sell the same units
-    const reserved = await reserveStock(totals.lines);
-    if (!reserved.ok) {
-      // Nothing was taken; the unused Razorpay order is never shown to the customer and lapses unpaid
-      await CheckoutSession.updateOne({ _id: session._id }, {
-        $set: { status: 'expired', stockReserved: false }, $push: { events: { at: new Date(), type: 'out-of-stock', detail: reserved.name } },
-      });
-      return res.status(400).json({ success: false, code: 'OUT_OF_STOCK', message: `Only ${reserved.available} of ${reserved.name} left in stock` });
-    }
+    const session = await openSession(req, res, priced, razorpayOrder.id, 'razorpay', isMock);
+    if (!session) return;
 
     // No order yet — the order is created only after the payment is confirmed against the session
     res.status(200).json({
@@ -775,11 +802,11 @@ export const refundOrder = async (req: Request, res: Response) => {
 // orders (or flags them), and refreshes the status of submitted refunds. Safe to run repeatedly.
 export const reconcilePayments = async (req: Request, res: Response) => {
   try {
-    const summary = { expiredSessions: 0, recoveredOrders: [] as string[], unfulfillable: [] as string[], mismatchedPayments: [] as string[], refundsUpdated: 0, errors: [] as string[] };
+    const summary = { expiredSessions: 0, recoveredOrders: [] as string[], unfulfillable: [] as string[], mismatchedPayments: [] as string[], icici: [] as string[], refundsUpdated: 0, errors: [] as string[] };
     summary.expiredSessions = await expireStaleSessions();
 
     const since = new Date(Date.now() - 7 * 86_400_000);
-    const open = await CheckoutSession.find({ isMock: false, status: { $in: ['pending', 'expired', 'processing'] }, createdAt: { $gte: since } }).limit(200);
+    const open = await CheckoutSession.find({ isMock: false, gateway: { $ne: 'icici' }, status: { $in: ['pending', 'expired', 'processing'] }, createdAt: { $gte: since } }).limit(200);
     for (const s of open) {
       try {
         const list: any = await razorpayInstance.orders.fetchPayments(s.razorpayOrderId);
@@ -794,6 +821,19 @@ export const reconcilePayments = async (req: Request, res: Response) => {
         }
       } catch (err: any) {
         summary.errors.push(`${s.razorpayOrderId}: ${String(err?.message || err).slice(0, 120)}`);
+      }
+    }
+
+    // ICICI: ask for the status of open sessions (lost return URL / advice, UPI left pending at R1000)
+    if (iciciConfigured()) {
+      const iciciOpen = await CheckoutSession.find({ gateway: 'icici', status: { $in: ['pending', 'expired', 'processing'] }, createdAt: { $gte: since } }, { razorpayOrderId: 1 }).limit(200).lean();
+      for (const s of iciciOpen) {
+        try {
+          const r = await checkIciciStatus(s.razorpayOrderId);
+          summary.icici.push(`${s.razorpayOrderId}: ${r.txnStatus ?? 'not found'} -> ${r.outcome}`);
+        } catch (err: any) {
+          summary.errors.push(`${s.razorpayOrderId}: ${String(err?.message || err).slice(0, 120)}`);
+        }
       }
     }
 
