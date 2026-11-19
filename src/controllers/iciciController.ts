@@ -4,7 +4,7 @@ import { Cart } from '../models/Cart';
 import { User } from '../models/User';
 import { CheckoutSession } from '../models/CheckoutSession';
 import { finalizeSession, releaseStock } from '../utils/checkoutSessions';
-import { icici, iciciConfigured, isIciciSuccess, istTimestamp, newTxnNo, postForm, postJson, signed, verifyV1 } from '../utils/iciciPg';
+import { icici, iciciConfigured, isIciciSuccess, saleTxnDate, newTxnNo, postForm, postJson, signed, verifyV1 } from '../utils/iciciPg';
 import { openSession, priceCheckout, sendOrderConfirmationEmail } from './paymentController';
 
 /**
@@ -122,7 +122,7 @@ export const iciciInitiate = async (req: Request, res: Response) => {
       customerEmailID: user.email,
       customerMobileNo: mobile.length === 10 ? mobile : undefined,
       transactionType: 'SALE',
-      txnDate: istTimestamp(),
+      txnDate: saleTxnDate(),
       returnURL: c.returnURL,
     });
 

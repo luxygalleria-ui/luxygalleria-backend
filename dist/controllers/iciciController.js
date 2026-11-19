@@ -120,7 +120,7 @@ const iciciInitiate = async (req, res) => {
             customerEmailID: user.email,
             customerMobileNo: mobile.length === 10 ? mobile : undefined,
             transactionType: 'SALE',
-            txnDate: (0, iciciPg_1.istTimestamp)(),
+            txnDate: (0, iciciPg_1.saleTxnDate)(),
             returnURL: c.returnURL,
         });
         let resp;

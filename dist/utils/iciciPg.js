@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isIciciSuccess = exports.postForm = exports.postJson = exports.signed = exports.istTimestamp = exports.newTxnNo = exports.verifyV1 = exports.hashV2 = exports.hashV1 = exports.iciciConfigured = exports.icici = void 0;
+exports.isIciciSuccess = exports.postForm = exports.postJson = exports.signed = exports.saleTxnDate = exports.istTimestamp = exports.newTxnNo = exports.verifyV1 = exports.hashV2 = exports.hashV1 = exports.iciciConfigured = exports.icici = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 /**
  * ICICI Orange PG (Gateway_Interface_Specifiation_V0.4_Orange_PG.pdf). Server-side only: the secret key never leaves
@@ -49,6 +49,16 @@ exports.newTxnNo = newTxnNo;
 /** YYYYMMDDHHMMSS in IST (the server may run in UTC). */
 const istTimestamp = (d = new Date()) => new Date(d.getTime() + 330 * 60_000).toISOString().replace(/\D/g, '').slice(0, 14);
 exports.istTimestamp = istTimestamp;
+/**
+ * initiateSale txnDate. Step-wise doc: "greater than payment initiation time, max 235959 with current date". So: now + 5 min,
+ * capped at 23:59:59 IST today (a payment started just before midnight still gets a same-day txnDate).
+ */
+const saleTxnDate = (now = new Date()) => {
+    const later = (0, exports.istTimestamp)(new Date(now.getTime() + 5 * 60_000));
+    const today = (0, exports.istTimestamp)(now).slice(0, 8);
+    return later.startsWith(today) ? later : `${today}235959`;
+};
+exports.saleTxnDate = saleTxnDate;
 /** Drops empty fields, then adds the V1 secureHash. */
 const signed = (params) => {
     const p = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== ''));

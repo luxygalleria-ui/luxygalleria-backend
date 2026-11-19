@@ -24,7 +24,7 @@ import { Product } from '../models/Product';
 import { Cart } from '../models/Cart';
 import Order from '../models/Order';
 import { CheckoutSession } from '../models/CheckoutSession';
-import { hashV1, hashV2, verifyV1 } from '../utils/iciciPg';
+import { hashV1, hashV2, verifyV1, istTimestamp, saleTxnDate } from '../utils/iciciPg';
 
 let passed = 0;
 const test = async (name: string, fn: () => Promise<void>) => { await fn(); passed++; console.log(`  ✅ ${name}`); };
@@ -95,11 +95,11 @@ const run = async () => {
     let txnNo = '';
     await test('UAT URLs on a production server: only ICICI_PG_UAT_TEST_EMAILS customers may pay', async () => {
       const saved = { ...process.env };
-      Object.assign(process.env, { NODE_ENV: 'production', ICICI_PG_INITIATE_SALE_URL: 'https://pgpayuat.icicibank.com/x', ICICI_PG_UAT_TEST_EMAILS: 'someone@else.test' });
+      Object.assign(process.env, { NODE_ENV: 'production', ICICI_PG_INITIATE_SALE_URL: 'https://icici.test/pgpayuat/initiateSale', ICICI_PG_UAT_TEST_EMAILS: 'someone@else.test' });
       try {
         assert.strictEqual((await initiate()).status, 403);
         process.env.ICICI_PG_UAT_TEST_EMAILS = ' ANN@test.local ,someone@else.test';
-        assert.notStrictEqual((await initiate()).status, 403); // passes the gate (the fake URL then fails upstream)
+        assert.strictEqual((await initiate()).status, 200); // listed (any case, spaces trimmed): allowed
       } finally { Object.assign(process.env, { NODE_ENV: saved.NODE_ENV, ICICI_PG_INITIATE_SALE_URL: saved.ICICI_PG_INITIATE_SALE_URL, ICICI_PG_UAT_TEST_EMAILS: saved.ICICI_PG_UAT_TEST_EMAILS ?? '' }); }
     });
 
@@ -113,6 +113,10 @@ const run = async () => {
       assert.deepStrictEqual([req.merchantId, req.aggregatorID, req.amount, req.currencyCode, req.payType, req.transactionType, req.customerEmailID],
         ['100000000007164', 'A100000000007164', total.toFixed(2), '356', '0', 'SALE', 'ann@test.local']);
       assert.match(req.txnDate, /^\d{14}$/);
+      assert.ok(req.txnDate > istTimestamp(), 'txnDate is later than the initiation time');
+      // Doc rule: later than now, but never past 23:59:59 IST of the same day
+      assert.strictEqual(saleTxnDate(new Date('2026-11-19T06:30:00Z')), '20261119120500'); // 12:00 IST -> 12:05
+      assert.strictEqual(saleTxnDate(new Date('2026-11-19T18:27:00Z')), '20261119235959'); // 23:57 IST -> capped
       assert.ok(verifyV1(req), 'request carries a valid secureHash');
       assert.strictEqual(await stock(), 8);
       const s = await CheckoutSession.findOne({ razorpayOrderId: txnNo }).lean();

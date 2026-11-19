@@ -47,6 +47,16 @@ export const newTxnNo = () => `LG${Date.now().toString(36)}${crypto.randomBytes(
 /** YYYYMMDDHHMMSS in IST (the server may run in UTC). */
 export const istTimestamp = (d = new Date()) => new Date(d.getTime() + 330 * 60_000).toISOString().replace(/\D/g, '').slice(0, 14);
 
+/**
+ * initiateSale txnDate. Step-wise doc: "greater than payment initiation time, max 235959 with current date". So: now + 5 min,
+ * capped at 23:59:59 IST today (a payment started just before midnight still gets a same-day txnDate).
+ */
+export const saleTxnDate = (now = new Date()) => {
+  const later = istTimestamp(new Date(now.getTime() + 5 * 60_000));
+  const today = istTimestamp(now).slice(0, 8);
+  return later.startsWith(today) ? later : `${today}235959`;
+};
+
 /** Drops empty fields, then adds the V1 secureHash. */
 export const signed = (params: Record<string, string | undefined>) => {
   const p = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '')) as Record<string, string>;
