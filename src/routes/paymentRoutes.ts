@@ -1,5 +1,6 @@
 import express from 'express';
 import { createOrder, verifyPayment, getMyOrders, getAllOrders, updateOrderStatus, correctOrderStatus, deleteOrder, calculateShipping, razorpayWebhook, refundOrder, reconcilePayments } from '../controllers/paymentController';
+import { iciciInitiate, iciciCallback, iciciPaymentAdvice, iciciSettlementAdvice, iciciStatus, iciciRefund } from '../controllers/iciciController';
 import { protect, authorize } from '../middlewares/authMiddleware';
 import { paymentLimiter } from '../middlewares/rateLimiter';
 
@@ -11,6 +12,15 @@ router.post('/webhook', razorpayWebhook);
 router.post('/create-order', paymentLimiter, protect, createOrder);
 router.post('/verify', paymentLimiter, protect, verifyPayment);
 router.get('/myorders', protect, getMyOrders);
+
+// ICICI Orange PG. callback / advices come from ICICI (browser form post, server-to-server): no user token and no
+// CORS (app.ts); each is authenticated by its secureHash.
+router.post('/icici/initiate', paymentLimiter, protect, iciciInitiate);
+router.post('/icici/callback', iciciCallback);
+router.post('/icici/payment-advice', iciciPaymentAdvice);
+router.post('/icici/settlement-advice', iciciSettlementAdvice);
+router.post('/icici/status', paymentLimiter, protect, iciciStatus);
+router.post('/icici/refund', protect, authorize('superadmin'), iciciRefund);
 
 // Admin routes
 router.get('/admin/orders', protect, authorize('admin', 'superadmin'), getAllOrders);

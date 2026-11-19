@@ -43,6 +43,9 @@ const OrderSchema = new mongoose_1.Schema({
         {
             product: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Product', required: true },
             variantId: { type: mongoose_1.Schema.Types.ObjectId, required: true },
+            // Product name and variant SKU as sold, so later catalogue edits or deletions never change order history
+            name: { type: String },
+            sku: { type: String },
             quantity: { type: Number, required: true },
             price: { type: Number, required: true },
             size: { type: String },
@@ -90,10 +93,17 @@ const OrderSchema = new mongoose_1.Schema({
     razorpayOrderId: { type: String },
     razorpayPaymentId: { type: String },
     razorpaySignature: { type: String },
+    // ICICI Orange PG: txnID from the gateway, the refund request's merchantTxnNo (reused on retry), settlement advice
+    iciciTxnId: { type: String },
+    iciciRefundTxnNo: { type: String },
+    iciciSettlement: { type: mongoose_1.Schema.Types.Mixed },
     // Set by the ERP order-status webhook
     erpOrderId: { type: String },
     trackingNumber: { type: String },
-    statusUpdatedAt: { type: Date }, // ERP event time of the last applied status; older events are ignored
+    // Written in the same atomic update as the status it records (paymentController.correctOrderStatus); never edited
+    statusCorrections: [{ at: { type: Date, required: true }, by: { type: String, required: true }, from: { type: String, required: true },
+            to: { type: String, required: true }, reason: { type: String, required: true }, _id: false }],
+    statusUpdatedAt: { type: Date }, // when the status last changed: ERP event time, or the time of an admin change; older ERP events are ignored
     checkoutSession: { type: mongoose_1.Schema.Types.ObjectId, ref: 'CheckoutSession' },
     fulfillmentIssue: { type: String },
     // Refund workflow (admin-initiated; see paymentController). Absent = no refund ever needed or requested.

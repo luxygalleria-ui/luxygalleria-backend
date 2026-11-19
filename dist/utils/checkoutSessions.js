@@ -64,12 +64,13 @@ exports.settingsFingerprint = settingsFingerprint;
 const snapshotFromQuote = (q, clientItems, extra) => ({
     user: extra.user,
     razorpayOrderId: extra.razorpayOrderId,
+    gateway: extra.gateway ?? 'razorpay',
     isMock: extra.isMock,
     status: 'pending',
     stockReserved: true,
     expiresAt: new Date(Date.now() + (0, exports.sessionTtlMs)()),
     items: q.lines.map((l, i) => ({
-        product: l.product, variantId: l.variantId, name: l.name, price: l.price, quantity: l.quantity, weight: l.weight,
+        product: l.product, variantId: l.variantId, name: l.name, sku: l.sku, price: l.price, quantity: l.quantity, weight: l.weight,
         size: typeof clientItems[i]?.size === 'string' ? clientItems[i].size.slice(0, 50) : undefined,
         image: typeof clientItems[i]?.image === 'string' ? clientItems[i].image.slice(0, 500) : undefined,
         subtotal: Math.round(l.price * l.quantity * 100) / 100,
@@ -100,7 +101,7 @@ const orderFromSession = (s, paymentId, signature) => ({
     user: s.user,
     checkoutSession: s._id,
     items: s.items.map((i) => ({
-        product: i.product, variantId: i.variantId, quantity: i.quantity, price: i.price, size: i.size, image: i.image, subtotal: i.subtotal,
+        product: i.product, variantId: i.variantId, name: i.name, sku: i.sku, quantity: i.quantity, price: i.price, size: i.size, image: i.image, subtotal: i.subtotal,
         ...(s.breakdown.tax.enabled ? { taxRate: i.taxRate ?? null, taxAmount: i.taxAmount ?? 0 } : {}),
     })),
     fulfillmentMethod: s.fulfillmentMethod,
@@ -115,11 +116,11 @@ const orderFromSession = (s, paymentId, signature) => ({
     discount: s.breakdown.discount,
     shippingFee: s.breakdown.shipping,
     total: s.breakdown.grandTotal,
-    paymentMethod: 'razorpay',
     paymentStatus: 'completed',
-    razorpayOrderId: s.razorpayOrderId,
-    razorpayPaymentId: paymentId,
-    razorpaySignature: signature,
+    razorpayOrderId: s.razorpayOrderId, // unique per order: the idempotency key for every gateway
+    ...(s.gateway === 'icici'
+        ? { paymentMethod: 'icici', iciciTxnId: paymentId }
+        : { paymentMethod: 'razorpay', razorpayPaymentId: paymentId, razorpaySignature: signature }),
 });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /**

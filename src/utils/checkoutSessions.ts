@@ -68,10 +68,11 @@ export const settingsFingerprint = async () => {
 export const snapshotFromQuote = (
   q: OrderQuote & { lines: ResolvedLine[] },
   clientItems: any[],
-  extra: { user: unknown; razorpayOrderId: string; isMock: boolean; shippingAddress?: unknown; settingsVersion: string; settingsUpdatedAt?: Date },
+  extra: { user: unknown; razorpayOrderId: string; gateway?: 'razorpay' | 'icici'; isMock: boolean; shippingAddress?: unknown; settingsVersion: string; settingsUpdatedAt?: Date },
 ) => ({
   user: extra.user,
   razorpayOrderId: extra.razorpayOrderId,
+  gateway: extra.gateway ?? 'razorpay',
   isMock: extra.isMock,
   status: 'pending',
   stockReserved: true,
@@ -123,11 +124,11 @@ const orderFromSession = (s: ICheckoutSession, paymentId: string, signature: str
   discount: s.breakdown.discount,
   shippingFee: s.breakdown.shipping,
   total: s.breakdown.grandTotal,
-  paymentMethod: 'razorpay',
   paymentStatus: 'completed',
-  razorpayOrderId: s.razorpayOrderId,
-  razorpayPaymentId: paymentId,
-  razorpaySignature: signature,
+  razorpayOrderId: s.razorpayOrderId, // unique per order: the idempotency key for every gateway
+  ...(s.gateway === 'icici'
+    ? { paymentMethod: 'icici', iciciTxnId: paymentId }
+    : { paymentMethod: 'razorpay', razorpayPaymentId: paymentId, razorpaySignature: signature }),
 });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -140,7 +141,7 @@ export type FinalizeOutcome = 'created' | 'existing' | 'unfulfillable' | 'proces
  * the order collection refuses a second order for the same Razorpay order, and stock is never taken twice.
  */
 export const finalizeSession = async (
-  sessionId: mongoose.Types.ObjectId | string, paymentId: string, signature: string, source: 'verify' | 'webhook' | 'reconcile',
+  sessionId: mongoose.Types.ObjectId | string, paymentId: string, signature: string, source: 'verify' | 'webhook' | 'reconcile' | 'icici-callback' | 'icici-advice' | 'icici-status',
 ): Promise<{ order: any | null; outcome: FinalizeOutcome }> => {
   const claimed = await CheckoutSession.findOneAndUpdate(
     { _id: sessionId, $or: [{ status: { $in: ['pending', 'expired'] } }, { status: 'processing', updatedAt: { $lt: new Date(Date.now() - STUCK_PROCESSING_MS) } }] },

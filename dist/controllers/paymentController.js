@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.reconcilePayments = exports.refundOrder = exports.razorpayWebhook = exports.isValidWebhookSignature = exports.deleteOrder = exports.sendOrderStatusEmail = exports.updateOrderStatus = exports.getAllOrders = exports.getMyOrders = exports.calculateShipping = exports.verifyPayment = exports.createOrder = exports.paymentMatchesSession = exports.isValidRazorpaySignature = exports.isMockPaymentMode = exports.razorpayInstance = void 0;
+exports.reconcilePayments = exports.refundOrder = exports.razorpayWebhook = exports.isValidWebhookSignature = exports.deleteOrder = exports.sendOrderStatusEmail = exports.correctOrderStatus = exports.updateOrderStatus = exports.getAllOrders = exports.getMyOrders = exports.calculateShipping = exports.verifyPayment = exports.createOrder = exports.openSession = exports.priceCheckout = exports.paymentMatchesSession = exports.customerOrderView = exports.sendOrderConfirmationEmail = exports.isValidRazorpaySignature = exports.isMockPaymentMode = exports.razorpayInstance = void 0;
 const razorpay_1 = __importDefault(require("razorpay"));
 const crypto_1 = __importDefault(require("crypto"));
 const Order_1 = __importDefault(require("../models/Order"));
@@ -17,6 +17,9 @@ const orderPricing_1 = require("../utils/orderPricing");
 const checkoutSettings_1 = require("../utils/checkoutSettings");
 const CheckoutSession_1 = require("../models/CheckoutSession");
 const checkoutSessions_1 = require("../utils/checkoutSessions");
+const orderStatus_1 = require("../utils/orderStatus");
+const iciciPg_1 = require("../utils/iciciPg");
+const iciciController_1 = require("./iciciController");
 dotenv_1.default.config();
 exports.razorpayInstance = new razorpay_1.default({
     key_id: (process.env.RAZORPAY_KEY_ID || 'dummy_key_id').trim(),
@@ -180,6 +183,29 @@ const sendOrderConfirmationEmail = async (newOrder, user) => {
         // Don't fail the order if email fails
     }
 };
+exports.sendOrderConfirmationEmail = sendOrderConfirmationEmail;
+/**
+ * What a customer may see of their own order (order history and checkout responses). An allow-list, so new internal
+ * fields stay private by default: payment ids and signature, ERP references, refund records, internal notes, the
+ * checkout session and the user id never leave the server. Fields absent on an order stay absent.
+ */
+const customerOrderView = (doc) => {
+    const o = typeof doc?.toObject === 'function' ? doc.toObject() : doc;
+    const product = (p) => (p && typeof p === 'object' && p.name !== undefined ? { _id: p._id, name: p.name, images: p.images } : null);
+    return {
+        _id: o._id, createdAt: o.createdAt, updatedAt: o.updatedAt,
+        orderStatus: o.orderStatus, paymentStatus: o.paymentStatus, paymentMethod: o.paymentMethod,
+        subtotal: o.subtotal, discount: o.discount, shippingFee: o.shippingFee, total: o.total,
+        fulfillmentMethod: o.fulfillmentMethod, shippingMethod: o.shippingMethod, shippingAddress: o.shippingAddress,
+        pickupDetails: o.pickupDetails, pickupFee: o.pickupFee, specialPackagingFee: o.specialPackagingFee, tax: o.tax,
+        trackingNumber: o.trackingNumber,
+        items: (o.items || []).map((i) => ({
+            product: product(i.product), name: i.name, size: i.size, image: i.image,
+            quantity: i.quantity, price: i.price, subtotal: i.subtotal, taxRate: i.taxRate, taxAmount: i.taxAmount,
+        })),
+    };
+};
+exports.customerOrderView = customerOrderView;
 /** A Razorpay payment pays this session only if it is for its order, in INR, authorised/captured and for exactly its amount. */
 const paymentMatchesSession = (payment, session) => {
     const ok = !!payment && payment.order_id === session.razorpayOrderId && ['authorized', 'captured'].includes(payment.status)
@@ -191,75 +217,106 @@ const paymentMatchesSession = (payment, session) => {
     return ok;
 };
 exports.paymentMatchesSession = paymentMatchesSession;
+/**
+ * Validates a checkout request and prices it on the server. Shared by every gateway. Sends the error response and
+ * returns null when the request cannot be paid.
+ */
+const priceCheckout = async (req, res) => {
+    const { total, items, shippingAddress } = req.body;
+    const selection = selectionFrom(req.body, true);
+    if (typeof selection === 'string') {
+        res.status(400).json({ success: false, message: selection });
+        return null;
+    }
+    // Refuse to start a delivery payment without a deliverable address (pickup orders need none)
+    if (selection.fulfillment === 'delivery' && !hasDeliveryAddress(shippingAddress)) {
+        res.status(400).json({ success: false, message: 'Please select or add a shipping address' });
+        return null;
+    }
+    if (typeof total !== 'number' || Number.isNaN(total) || total <= 0) {
+        res.status(400).json({ success: false, message: 'Invalid order total. Please refresh and try again.' });
+        return null;
+    }
+    if (!items || !Array.isArray(items) || items.length === 0) {
+        res.status(400).json({ success: false, message: 'No items in order to validate.' });
+        return null;
+    }
+    // Server-side amount validation: shipping, packaging, pickup charge and tax are all recomputed here
+    let totals;
+    try {
+        totals = await (0, shippingCalculator_1.calculateShippingForItems)(items, selection);
+    }
+    catch (err) {
+        pricingError(res, err);
+        return null;
+    }
+    // The client shows the server's own quote, so the totals must agree to the paisa; any difference is stale or tampered
+    if (Math.round(totals.grandTotal * 100) !== Math.round(total * 100)) {
+        res.status(400).json({
+            success: false,
+            message: `Order total validation failed. Server calculated total of ${totals.grandTotal} differs from client total of ${total}. Please refresh and try again.`
+        });
+        return null;
+    }
+    await (0, checkoutSessions_1.expireStaleSessions)();
+    return { totals, items, shippingAddress };
+};
+exports.priceCheckout = priceCheckout;
+/**
+ * Saves the immutable quote a payment will be verified against, then reserves its stock. Returns the session, or null
+ * after answering OUT_OF_STOCK. `gatewayOrderId` is the Razorpay order id or the ICICI merchantTxnNo.
+ */
+const openSession = async (req, res, priced, gatewayOrderId, gateway, isMock = false) => {
+    // Saved as holding stock BEFORE the stock is taken, so an ERP stock update (erpController.updateStock) always either
+    // counts this hold or sees the stock change and retries: it can never overwrite a reservation it did not count.
+    // A failed reservation briefly under-counts, never over.
+    const fp = await (0, checkoutSessions_1.settingsFingerprint)();
+    const session = await CheckoutSession_1.CheckoutSession.create((0, checkoutSessions_1.snapshotFromQuote)(priced.totals, priced.items, {
+        user: req.user._id, razorpayOrderId: gatewayOrderId, gateway, isMock, shippingAddress: priced.shippingAddress,
+        settingsVersion: fp.version, settingsUpdatedAt: fp.updatedAt,
+    }));
+    // Reserve stock now (atomic, all or nothing) so concurrent checkouts can never sell the same units
+    const reserved = await (0, checkoutSessions_1.reserveStock)(priced.totals.lines);
+    if (!reserved.ok) {
+        // Nothing was taken; the unused gateway order is never shown to the customer and lapses unpaid
+        await CheckoutSession_1.CheckoutSession.updateOne({ _id: session._id }, {
+            $set: { status: 'expired', stockReserved: false }, $push: { events: { at: new Date(), type: 'out-of-stock', detail: reserved.name } },
+        });
+        res.status(400).json({ success: false, code: 'OUT_OF_STOCK', message: `Only ${reserved.available} of ${reserved.name} left in stock` });
+        return null;
+    }
+    return session;
+};
+exports.openSession = openSession;
 // Create Order — Only creates a Razorpay order, does NOT save to DB yet
 const createOrder = async (req, res) => {
     try {
-        const { total, items, shippingAddress } = req.body;
-        const selection = selectionFrom(req.body, true);
-        if (typeof selection === 'string')
-            return res.status(400).json({ success: false, message: selection });
-        // Refuse to start a delivery payment without a deliverable address (pickup orders need none)
-        if (selection.fulfillment === 'delivery' && !hasDeliveryAddress(shippingAddress)) {
-            return res.status(400).json({ success: false, message: 'Please select or add a shipping address' });
-        }
-        if (typeof total !== 'number' || Number.isNaN(total) || total <= 0) {
-            return res.status(400).json({ success: false, message: 'Invalid order total. Please refresh and try again.' });
-        }
-        if (!items || !Array.isArray(items) || items.length === 0) {
-            return res.status(400).json({ success: false, message: 'No items in order to validate.' });
-        }
-        // Server-side amount validation: shipping, packaging, pickup charge and tax are all recomputed here
-        let totals;
-        try {
-            totals = await (0, shippingCalculator_1.calculateShippingForItems)(items, selection);
-        }
-        catch (err) {
-            return pricingError(res, err);
-        }
-        // The client shows the server's own quote, so the totals must agree to the paisa; any difference is stale or tampered
-        if (Math.round(totals.grandTotal * 100) !== Math.round(total * 100)) {
-            return res.status(400).json({
-                success: false,
-                message: `Order total validation failed. Server calculated total of ${totals.grandTotal} differs from client total of ${total}. Please refresh and try again.`
-            });
-        }
-        // Reserve stock now (atomic, all or nothing) so concurrent checkouts can never sell the same units
-        await (0, checkoutSessions_1.expireStaleSessions)();
-        const reserved = await (0, checkoutSessions_1.reserveStock)(totals.lines);
-        if (!reserved.ok) {
-            return res.status(400).json({ success: false, code: 'OUT_OF_STOCK', message: `Only ${reserved.available} of ${reserved.name} left in stock` });
-        }
+        const priced = await (0, exports.priceCheckout)(req, res);
+        if (!priced)
+            return;
+        const amountPaise = Math.round(priced.totals.grandTotal * 100);
         let razorpayOrder;
         let isMock = false;
-        try {
-            if ((0, exports.isMockPaymentMode)()) {
-                razorpayOrder = { id: `mock_order_${Date.now()}_${crypto_1.default.randomBytes(4).toString('hex')}`, amount: Math.round(totals.grandTotal * 100), currency: 'INR' };
-                isMock = true;
-            }
-            else if (razorpayKeysMissing()) {
-                console.error('Razorpay keys are not configured; refusing to create a payment');
-                await (0, checkoutSessions_1.releaseStock)(totals.lines);
-                return res.status(503).json({ success: false, message: 'Payments are temporarily unavailable' });
-            }
-            else {
-                razorpayOrder = await exports.razorpayInstance.orders.create({
-                    // Charge the server-calculated amount, never the client's number
-                    amount: Math.round(totals.grandTotal * 100),
-                    currency: 'INR',
-                    receipt: `receipt_order_${Date.now()}`,
-                    notes: { fulfillment: totals.fulfillmentMethod, shippingMethod: totals.shippingMethod || '' },
-                });
-            }
-            // The immutable quote this payment will be verified against
-            const fp = await (0, checkoutSessions_1.settingsFingerprint)();
-            await CheckoutSession_1.CheckoutSession.create((0, checkoutSessions_1.snapshotFromQuote)(totals, items, {
-                user: req.user._id, razorpayOrderId: razorpayOrder.id, isMock, shippingAddress, settingsVersion: fp.version, settingsUpdatedAt: fp.updatedAt,
-            }));
+        if ((0, exports.isMockPaymentMode)()) {
+            razorpayOrder = { id: `mock_order_${Date.now()}_${crypto_1.default.randomBytes(4).toString('hex')}`, amount: amountPaise, currency: 'INR' };
+            isMock = true;
         }
-        catch (err) {
-            await (0, checkoutSessions_1.releaseStock)(totals.lines); // nothing can be paid for: give the units back
-            throw err;
+        else if (razorpayKeysMissing()) {
+            console.error('Razorpay keys are not configured; refusing to create a payment');
+            return res.status(503).json({ success: false, message: 'Payments are temporarily unavailable' });
         }
+        else {
+            razorpayOrder = await exports.razorpayInstance.orders.create({
+                // Charge the server-calculated amount, never the client's number
+                amount: amountPaise,
+                currency: 'INR',
+                receipt: `receipt_order_${Date.now()}`,
+                notes: { fulfillment: priced.totals.fulfillmentMethod, shippingMethod: priced.totals.shippingMethod || '' },
+            });
+        }
+        const session = await (0, exports.openSession)(req, res, priced, razorpayOrder.id, 'razorpay', isMock);
+        if (!session)
+            return;
         // No order yet — the order is created only after the payment is confirmed against the session
         res.status(200).json({
             success: true,
@@ -295,7 +352,7 @@ const verifyPayment = async (req, res) => {
             .populate('items.product', 'name images variants');
         if (existing) {
             if (existing.user.toString() === req.user._id.toString() && existing.razorpayPaymentId === razorpay_payment_id) {
-                return res.status(200).json({ success: true, message: 'Order already placed for this payment', data: existing });
+                return res.status(200).json({ success: true, message: 'Order already placed for this payment', data: (0, exports.customerOrderView)(existing) });
             }
             return res.status(409).json({ success: false, message: 'This payment has already been used' });
         }
@@ -336,13 +393,13 @@ const verifyPayment = async (req, res) => {
         await order.populate('items.product', 'name images variants');
         if (outcome === 'unfulfillable') {
             return res.status(409).json({
-                success: false, code: 'PAID_OUT_OF_STOCK', data: order,
+                success: false, code: 'PAID_OUT_OF_STOCK', data: (0, exports.customerOrderView)(order),
                 message: 'Your payment was received, but an item went out of stock while the checkout was open. The order has been cancelled and a full refund will be arranged.',
             });
         }
         if (outcome === 'created')
-            await sendOrderConfirmationEmail(order, req.user);
-        res.status(200).json({ success: true, message: 'Payment verified and order placed successfully', data: order });
+            await (0, exports.sendOrderConfirmationEmail)(order, req.user);
+        res.status(200).json({ success: true, message: 'Payment verified and order placed successfully', data: (0, exports.customerOrderView)(order) });
     }
     catch (error) {
         console.error('Error verifying payment:', error);
@@ -371,10 +428,12 @@ exports.calculateShipping = calculateShipping;
 // Get My Orders
 const getMyOrders = async (req, res) => {
     try {
+        // Only the signed-in customer's own orders, and only the fields they need
         const orders = await Order_1.default.find({ user: req.user?._id })
             .populate('items.product', 'name images')
-            .sort({ createdAt: -1 });
-        res.status(200).json({ success: true, data: orders });
+            .sort({ createdAt: -1 })
+            .lean();
+        res.status(200).json({ success: true, data: orders.map(exports.customerOrderView) });
     }
     catch (error) {
         console.error('Error fetching orders:', error);
@@ -397,18 +456,31 @@ const getAllOrders = async (req, res) => {
     }
 };
 exports.getAllOrders = getAllOrders;
-// Admin: Update Order Status
+// Admin: Update Order Status — same transition rule as the ERP status callback (utils/orderStatus.ts)
 const updateOrderStatus = async (req, res) => {
     try {
         const { id } = req.params;
         const { orderStatus } = req.body;
-        if (!['processing', 'shipped', 'delivered', 'cancelled'].includes(orderStatus)) {
+        if (!orderStatus_1.ORDER_STATUSES.includes(orderStatus)) {
             return res.status(400).json({ success: false, message: 'Invalid order status' });
         }
-        const order = await Order_1.default.findByIdAndUpdate(id, { orderStatus }, { new: true, runValidators: true }).populate('user', 'name email phone')
-            .populate('items.product', 'name images variants');
-        if (!order) {
+        const current = await Order_1.default.findById(id, { orderStatus: 1 }).lean();
+        if (!current) {
             return res.status(404).json({ success: false, message: 'Order not found' });
+        }
+        const populated = (q) => q.populate('user', 'name email phone').populate('items.product', 'name images variants');
+        // Same status again (double click, retry): nothing changes and the customer is not emailed twice
+        if (current.orderStatus === orderStatus) {
+            return res.status(200).json({ success: true, message: 'Order status unchanged', data: await populated(Order_1.default.findById(id)) });
+        }
+        if (!(0, orderStatus_1.canMoveOrderStatus)(current.orderStatus, orderStatus)) {
+            return res.status(409).json({ success: false, code: 'INVALID_TRANSITION', message: `Order cannot move from ${current.orderStatus} to ${orderStatus}` });
+        }
+        // Conditional on the status checked above, so a concurrent ERP callback or second admin is never overwritten.
+        // statusUpdatedAt makes an older ERP event arriving later count as stale, as it would against an ERP change.
+        const order = await populated(Order_1.default.findOneAndUpdate({ _id: id, orderStatus: current.orderStatus }, { $set: { orderStatus, statusUpdatedAt: new Date() } }, { new: true, runValidators: true }));
+        if (!order) {
+            return res.status(409).json({ success: false, code: 'CONFLICT', message: 'Order status changed while saving; reload and try again' });
         }
         await (0, exports.sendOrderStatusEmail)(order, orderStatus);
         res.status(200).json({ success: true, data: order });
@@ -419,6 +491,47 @@ const updateOrderStatus = async (req, res) => {
     }
 };
 exports.updateOrderStatus = updateOrderStatus;
+/**
+ * Superadmin only (route-enforced): sets a status the forward-only rule refuses, e.g. undoing a mistaken "delivered".
+ * The audit entry is pushed in the same atomic update as the status, so a correction cannot exist without its record.
+ * Conditional on `fromStatus` (what the superadmin saw), so a newer change by an admin or the ERP is never overwritten.
+ * No email, refund, restock or payment change: a correction fixes a record, it does not run the workflow again.
+ */
+const correctOrderStatus = async (req, res) => {
+    try {
+        const { orderStatus, fromStatus } = req.body || {};
+        const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+        const statuses = orderStatus_1.ORDER_STATUSES;
+        if (!/^[a-f\d]{24}$/i.test(req.params.id))
+            return res.status(400).json({ success: false, code: 'VALIDATION_ERROR', message: 'Invalid order id' });
+        if (!statuses.includes(orderStatus) || !statuses.includes(fromStatus)) {
+            return res.status(400).json({ success: false, code: 'VALIDATION_ERROR', message: 'orderStatus and fromStatus must each be one of: ' + statuses.join(', ') });
+        }
+        if (reason.length < 5 || reason.length > 300) {
+            return res.status(400).json({ success: false, code: 'VALIDATION_ERROR', message: 'A correction reason (5-300 characters) is required' });
+        }
+        if (orderStatus === fromStatus || (0, orderStatus_1.canMoveOrderStatus)(fromStatus, orderStatus)) {
+            return res.status(400).json({ success: false, code: 'NOT_A_CORRECTION', message: `${fromStatus} -> ${orderStatus} is not a correction; use the normal status change` });
+        }
+        const now = new Date();
+        const order = await Order_1.default.findOneAndUpdate({ _id: req.params.id, orderStatus: fromStatus }, {
+            $set: { orderStatus, statusUpdatedAt: now },
+            $push: { statusCorrections: { at: now, by: String(req.user._id), from: fromStatus, to: orderStatus, reason } },
+        }, { new: true, runValidators: true }).populate('user', 'name email phone').populate('items.product', 'name images variants');
+        if (!order) {
+            const exists = await Order_1.default.exists({ _id: req.params.id });
+            return exists
+                ? res.status(409).json({ success: false, code: 'CONFLICT', message: `The order is no longer ${fromStatus}; reload and check before correcting` })
+                : res.status(404).json({ success: false, message: 'Order not found' });
+        }
+        res.status(200).json({ success: true, message: 'Order status corrected', data: order });
+    }
+    catch (error) {
+        console.error('Error correcting order status:', error?.message);
+        res.status(500).json({ success: false, message: 'Error correcting order status' });
+    }
+};
+exports.correctOrderStatus = correctOrderStatus;
 /** Emails the customer about a status change. Never throws: a mail failure must not fail the status change. */
 const sendOrderStatusEmail = async (order, orderStatus) => {
     try {
@@ -589,7 +702,7 @@ const razorpayWebhook = async (req, res) => {
             const user = await User_1.User.findById(order.user, { name: 1, email: 1, role: 1 }).lean();
             await order.populate('items.product', 'name images variants');
             if (user)
-                await sendOrderConfirmationEmail(order, user);
+                await (0, exports.sendOrderConfirmationEmail)(order, user);
         }
         // 200 for every handled delivery: Razorpay retries non-2xx, and retries are harmless (finalize is idempotent)
         return res.status(200).json({ success: true, outcome });
@@ -676,10 +789,10 @@ exports.refundOrder = refundOrder;
 // orders (or flags them), and refreshes the status of submitted refunds. Safe to run repeatedly.
 const reconcilePayments = async (req, res) => {
     try {
-        const summary = { expiredSessions: 0, recoveredOrders: [], unfulfillable: [], mismatchedPayments: [], refundsUpdated: 0, errors: [] };
+        const summary = { expiredSessions: 0, recoveredOrders: [], unfulfillable: [], mismatchedPayments: [], icici: [], refundsUpdated: 0, errors: [] };
         summary.expiredSessions = await (0, checkoutSessions_1.expireStaleSessions)();
         const since = new Date(Date.now() - 7 * 86_400_000);
-        const open = await CheckoutSession_1.CheckoutSession.find({ isMock: false, status: { $in: ['pending', 'expired', 'processing'] }, createdAt: { $gte: since } }).limit(200);
+        const open = await CheckoutSession_1.CheckoutSession.find({ isMock: false, gateway: { $ne: 'icici' }, status: { $in: ['pending', 'expired', 'processing'] }, createdAt: { $gte: since } }).limit(200);
         for (const s of open) {
             try {
                 const list = await exports.razorpayInstance.orders.fetchPayments(s.razorpayOrderId);
@@ -698,6 +811,19 @@ const reconcilePayments = async (req, res) => {
             }
             catch (err) {
                 summary.errors.push(`${s.razorpayOrderId}: ${String(err?.message || err).slice(0, 120)}`);
+            }
+        }
+        // ICICI: ask for the status of open sessions (lost return URL / advice, UPI left pending at R1000)
+        if ((0, iciciPg_1.iciciConfigured)()) {
+            const iciciOpen = await CheckoutSession_1.CheckoutSession.find({ gateway: 'icici', status: { $in: ['pending', 'expired', 'processing'] }, createdAt: { $gte: since } }, { razorpayOrderId: 1 }).limit(200).lean();
+            for (const s of iciciOpen) {
+                try {
+                    const r = await (0, iciciController_1.checkIciciStatus)(s.razorpayOrderId);
+                    summary.icici.push(`${s.razorpayOrderId}: ${r.txnStatus ?? 'not found'} -> ${r.outcome}`);
+                }
+                catch (err) {
+                    summary.errors.push(`${s.razorpayOrderId}: ${String(err?.message || err).slice(0, 120)}`);
+                }
             }
         }
         const refunding = await Order_1.default.find({ 'refund.status': 'pending', 'refund.razorpayRefundId': { $exists: true } }).limit(200);
