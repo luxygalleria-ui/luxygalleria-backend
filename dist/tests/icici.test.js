@@ -152,6 +152,45 @@ const run = async () => {
             assert_1.default.strictEqual(await stock(), 8);
             assert_1.default.strictEqual(await Order_1.default.countDocuments({ razorpayOrderId: t }), 0);
         });
+        await test('return payload read dynamically: query-string / GET result, respCode, JSON numbers; every verified field kept', async () => {
+            // Result on the URL (GET redirect), with a mode-specific field the code never names
+            const t1 = (await initiate()).json.data.merchantTxnNo;
+            const q = new URLSearchParams(paid(t1, { paymentMode: 'UPI', payerVpa: 'ann@okicici' }));
+            const g = await fetch(`${base}/payments/icici/callback?${q}`, { redirect: 'manual' });
+            assert_1.default.deepStrictEqual([g.status, g.headers.get('location')], [302, 'https://shop.test/order-success']);
+            assert_1.default.strictEqual(await Order_1.default.countDocuments({ razorpayOrderId: t1 }), 1);
+            const ev = (await CheckoutSession_1.CheckoutSession.findOne({ razorpayOrderId: t1 }).lean()).events.find((e) => e.type === 'icici-callback-params');
+            assert_1.default.ok(ev && JSON.parse(ev.detail).payerVpa === 'ann@okicici' && !('secureHash' in JSON.parse(ev.detail)), 'all verified fields stored, hash dropped');
+            const forgedQ = await fetch(`${base}/payments/icici/callback?${new URLSearchParams({ ...paid(t1), secureHash: 'f'.repeat(64) })}`, { redirect: 'manual' });
+            assert_1.default.strictEqual(forgedQ.headers.get('location'), 'https://shop.test/order-failure?reason=unconfirmed');
+            // Success reported as respCode instead of responseCode
+            const t2 = (await initiate()).json.data.merchantTxnNo;
+            const { responseCode: _rc, ...base2 } = paid(t2);
+            const r2 = await formPost('/payments/icici/callback', sign({ ...base2, secureHash: undefined, respCode: '0000' }));
+            assert_1.default.strictEqual(r2.location, 'https://shop.test/order-success');
+            // JSON advice with amount as a number literal (600.00): the hash covers the text as sent
+            const t3 = (await initiate()).json.data.merchantTxnNo;
+            const a = total.toFixed(2);
+            const json = JSON.stringify(paid(t3)).replace(`"amount":"${a}"`, `"amount":${a}`);
+            assert_1.default.ok(json.includes(`"amount":${a}`));
+            const r3 = await fetch(`${base}/payments/icici/payment-advice`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json });
+            assert_1.default.strictEqual(r3.status, 200);
+            assert_1.default.strictEqual(await Order_1.default.countDocuments({ razorpayOrderId: t3 }), 1);
+            await Product_1.Product.updateOne({ _id: tea._id }, { $inc: { 'variants.0.stock': 6 } }); // give back the 3 x 2 units, for the tests below
+        });
+        await test('Live URL on a production server: no UAT tester gate', async () => {
+            const saved = { ...process.env };
+            Object.assign(process.env, { NODE_ENV: 'production', ICICI_PG_INITIATE_SALE_URL: 'https://icici.test/pg/api/v2/initiateSale', ICICI_PG_UAT_TEST_EMAILS: '' });
+            try {
+                const r = await initiate(benT);
+                assert_1.default.strictEqual(r.status, 200, JSON.stringify(r.json));
+                assert_1.default.strictEqual(sent.at(-1).url, 'https://icici.test/pg/api/v2/initiateSale');
+                await formPost('/payments/icici/callback', paid(r.json.data.merchantTxnNo, { responseCode: 'E005' })); // release the hold
+            }
+            finally {
+                Object.assign(process.env, { NODE_ENV: saved.NODE_ENV, ICICI_PG_INITIATE_SALE_URL: saved.ICICI_PG_INITIATE_SALE_URL, ICICI_PG_UAT_TEST_EMAILS: saved.ICICI_PG_UAT_TEST_EMAILS ?? '' });
+            }
+        });
         await test('UPI R1000 (pending) on the return URL goes to the pending page; the later payment advice completes the order', async () => {
             const t = (await initiate()).json.data.merchantTxnNo;
             assert_1.default.strictEqual((await formPost('/payments/icici/callback', paid(t, { responseCode: 'R1000' }))).location, 'https://shop.test/order-failure?reason=pending');

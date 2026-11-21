@@ -18,20 +18,29 @@ const paymentController_1 = require("./paymentController");
  */
 const frontend = () => (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
 /**
- * The parameters exactly as ICICI sent them. req.body has been rewritten by the sanitizers (app.ts), which would
- * break the hash, so the raw body is parsed again here. Form-urlencoded by default; JSON if opted for at onboarding.
+ * The parameters exactly as ICICI sent them, whatever fields the payment mode returns. req.body has been rewritten by
+ * the sanitizers (app.ts), which would break the hash, so the raw body is parsed again here. Form-urlencoded by
+ * default; JSON if opted for at onboarding (numbers keep their sent text, e.g. 2.00, as the hash covers it). A result
+ * carried on the URL instead (query string / GET redirect) is used only when the body has none: never merged.
  */
 const gatewayParams = (req) => {
     const raw = req.rawBody?.toString('utf8') ?? '';
+    let body = {};
     if (req.is('application/json')) {
         try {
-            return JSON.parse(raw || '{}');
+            const parsed = JSON.parse(raw || '{}', (_k, v, ctx) => (typeof v === 'number' ? ctx?.source ?? String(v) : v));
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+                body = parsed;
         }
-        catch {
-            return {};
-        }
+        catch { /* unparseable: rejected below as no merchantTxnNo */ }
     }
-    return Object.fromEntries(new URLSearchParams(raw));
+    else {
+        body = Object.fromEntries(new URLSearchParams(raw));
+    }
+    if (body.merchantTxnNo)
+        return body;
+    const query = Object.fromEntries(new URL(req.originalUrl, 'http://local').searchParams);
+    return query.merchantTxnNo ? query : body;
 };
 /** Returns an unpaid session's stock now instead of waiting for it to expire (a late success re-reserves it). */
 const releaseSession = async (sessionId, detail) => {
@@ -81,7 +90,10 @@ const handleGatewayPost = async (p, source) => {
         console.error(`ICICI ${source} REJECTED (${why}) merchantTxnNo=${p.merchantTxnNo} responseCode=${p.responseCode} keys=${Object.keys(p).sort().join(',')}`);
         return null;
     }
-    const code = String(p.responseCode ?? '');
+    // Every verified field is kept on the session (mode-specific ones such as paymentMode, UPI / bank references)
+    const { secureHash: _hash, ...fields } = p;
+    await CheckoutSession_1.CheckoutSession.updateOne({ razorpayOrderId: String(p.merchantTxnNo), gateway: 'icici' }, { $push: { events: { at: new Date(), type: `${source}-params`, detail: JSON.stringify(fields).slice(0, 4000) } } });
+    const code = String(p.responseCode ?? p.respCode ?? '');
     return applyResult(String(p.merchantTxnNo), (0, iciciPg_1.isIciciSuccess)(code), code === 'R1000', String(p.txnID ?? ''), p.amount, `${code} ${p.respDescription ?? ''}`, source);
 };
 // POST /payments/icici/initiate (customer): quote, reserve stock, initiateSale, return the gateway URL to redirect to

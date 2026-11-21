@@ -17,6 +17,7 @@ router.get('/myorders', protect, getMyOrders);
 // CORS (app.ts); each is authenticated by its secureHash.
 router.post('/icici/initiate', paymentLimiter, protect, iciciInitiate);
 router.post('/icici/callback', iciciCallback);
+router.get('/icici/callback', iciciCallback); // a result returned on the URL instead of a form post
 router.post('/icici/payment-advice', iciciPaymentAdvice);
 router.post('/icici/settlement-advice', iciciSettlementAdvice);
 router.post('/icici/status', paymentLimiter, protect, iciciStatus);
