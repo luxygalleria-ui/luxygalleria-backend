@@ -213,6 +213,12 @@ const pure = async () => {
         s.pickup.enabled = false;
         rejects(() => (0, orderPricing_1.priceOrder)([line({ weight: 0 })], s, {}), 'WEIGHT_MISSING');
     });
+    await test('a paid delivery order with no street still saves (the address form leaves street optional)', () => {
+        const o = new Order_1.default({ user: new mongoose_1.default.Types.ObjectId(), items: [], fulfillmentMethod: 'delivery', subtotal: 1, total: 1,
+            shippingAddress: { street: '', city: 'Kochi', state: 'Kerala', zipCode: '682001', country: 'India' } });
+        assert_1.default.ok(!o.validateSync()?.errors['shippingAddress.street'], 'street must not be required');
+        assert_1.default.ok(new Order_1.default({ ...o.toObject(), shippingAddress: { street: 'x' } }).validateSync()?.errors['shippingAddress.city'], 'city still required');
+    });
     await test('production rules (200 g, ₹40/₹80, +₹20 per started kg over 1 kg): boundary and the reported ₹1,357 cart', () => {
         const prod = (0, checkoutSettings_1.defaultCheckoutSettings)({ ...shippingCalculator_1.DEFAULT_SHIPPING_CONFIG, WEIGHT_THRESHOLD_KG: 0.2 });
         const ship = (g) => (0, orderPricing_1.priceOrder)([line({ weight: g / 1000 })], prod, { fulfillment: 'delivery', state: 'Kerala' }).shipping;

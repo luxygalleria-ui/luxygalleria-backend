@@ -9,12 +9,18 @@ const env_1 = require("../config/env");
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const errorHandler = (err, req, res, next) => {
-    console.error('❌ Error:', err);
-    try {
-        fs_1.default.appendFileSync(path_1.default.join(process.cwd(), 'error-trace.log'), new Date().toISOString() + ': ' + (err.stack || err.message) + '\n');
-    }
-    catch (e) { }
     const statusCode = err.statusCode || 500;
+    // Client errors (e.g. a CORS-blocked origin, 403) are expected traffic: one line, no stack dump or trace file write
+    if (statusCode < 500) {
+        console.warn(`${statusCode} ${req.method} ${req.originalUrl} origin=${req.headers.origin ?? '-'}: ${err.message}`);
+    }
+    else {
+        console.error('❌ Error:', err);
+        try {
+            fs_1.default.appendFileSync(path_1.default.join(process.cwd(), 'error-trace.log'), new Date().toISOString() + ': ' + (err.stack || err.message) + '\n');
+        }
+        catch (e) { }
+    }
     const message = err.message || 'Internal Server Error';
     // Clean up error object for production
     const errors = env_1.ENV.NODE_ENV === 'development' ? err.stack : undefined;

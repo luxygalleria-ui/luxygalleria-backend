@@ -257,7 +257,12 @@ export const priceCheckout = async (req: Request, res: Response) => {
   }
 
   await expireStaleSessions();
-  return { totals, items, shippingAddress };
+  // Only the address fields an order stores; pickup orders keep none (the session snapshot drops it too)
+  const address = totals.fulfillmentMethod === 'pickup' ? undefined : Object.fromEntries(
+    ['street', 'city', 'state', 'zipCode', 'country'].map((k) => [k, typeof shippingAddress?.[k] === 'string' ? shippingAddress[k].trim().slice(0, 200) : '']),
+  );
+  if (address && !address.country) address.country = 'India'; // older saved addresses have none; zones are India-only
+  return { totals, items, shippingAddress: address };
 };
 
 /**

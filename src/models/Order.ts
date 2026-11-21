@@ -104,7 +104,8 @@ const OrderSchema: Schema = new Schema(
     },
     // Required for home delivery; a store-pickup order has no delivery address
     shippingAddress: {
-      street: { type: String, required: isDelivery },
+      // Optional: the address form and saved addresses allow no street; requiring it here failed paid orders at save
+      street: { type: String },
       city: { type: String, required: isDelivery },
       state: { type: String, required: isDelivery },
       zipCode: { type: String, required: isDelivery },
