@@ -274,11 +274,13 @@ const run = async () => {
         assert_1.default.strictEqual(good.status, 200);
     });
     console.log('\nHTTP');
-    await test('CORS: foreign *.vercel.app origin not allowed, production origin allowed', async () => {
-        const evil = await call('GET', '/health', undefined, undefined, { Origin: 'https://attacker-demo.vercel.app' });
-        assert_1.default.notStrictEqual(evil.headers.get('access-control-allow-origin'), 'https://attacker-demo.vercel.app');
-        const ok = await call('GET', '/health', undefined, undefined, { Origin: 'https://luxygalleria-frontend.vercel.app' });
-        assert_1.default.strictEqual(ok.headers.get('access-control-allow-origin'), 'https://luxygalleria-frontend.vercel.app');
+    await test('CORS: no *.vercel.app origin is allowed (old Vercel deployments retired)', async () => {
+        // Only the built-in list is checked: an origin an env file adds on purpose (CORS_ORIGIN) is that server's choice
+        const fromEnv = (process.env.CORS_ORIGIN || '').split(',').map((o) => o.trim().replace(/\/$/, ''));
+        for (const origin of ['https://attacker-demo.vercel.app', 'https://luxygalleria-frontend.vercel.app', 'https://luxygalleria-admin.vercel.app'].filter((o) => !fromEnv.includes(o))) {
+            const r = await call('GET', '/health', undefined, undefined, { Origin: origin });
+            assert_1.default.notStrictEqual(r.headers.get('access-control-allow-origin'), origin, origin);
+        }
     });
     await test('CORS: custom domains allowed (GET + preflight), unknown origin gets 403', async () => {
         for (const origin of ['https://luxygalleria.com', 'https://www.luxygalleria.com', 'https://admin.luxygalleria.com']) {

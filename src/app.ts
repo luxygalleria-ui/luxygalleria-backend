@@ -36,13 +36,11 @@ app.use(helmet({
 }));
 
 // CORS configuration
-// Exact origins only. Any wildcard on *.vercel.app would let any Vercel user's site call this API.
+// Exact origins only, no *.vercel.app (old Vercel deployments retired; add a preview origin via CORS_ORIGIN if ever needed).
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:3002',
-  'https://luxygalleria-frontend.vercel.app',
-  'https://luxygalleria-admin.vercel.app',
   'https://luxygalleria.com',
   'https://www.luxygalleria.com',
   'https://admin.luxygalleria.com',
