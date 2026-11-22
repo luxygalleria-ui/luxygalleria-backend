@@ -4,7 +4,7 @@ import { Cart } from '../models/Cart';
 import { User } from '../models/User';
 import { CheckoutSession } from '../models/CheckoutSession';
 import { finalizeSession, releaseStock } from '../utils/checkoutSessions';
-import { icici, iciciConfigured, iciciLive, isIciciSuccess, saleTxnDate, newTxnNo, postForm, postJson, signed, verifyV1 } from '../utils/iciciPg';
+import { gatewayFailure, icici, iciciConfigured, iciciLive, isIciciSuccess, saleTxnDate, newTxnNo, postForm, postJson, signed, verifyV1 } from '../utils/iciciPg';
 import { openSession, priceCheckout, sendOrderConfirmationEmail } from './paymentController';
 
 /**
@@ -177,10 +177,12 @@ export const iciciInitiate = async (req: Request, res: Response) => {
     try {
       resp = await postJson(c.initiateSaleUrl, request);
     } catch (err: any) {
-      await releaseSession(session._id, `initiateSale error: ${err?.message}`);
+      const failure = gatewayFailure(err, c.initiateSaleUrl);
+      await releaseSession(session._id, `initiateSale error: ${failure}`);
       // No reply at all (seen when ICICI's firewall drops callers whose IP it has not allow-listed): say what to check
-      const hint = err?.name === 'TimeoutError' ? ' (no response in 20 s: check that this server\'s public IP is allow-listed with ICICI for this environment)' : '';
-      console.error(`ICICI initiateSale ${merchantTxnNo} failed: ${err?.message}${hint}`);
+      const hint = err?.name === 'TimeoutError' ? ' (no response in 20 s: check that this server\'s public IP is allow-listed with ICICI for this environment)'
+        : /ECONNREFUSED/.test(failure) ? ' (connection refused: is the configured gateway, or the local mock, running at this address?)' : '';
+      console.error(`ICICI initiateSale ${merchantTxnNo} failed: ${failure}${hint}`);
       return res.status(502).json({ success: false, message: 'Could not reach the ICICI payment gateway. You have not been charged. Please try again in a few minutes.' });
     }
     const redirectUrl = paymentPageUrl(resp);
@@ -286,7 +288,7 @@ export const iciciStatus = async (req: Request, res: Response) => {
 
     return res.status(200).json({ success: true, data: await checkIciciStatus(merchantTxnNo) });
   } catch (error: any) {
-    console.error('Error checking ICICI status:', error?.message);
+    console.error('Error checking ICICI status:', gatewayFailure(error, icici().commandUrl));
     return res.status(502).json({ success: false, message: 'Could not reach the payment gateway' });
   }
 };

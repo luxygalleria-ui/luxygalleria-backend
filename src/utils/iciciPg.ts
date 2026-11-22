@@ -103,4 +103,15 @@ export const postForm = async (url: string, params: Record<string, string>) => {
   return readJson(await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params), signal: AbortSignal.timeout(20_000) }));
 };
 
+/**
+ * Why a gateway call failed, safe to log: the host called and the network-level reason (e.g. ECONNREFUSED,
+ * ENOTFOUND, UND_ERR_CONNECT_TIMEOUT, CERT_HAS_EXPIRED). Never the request body, hash, key or customer data.
+ */
+export const gatewayFailure = (err: any, url: string) => {
+  let host = '(invalid URL)';
+  try { host = new URL(url).host; } catch { /* keep the placeholder */ }
+  const cause = [err?.cause?.code, err?.cause?.name, err?.code].find((c) => typeof c === 'string' && c) || '';
+  return `${host}: ${err?.name || 'Error'}${cause ? ` ${cause}` : ''} - ${String(err?.message || err).slice(0, 200)}`;
+};
+
 export const isIciciSuccess = (code: unknown) => code === '000' || code === '0000';

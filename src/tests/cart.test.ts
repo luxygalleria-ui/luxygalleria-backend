@@ -122,6 +122,21 @@ const run = async () => {
       assert.strictEqual(await lines(), '200gx2', 'nothing changed by refused requests');
     });
 
+    await test('10. a deleted product is removed from the stored cart, with or without a variantId (regression)', async () => {
+      const gone = await Product.create({ name: 'Gone', category: 'Drinks', description: 'x', stock: 5, variants: [{ volume: '1kg', price: 100, offerPrice: 90, actualPrice: 100, stock: 5, weight: 1 }] });
+      const before = (await Cart.findOne({ user: user._id }))!.items.length;
+      await Cart.updateOne({ user: user._id }, { $push: { items: { $each: [
+        { product: gone._id, quantity: 1, size: '1kg' },                                  // no variantId
+        { product: gone._id, variantId: gone.variants[0]._id, quantity: 1, size: '1kg' }, // with variantId
+      ] } } });
+      await Product.deleteOne({ _id: gone._id });
+      const r = await call('GET', '/cart', undefined, T);
+      assert.strictEqual(r.status, 200);
+      assert.ok(r.json.data.items.every((i: any) => i.product), 'no line without a product in the response');
+      assert.strictEqual((await Cart.findOne({ user: user._id }))!.items.length, before, 'both stale lines removed from the stored cart');
+      assert.ok((await Cart.findOne({ user: user._id }))!.items.every((i: any) => String(i.product) === pid), 'the live product is kept');
+    });
+
     await test('7. checkout re-prices the cart on the server; a browser-sent total is not trusted', async () => {
       const items = [{ product: pid, variantId: v200, quantity: 2 }];
       const q = await call('POST', '/payments/calculate-shipping', { items, shippingAddress: { state: 'Kerala' } });

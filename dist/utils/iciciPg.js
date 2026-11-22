@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isIciciSuccess = exports.postForm = exports.postJson = exports.assertGatewayAllowed = exports.signed = exports.saleTxnDate = exports.istTimestamp = exports.newTxnNo = exports.verifyV1 = exports.hashV2 = exports.hashV1 = exports.iciciLive = exports.iciciConfigured = exports.icici = void 0;
+exports.isIciciSuccess = exports.gatewayFailure = exports.postForm = exports.postJson = exports.assertGatewayAllowed = exports.signed = exports.saleTxnDate = exports.istTimestamp = exports.newTxnNo = exports.verifyV1 = exports.hashV2 = exports.hashV1 = exports.iciciLive = exports.iciciConfigured = exports.icici = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 /**
  * ICICI Orange PG (Gateway_Interface_Specifiation_V0.4_Orange_PG.pdf). Server-side only: the secret key never leaves
@@ -121,6 +121,20 @@ const postForm = async (url, params) => {
     return readJson(await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params), signal: AbortSignal.timeout(20_000) }));
 };
 exports.postForm = postForm;
+/**
+ * Why a gateway call failed, safe to log: the host called and the network-level reason (e.g. ECONNREFUSED,
+ * ENOTFOUND, UND_ERR_CONNECT_TIMEOUT, CERT_HAS_EXPIRED). Never the request body, hash, key or customer data.
+ */
+const gatewayFailure = (err, url) => {
+    let host = '(invalid URL)';
+    try {
+        host = new URL(url).host;
+    }
+    catch { /* keep the placeholder */ }
+    const cause = [err?.cause?.code, err?.cause?.name, err?.code].find((c) => typeof c === 'string' && c) || '';
+    return `${host}: ${err?.name || 'Error'}${cause ? ` ${cause}` : ''} - ${String(err?.message || err).slice(0, 200)}`;
+};
+exports.gatewayFailure = gatewayFailure;
 const isIciciSuccess = (code) => code === '000' || code === '0000';
 exports.isIciciSuccess = isIciciSuccess;
 //# sourceMappingURL=iciciPg.js.map

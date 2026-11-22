@@ -11,18 +11,16 @@ const repairCart = async (cart: any) => {
   let modified = false;
   const cleanedItems = [];
   for (let item of cart.items) {
+    const prod = await Product.findById(item.product, { variants: 1 });
+    // A deleted product (or one without options) is dropped AND the drop is saved: it used to be skipped only in
+    // this response, so the line stayed in the stored cart forever
+    if (!prod || !prod.variants || prod.variants.length === 0) { modified = true; continue; }
     if (!item.variantId) {
-      const prod = await Product.findById(item.product);
-      if (prod && prod.variants && prod.variants.length > 0) {
-        const match = prod.variants.find((v: any) => (v.volume || v.size || '').toLowerCase() === (item.size || '').toLowerCase());
-        item.variantId = match ? match._id : prod.variants[0]._id;
-        cleanedItems.push(item);
-        modified = true;
-      }
-      // If product has no variants or doesn't exist, omit it
-    } else {
-      cleanedItems.push(item);
+      const match = prod.variants.find((v: any) => (v.volume || v.size || '').toLowerCase() === (item.size || '').toLowerCase());
+      item.variantId = match ? match._id : prod.variants[0]._id;
+      modified = true;
     }
+    cleanedItems.push(item);
   }
   if (modified) {
     cart.items = cleanedItems;

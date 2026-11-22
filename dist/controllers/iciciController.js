@@ -174,10 +174,12 @@ const iciciInitiate = async (req, res) => {
             resp = await (0, iciciPg_1.postJson)(c.initiateSaleUrl, request);
         }
         catch (err) {
-            await releaseSession(session._id, `initiateSale error: ${err?.message}`);
+            const failure = (0, iciciPg_1.gatewayFailure)(err, c.initiateSaleUrl);
+            await releaseSession(session._id, `initiateSale error: ${failure}`);
             // No reply at all (seen when ICICI's firewall drops callers whose IP it has not allow-listed): say what to check
-            const hint = err?.name === 'TimeoutError' ? ' (no response in 20 s: check that this server\'s public IP is allow-listed with ICICI for this environment)' : '';
-            console.error(`ICICI initiateSale ${merchantTxnNo} failed: ${err?.message}${hint}`);
+            const hint = err?.name === 'TimeoutError' ? ' (no response in 20 s: check that this server\'s public IP is allow-listed with ICICI for this environment)'
+                : /ECONNREFUSED/.test(failure) ? ' (connection refused: is the configured gateway, or the local mock, running at this address?)' : '';
+            console.error(`ICICI initiateSale ${merchantTxnNo} failed: ${failure}${hint}`);
             return res.status(502).json({ success: false, message: 'Could not reach the ICICI payment gateway. You have not been charged. Please try again in a few minutes.' });
         }
         const redirectUrl = (0, exports.paymentPageUrl)(resp);
@@ -294,7 +296,7 @@ const iciciStatus = async (req, res) => {
         return res.status(200).json({ success: true, data: await (0, exports.checkIciciStatus)(merchantTxnNo) });
     }
     catch (error) {
-        console.error('Error checking ICICI status:', error?.message);
+        console.error('Error checking ICICI status:', (0, iciciPg_1.gatewayFailure)(error, (0, iciciPg_1.icici)().commandUrl));
         return res.status(502).json({ success: false, message: 'Could not reach the payment gateway' });
     }
 };

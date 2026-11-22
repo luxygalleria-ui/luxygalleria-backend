@@ -24,7 +24,7 @@ import { Product } from '../models/Product';
 import { Cart } from '../models/Cart';
 import Order from '../models/Order';
 import { CheckoutSession } from '../models/CheckoutSession';
-import { hashV1, hashV2, verifyV1, istTimestamp, saleTxnDate, assertGatewayAllowed, postForm, postJson } from '../utils/iciciPg';
+import { hashV1, hashV2, verifyV1, istTimestamp, saleTxnDate, assertGatewayAllowed, postForm, postJson, gatewayFailure } from '../utils/iciciPg';
 
 let passed = 0;
 const test = async (name: string, fn: () => Promise<void>) => { await fn(); passed++; console.log(`  ✅ ${name}`); };
@@ -358,6 +358,34 @@ const run = async () => {
       assert.strictEqual(await Order.countDocuments(), orders);
       const s = await CheckoutSession.findOne({}, {}, { sort: { createdAt: -1 } }).lean();
       assert.strictEqual(s!.status, 'expired');
+    });
+
+    await test('connection refused (gateway / local mock not running): 502, stock released, and the log names the host and ECONNREFUSED without secrets', async () => {
+      const before = await stock();
+      const orders = await Order.countDocuments();
+      const logged: string[] = [];
+      const origError = console.error;
+      console.error = (...a: unknown[]) => { logged.push(a.map(String).join(' ')); };
+      nextReply = () => { throw new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:8442'), { code: 'ECONNREFUSED' }) }); };
+      let r;
+      try { r = await initiate(); } finally { nextReply = null; console.error = origError; }
+      assert.deepStrictEqual([r.status, r.json.message], [502, 'Could not reach the ICICI payment gateway. You have not been charged. Please try again in a few minutes.']);
+      assert.strictEqual(await stock(), before, 'reservation released');
+      assert.strictEqual(await Order.countDocuments(), orders);
+      const line = logged.find((l) => l.includes('initiateSale')) ?? '';
+      const host = new URL(process.env.ICICI_PG_INITIATE_SALE_URL!).host;
+      assert.ok(line.includes(host) && line.includes('ECONNREFUSED') && line.includes('connection refused'), line);
+      const secret = process.env.ICICI_PG_SECRET_KEY!;
+      assert.ok(secret && !logged.some((l) => l.includes(secret) || /secureHash"?\s*[:=]/.test(l)), 'no key or hash logged');
+      const s = await CheckoutSession.findOne({}, {}, { sort: { createdAt: -1 } }).lean();
+      assert.ok(s!.events.some((e: any) => e.type === 'icici-released' && e.detail.includes('ECONNREFUSED')), 'the reason is kept on the session');
+    });
+
+    await test('gatewayFailure: host and network code only, safe for odd inputs', async () => {
+      assert.strictEqual(gatewayFailure(Object.assign(new TypeError('fetch failed'), { cause: { code: 'ENOTFOUND' } }), 'https://pgpayuat.icicibank.com/tsp/pg/api/v2/initiateSale?x=1'),
+        'pgpayuat.icicibank.com: TypeError ENOTFOUND - fetch failed');
+      assert.strictEqual(gatewayFailure(new DOMException('timed out', 'TimeoutError'), 'https://h.test/x'), 'h.test: TimeoutError - timed out');
+      assert.strictEqual(gatewayFailure(undefined, 'not a url'), '(invalid URL): Error - undefined');
     });
 
     await test('a non-JSON gateway reply (firewall / WAF HTML page) is a 502, stock released, no order', async () => {
