@@ -160,7 +160,7 @@ const run = async () => {
 
   console.log('\nPayments');
   await test('C3: mock payment rejected outside development', async () => {
-    ENV.NODE_ENV = 'production'; noKeys();
+    ENV.NODE_ENV = process.env.NODE_ENV = 'production'; noKeys(); // both: isMockPaymentMode reads the raw NODE_ENV
     try {
       const r = await call('POST', '/payments/verify', {
         razorpay_order_id: 'mock_order_1', razorpay_payment_id: 'mock_payment', razorpay_signature: 'mock_signature',
@@ -169,7 +169,7 @@ const run = async () => {
       assert.strictEqual(r.status, 400);
       const c = await call('POST', '/payments/create-order', { total: TOTAL_1, items: [item(1)], shippingAddress: address }, aliceT);
       assert.strictEqual(c.status, 503, 'production without keys must not fall back to mock orders');
-    } finally { ENV.NODE_ENV = 'development'; }
+    } finally { ENV.NODE_ENV = process.env.NODE_ENV = 'development'; }
     assert.strictEqual(await Order.countDocuments(), 0);
   });
   await test('C3: mock payment rejected in development when real keys are configured', async () => {
@@ -303,6 +303,30 @@ const run = async () => {
     const evil = await call('GET', '/banners', undefined, undefined, { Origin: 'https://evil.example.com' });
     assert.strictEqual(evil.status, 403);
     assert.strictEqual(evil.headers.get('access-control-allow-origin'), null);
+  });
+  await test('CORS: a rejected origin is logged exactly once, with its length capped', async () => {
+    const captured: string[] = [];
+    const restore: (() => void)[] = [];
+    for (const k of ['log', 'warn', 'error', 'info'] as const) {
+      const orig = console[k]; (console as any)[k] = (...a: unknown[]) => { captured.push(a.map(String).join(' ')); };
+      restore.push(() => { (console as any)[k] = orig; });
+    }
+    const write = process.stdout.write.bind(process.stdout);
+    (process.stdout as any).write = (c: unknown) => { captured.push(String(c)); return true; };
+    restore.push(() => { (process.stdout as any).write = write; });
+    const long = `https://evil-${'x'.repeat(500)}.example`;
+    try {
+      for (const origin of ['https://once.evil.example', long]) {
+        const r = await call('GET', '/banners', undefined, undefined, { Origin: origin });
+        assert.strictEqual(r.status, 403);
+      }
+      await new Promise((res) => setTimeout(res, 50));
+    } finally { restore.forEach((f) => f()); }
+    const once = captured.filter((l) => l.includes('once.evil.example'));
+    assert.strictEqual(once.length, 1, `logged ${once.length} times: ${JSON.stringify(once)}`);
+    assert.match(once[0], /403 GET \/api\/v1\/banners origin=https:\/\/once\.evil\.example: Not allowed by CORS/);
+    const longLine = captured.find((l) => l.includes('evil-xxx'))!;
+    assert.ok(longLine && !longLine.includes(long), 'long origin is truncated in the log');
   });
   await test('product search treats regex metacharacters literally', async () => {
     const r = await call('GET', `/products?search=${encodeURIComponent('(a+)+$')}`);

@@ -39,6 +39,8 @@ export interface ICheckoutSession extends Document {
   shippingMethod?: 'land' | 'air';
   shippingZone?: 'kerala' | 'outsideKerala';
   shippingAddress?: Record<string, string>;
+  /** Billing snapshot: a copy of shippingAddress when "same as delivery", else the chosen saved address. */
+  billingAddress?: Record<string, string>;
   pickupDetails?: Record<string, string>;
   breakdown: {
     subtotal: number; discount: number; totalWeight: number; baseShipping: number; extraWeightCharge: number; shipping: number;
@@ -87,6 +89,7 @@ const sessionSchema = new Schema<ICheckoutSession>({
   shippingMethod: { type: String, enum: ['land', 'air'] },
   shippingZone: { type: String, enum: ['kerala', 'outsideKerala'] },
   shippingAddress: { type: Schema.Types.Mixed },
+  billingAddress: { type: Schema.Types.Mixed },
   pickupDetails: { type: Schema.Types.Mixed },
   breakdown: { type: Schema.Types.Mixed, required: true },
   amountPaise: { type: Number, required: true },

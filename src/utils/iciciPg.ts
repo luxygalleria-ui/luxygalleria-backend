@@ -19,6 +19,15 @@ export const iciciConfigured = () => {
   return !!(c.merchantId && c.secret && c.initiateSaleUrl && c.commandUrl && c.returnURL);
 };
 
+const isLiveUrl = (u: string) => {
+  try { const x = new URL(u); return x.protocol === 'https:' && x.hostname === 'pgpay.icicibank.com'; } catch { return false; }
+};
+/**
+ * Live only when BOTH the sale and command URLs are https on ICICI's live host. UAT, mixed UAT/live, or any other
+ * host counts as test configuration (fail-safe: an ambiguous setup is never treated as live).
+ */
+export const iciciLive = (c = icici()) => isLiveUrl(c.initiateSaleUrl) && isLiveUrl(c.commandUrl);
+
 // ICICI's reference code hashes msg.getBytes("ASCII"): every non-ASCII character becomes "?"
 const hmac = (msg: string, key: string) =>
   crypto.createHmac('sha256', key).update(msg.replace(/[^\x00-\x7F]/gu, '?'), 'ascii').digest('hex');
@@ -63,17 +72,35 @@ export const signed = (params: Record<string, string | undefined>) => {
   return { ...p, secureHash: hashV1(p) };
 };
 
+/**
+ * Local-development safety: with NODE_ENV exactly "development", no request may reach a real ICICI host
+ * (*.icicibank.com) unless ICICI_PG_ALLOW_REAL_GATEWAY_IN_DEV is exactly "true" (set only by `npm run dev:icici-uat`).
+ * Every other environment is unaffected. Throws before any network call.
+ */
+export const assertGatewayAllowed = (url: string) => {
+  if (process.env.NODE_ENV !== 'development' || process.env.ICICI_PG_ALLOW_REAL_GATEWAY_IN_DEV === 'true') return;
+  let host = '';
+  try { host = new URL(url).hostname.toLowerCase().replace(/\.$/, ''); } catch { return; } // fetch rejects it anyway
+  if (host === 'icicibank.com' || host.endsWith('.icicibank.com')) {
+    throw new Error(`Real ICICI gateway (${host}) blocked in development: use the local mock, or start with npm run dev:icici-uat`);
+  }
+};
+
 const readJson = async (r: Response) => {
   const text = await r.text();
   try { return JSON.parse(text); } catch { throw new Error(`ICICI HTTP ${r.status}: ${text.slice(0, 200)}`); }
 };
 
 /** initiateSale takes JSON. */
-export const postJson = async (url: string, body: object) =>
-  readJson(await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(20_000) }));
+export const postJson = async (url: string, body: object) => {
+  assertGatewayAllowed(url);
+  return readJson(await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(20_000) }));
+};
 
 /** The command API (STATUS / REFUND) takes form-urlencoded. */
-export const postForm = async (url: string, params: Record<string, string>) =>
-  readJson(await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params), signal: AbortSignal.timeout(20_000) }));
+export const postForm = async (url: string, params: Record<string, string>) => {
+  assertGatewayAllowed(url);
+  return readJson(await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params), signal: AbortSignal.timeout(20_000) }));
+};
 
 export const isIciciSuccess = (code: unknown) => code === '000' || code === '0000';

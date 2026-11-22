@@ -10,12 +10,15 @@ export const ENV = {
   CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:3000',
 };
 
-// Never sign tokens with a guessable default outside local development.
-if (!ENV.JWT_SECRET) {
-  if (ENV.NODE_ENV !== 'development') {
-    throw new Error('JWT_SECRET must be set outside development');
+// Never sign tokens with a guessable default outside local development. Only the raw NODE_ENV exactly "development"
+// may fall back: ENV.NODE_ENV defaults an UNSET value to "development", which must not count here. Every jwt.sign and
+// jwt.verify reads ENV.JWT_SECRET, so both always use this one validated value. Never log the secret or its length.
+if (!ENV.JWT_SECRET.trim()) {
+  if (process.env.NODE_ENV !== 'development') {
+    const nodeEnv = process.env.NODE_ENV === undefined ? 'unset' : JSON.stringify(process.env.NODE_ENV);
+    throw new Error(`JWT_SECRET is missing or empty and NODE_ENV is ${nodeEnv}: refusing to start. Set JWT_SECRET (only NODE_ENV=development may use the built-in development secret).`);
   }
   ENV.JWT_SECRET = 'dev_only_insecure_jwt_secret_do_not_use';
 } else if (ENV.JWT_SECRET.length < 32) {
-  console.warn('⚠️  JWT_SECRET is shorter than 32 characters — rotate it to a long random value');
+  console.warn('⚠️  JWT_SECRET does not meet the recommended strength: rotate it to a long random value (e.g. `openssl rand -hex 32`)');
 }

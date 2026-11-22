@@ -81,6 +81,7 @@ const snapshotFromQuote = (q, clientItems, extra) => ({
     shippingMethod: q.shippingMethod ?? undefined,
     shippingZone: q.zone ?? undefined,
     shippingAddress: q.fulfillmentMethod === 'pickup' ? undefined : extra.shippingAddress,
+    billingAddress: extra.billingAddress,
     pickupDetails: q.pickupDetails ?? undefined,
     breakdown: {
         subtotal: q.subtotal, discount: q.discount, totalWeight: q.totalWeight, baseShipping: q.baseShipping, extraWeightCharge: q.extraWeightCharge,
@@ -108,6 +109,7 @@ const orderFromSession = (s, paymentId, signature) => ({
     shippingMethod: s.shippingMethod,
     shippingZone: s.shippingZone,
     shippingAddress: s.fulfillmentMethod === 'pickup' ? undefined : s.shippingAddress,
+    billingAddress: s.billingAddress,
     pickupDetails: s.fulfillmentMethod === 'pickup' ? s.pickupDetails : undefined,
     pickupFee: s.breakdown.pickupFee,
     specialPackagingFee: s.breakdown.specialPackagingFee,

@@ -6,17 +6,21 @@
   "scripts": {
     "start": "node dist/server.js",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "build": "tsc",
+    "mock:icici": "node scripts/icici-local-mock.js",
+    "dev:icici-uat": "test -f .env.uat.local || { echo '.env.uat.local not found: real ICICI UAT stays disabled'; exit 1; }; ICICI_PG_ALLOW_REAL_GATEWAY_IN_DEV=true DOTENV_CONFIG_PATH=.env.uat.local ts-node-dev -r dotenv/config --respawn --transpile-only src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
     "update-categories": "ts-node-dev src/scripts/updateCategories.ts",
     "setup-categories": "ts-node-dev src/scripts/setupCategories.ts",
     "seed-data": "ts-node-dev src/scripts/seedOriginalData.ts",
     "seed-banners": "ts-node-dev src/scripts/seedBanners.ts",
     "check-skus": "ts-node-dev src/scripts/checkSkus.ts",
-    "test": "ts-node-dev src/tests/shipping.test.ts",
+    "test": "node scripts/run-tests.js",
     "diagnose:erp-keys": "node dist/scripts/diagnoseErpKeys.js",
     "diagnose:history": "ts-node --transpile-only src/scripts/diagnoseHistory.ts",
     "test:erp": "ts-node --transpile-only src/tests/erp.test.ts",
-    "migrate:cloudinary-cloud": "ts-node --transpile-only src/scripts/migrateCloudinaryCloud.ts"
+    "migrate:cloudinary-cloud": "ts-node --transpile-only src/scripts/migrateCloudinaryCloud.ts",
+    "test:shipping": "ts-node-dev src/tests/shipping.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@sendgrid/mail": "^8.1.6",

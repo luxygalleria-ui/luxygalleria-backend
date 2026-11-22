@@ -63,6 +63,7 @@ const sessionSchema = new mongoose_1.Schema({
     shippingMethod: { type: String, enum: ['land', 'air'] },
     shippingZone: { type: String, enum: ['kerala', 'outsideKerala'] },
     shippingAddress: { type: mongoose_1.Schema.Types.Mixed },
+    billingAddress: { type: mongoose_1.Schema.Types.Mixed },
     pickupDetails: { type: mongoose_1.Schema.Types.Mixed },
     breakdown: { type: mongoose_1.Schema.Types.Mixed, required: true },
     amountPaise: { type: Number, required: true },

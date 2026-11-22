@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isIciciSuccess = exports.postForm = exports.postJson = exports.signed = exports.saleTxnDate = exports.istTimestamp = exports.newTxnNo = exports.verifyV1 = exports.hashV2 = exports.hashV1 = exports.iciciConfigured = exports.icici = void 0;
+exports.isIciciSuccess = exports.postForm = exports.postJson = exports.assertGatewayAllowed = exports.signed = exports.saleTxnDate = exports.istTimestamp = exports.newTxnNo = exports.verifyV1 = exports.hashV2 = exports.hashV1 = exports.iciciLive = exports.iciciConfigured = exports.icici = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 /**
  * ICICI Orange PG (Gateway_Interface_Specifiation_V0.4_Orange_PG.pdf). Server-side only: the secret key never leaves
@@ -24,6 +24,21 @@ const iciciConfigured = () => {
     return !!(c.merchantId && c.secret && c.initiateSaleUrl && c.commandUrl && c.returnURL);
 };
 exports.iciciConfigured = iciciConfigured;
+const isLiveUrl = (u) => {
+    try {
+        const x = new URL(u);
+        return x.protocol === 'https:' && x.hostname === 'pgpay.icicibank.com';
+    }
+    catch {
+        return false;
+    }
+};
+/**
+ * Live only when BOTH the sale and command URLs are https on ICICI's live host. UAT, mixed UAT/live, or any other
+ * host counts as test configuration (fail-safe: an ambiguous setup is never treated as live).
+ */
+const iciciLive = (c = (0, exports.icici)()) => isLiveUrl(c.initiateSaleUrl) && isLiveUrl(c.commandUrl);
+exports.iciciLive = iciciLive;
 // ICICI's reference code hashes msg.getBytes("ASCII"): every non-ASCII character becomes "?"
 const hmac = (msg, key) => crypto_1.default.createHmac('sha256', key).update(msg.replace(/[^\x00-\x7F]/gu, '?'), 'ascii').digest('hex');
 /**
@@ -65,6 +80,26 @@ const signed = (params) => {
     return { ...p, secureHash: (0, exports.hashV1)(p) };
 };
 exports.signed = signed;
+/**
+ * Local-development safety: with NODE_ENV exactly "development", no request may reach a real ICICI host
+ * (*.icicibank.com) unless ICICI_PG_ALLOW_REAL_GATEWAY_IN_DEV is exactly "true" (set only by `npm run dev:icici-uat`).
+ * Every other environment is unaffected. Throws before any network call.
+ */
+const assertGatewayAllowed = (url) => {
+    if (process.env.NODE_ENV !== 'development' || process.env.ICICI_PG_ALLOW_REAL_GATEWAY_IN_DEV === 'true')
+        return;
+    let host = '';
+    try {
+        host = new URL(url).hostname.toLowerCase().replace(/\.$/, '');
+    }
+    catch {
+        return;
+    } // fetch rejects it anyway
+    if (host === 'icicibank.com' || host.endsWith('.icicibank.com')) {
+        throw new Error(`Real ICICI gateway (${host}) blocked in development: use the local mock, or start with npm run dev:icici-uat`);
+    }
+};
+exports.assertGatewayAllowed = assertGatewayAllowed;
 const readJson = async (r) => {
     const text = await r.text();
     try {
@@ -75,10 +110,16 @@ const readJson = async (r) => {
     }
 };
 /** initiateSale takes JSON. */
-const postJson = async (url, body) => readJson(await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(20_000) }));
+const postJson = async (url, body) => {
+    (0, exports.assertGatewayAllowed)(url);
+    return readJson(await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(20_000) }));
+};
 exports.postJson = postJson;
 /** The command API (STATUS / REFUND) takes form-urlencoded. */
-const postForm = async (url, params) => readJson(await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params), signal: AbortSignal.timeout(20_000) }));
+const postForm = async (url, params) => {
+    (0, exports.assertGatewayAllowed)(url);
+    return readJson(await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params), signal: AbortSignal.timeout(20_000) }));
+};
 exports.postForm = postForm;
 const isIciciSuccess = (code) => code === '000' || code === '0000';
 exports.isIciciSuccess = isIciciSuccess;

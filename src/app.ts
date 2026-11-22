@@ -57,7 +57,7 @@ const corsConfig = {
       return;
     }
 
-    logger.warn(`CORS blocked request from origin: ${origin}`);
+    // Logged once, by errorHandler (method, path, origin, 403): a second line here doubled every rejection.
     // Still reject before any handler runs (cookie auth), but as a 403, not a 500.
     callback(Object.assign(new Error("Not allowed by CORS"), { statusCode: 403 }));
   },
@@ -105,6 +105,8 @@ app.use(sanitizeStrings);
 app.use('/api/', apiLimiter);
 
 // Logger
+// ICICI may return the payment result on the callback URL: never write those parameters (payer details, hash) to the log
+morgan.token('url', (req: any) => String(req.originalUrl || req.url).replace(/^(\/api\/v1\/payments\/icici\/[^?]*)\?.*$/, '$1?<redacted>'));
 if (ENV.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 } else {

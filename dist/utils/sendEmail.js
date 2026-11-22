@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.closeEmailConnection = exports.verifyEmailConnection = exports.sendEmail = void 0;
+exports.closeEmailConnection = exports.verifyEmailConnection = exports.sendEmail = exports.maskEmail = void 0;
 const mail_1 = __importDefault(require("@sendgrid/mail"));
 // Initialize SendGrid
 const initSendGrid = () => {
@@ -17,6 +17,12 @@ const initSendGrid = () => {
 };
 // Initialize early
 initSendGrid();
+/** a***@example.com: enough to tell recipients apart in a log, not the address itself. */
+const maskEmail = (email) => {
+    const [user, domain] = String(email).split('@');
+    return `${(user || '').slice(0, 1)}***@${domain || '?'}`;
+};
+exports.maskEmail = maskEmail;
 /**
  * Send email using SendGrid
  *
@@ -33,6 +39,11 @@ const sendEmail = async (options) => {
     }
     // If SendGrid is not configured, log to console instead (for development)
     if (!process.env.SENDGRID_API_KEY) {
+        // Outside local development the body (OTP codes, order details) and the full address never reach the log
+        if (process.env.NODE_ENV !== 'development') {
+            console.warn(`📧 Email not sent (SendGrid not configured): "${options.subject}" to ${(0, exports.maskEmail)(options.email)}`);
+            return { success: true, provider: 'console', note: 'Email not sent (SendGrid not configured)' };
+        }
         console.log('\n==========================================');
         console.log('📧 EMAIL (SendGrid not configured - Development Mode)');
         console.log('==========================================');
@@ -72,7 +83,7 @@ const sendEmail = async (options) => {
     try {
         const response = await mail_1.default.send(msg);
         console.log('✅ Email sent via SendGrid:', {
-            to: options.email,
+            to: (0, exports.maskEmail)(options.email),
             subject: options.subject,
             statusCode: response[0].statusCode,
         });
@@ -85,7 +96,7 @@ const sendEmail = async (options) => {
     catch (error) {
         console.error('❌ Failed to send email via SendGrid:', {
             error: error.response?.body ? JSON.stringify(error.response.body, null, 2) : error.message,
-            to: options.email,
+            to: (0, exports.maskEmail)(options.email),
             subject: options.subject,
         });
         throw new Error(`Email sending failed: ${error.message}`);

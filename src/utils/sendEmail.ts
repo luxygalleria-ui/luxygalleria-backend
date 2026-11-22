@@ -21,6 +21,12 @@ const initSendGrid = (): void => {
 // Initialize early
 initSendGrid();
 
+/** a***@example.com: enough to tell recipients apart in a log, not the address itself. */
+export const maskEmail = (email: string) => {
+  const [user, domain] = String(email).split('@');
+  return `${(user || '').slice(0, 1)}***@${domain || '?'}`;
+};
+
 /**
  * Send email using SendGrid
  * 
@@ -39,6 +45,11 @@ export const sendEmail = async (options: EmailOptions): Promise<any> => {
 
   // If SendGrid is not configured, log to console instead (for development)
   if (!process.env.SENDGRID_API_KEY) {
+    // Outside local development the body (OTP codes, order details) and the full address never reach the log
+    if (process.env.NODE_ENV !== 'development') {
+      console.warn(`📧 Email not sent (SendGrid not configured): "${options.subject}" to ${maskEmail(options.email)}`);
+      return { success: true, provider: 'console', note: 'Email not sent (SendGrid not configured)' };
+    }
     console.log('\n==========================================');
     console.log('📧 EMAIL (SendGrid not configured - Development Mode)');
     console.log('==========================================');
@@ -82,7 +93,7 @@ export const sendEmail = async (options: EmailOptions): Promise<any> => {
     const response = await sgMail.send(msg);
 
     console.log('✅ Email sent via SendGrid:', {
-      to: options.email,
+      to: maskEmail(options.email),
       subject: options.subject,
       statusCode: response[0].statusCode,
     });
@@ -95,7 +106,7 @@ export const sendEmail = async (options: EmailOptions): Promise<any> => {
   } catch (error: any) {
     console.error('❌ Failed to send email via SendGrid:', {
       error: error.response?.body ? JSON.stringify(error.response.body, null, 2) : error.message,
-      to: options.email,
+      to: maskEmail(options.email),
       subject: options.subject,
     });
     throw new Error(`Email sending failed: ${error.message}`);

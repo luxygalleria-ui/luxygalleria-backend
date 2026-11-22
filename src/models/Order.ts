@@ -32,6 +32,8 @@ export interface IOrder extends Document {
     zipCode: string;
     country: string;
   };
+  /** Billing address at the time of the order (absent on orders placed before billing existed). */
+  billingAddress?: { street?: string; city?: string; state?: string; zipCode?: string; country?: string };
   subtotal: number;
   discount: number;
   shippingFee: number;
@@ -111,6 +113,8 @@ const OrderSchema: Schema = new Schema(
       zipCode: { type: String, required: isDelivery },
       country: { type: String, required: isDelivery },
     },
+    // A snapshot like shippingAddress, validated at checkout; optional so older orders stay valid
+    billingAddress: { street: String, city: String, state: String, zipCode: String, country: String },
     subtotal: { type: Number, required: true },
     discount: { type: Number, default: 0 },
     shippingFee: { type: Number, default: 0 },

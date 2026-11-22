@@ -75,10 +75,11 @@ export const addAddress = asyncHandler(async (req: Request, res: Response) => {
 
 // Delete Address
 export const deleteAddress = asyncHandler(async (req: Request, res: Response) => {
+  const { addressId } = req.params;
+  if (!/^[a-f\d]{24}$/i.test(String(addressId))) return errorResponse(res, 400, 'Invalid address id');
   const user = await User.findById(req.user?._id);
   if (!user) return errorResponse(res, 404, 'User not found');
 
-  const { addressId } = req.params;
   user.addresses = (user.addresses || []).filter(
     (addr) => addr._id?.toString() !== addressId
   );

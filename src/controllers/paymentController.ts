@@ -35,7 +35,8 @@ const razorpayKeysMissing = () =>
   process.env.RAZORPAY_KEY_SECRET.startsWith('LuxySecret'); // Our placeholder secret
 
 /** Mock payments exist only for local development without Razorpay keys — never anywhere else. */
-export const isMockPaymentMode = () => ENV.NODE_ENV === 'development' && razorpayKeysMissing();
+// Raw NODE_ENV: ENV.NODE_ENV defaults an UNSET value to "development", which would let a misconfigured server take unpaid orders
+export const isMockPaymentMode = () => process.env.NODE_ENV === 'development' && razorpayKeysMissing();
 
 /** Constant-time compare of the Razorpay HMAC signature. */
 export const isValidRazorpaySignature = (orderId: string, paymentId: string, signature: string, secret: string) => {
@@ -199,7 +200,7 @@ export const customerOrderView = (doc: any) => {
     orderStatus: o.orderStatus, paymentStatus: o.paymentStatus, paymentMethod: o.paymentMethod,
     subtotal: o.subtotal, discount: o.discount, shippingFee: o.shippingFee, total: o.total,
     fulfillmentMethod: o.fulfillmentMethod, shippingMethod: o.shippingMethod, shippingAddress: o.shippingAddress,
-    pickupDetails: o.pickupDetails, pickupFee: o.pickupFee, specialPackagingFee: o.specialPackagingFee, tax: o.tax,
+    billingAddress: o.billingAddress, pickupDetails: o.pickupDetails, pickupFee: o.pickupFee, specialPackagingFee: o.specialPackagingFee, tax: o.tax,
     trackingNumber: o.trackingNumber,
     items: (o.items || []).map((i: any) => ({
       product: product(i.product), name: i.name, size: i.size, image: i.image,
@@ -224,9 +225,28 @@ export const paymentMatchesSession = (payment: any, session: Pick<ICheckoutSessi
  * returns null when the request cannot be paid.
  */
 export const priceCheckout = async (req: Request, res: Response) => {
-  const { total, items, shippingAddress } = req.body;
+  const { total, items, shippingAddressId, billingAddressId } = req.body;
+  let { shippingAddress } = req.body;
   const selection = selectionFrom(req.body, true);
   if (typeof selection === 'string') { res.status(400).json({ success: false, message: selection }); return null; }
+
+  // A saved address chosen by id is read from the caller's own address book (protect loaded the full user): a deleted
+  // address or another customer's id resolves to nothing. Older clients send only the fields; those still work.
+  const saved = (id: unknown) => (typeof id === 'string' && /^[a-f\d]{24}$/i.test(id)
+    ? (req.user as any)?.addresses?.find((a: any) => String(a._id) === id.toLowerCase()) : undefined);
+  if (selection.fulfillment === 'delivery' && shippingAddressId !== undefined && shippingAddressId !== '') {
+    shippingAddress = saved(shippingAddressId);
+    if (!shippingAddress) { res.status(400).json({ success: false, message: 'The selected delivery address no longer exists. Please select another address.' }); return null; }
+    // The saved address is also what is priced: the body's state/country (stale tab or tampered) never sets the zone
+    const fromSaved = selectionFrom({ ...req.body, shippingAddress: { state: shippingAddress.state, country: shippingAddress.country } }, true);
+    if (typeof fromSaved !== 'string') Object.assign(selection, { state: fromSaved.state, country: fromSaved.country });
+  }
+  // Billing: no id = the same as the delivery address; otherwise one of the caller's saved addresses, complete
+  const billingSaved = billingAddressId === undefined || billingAddressId === '' ? null : saved(billingAddressId);
+  if (billingSaved === undefined) { res.status(400).json({ success: false, message: 'The selected billing address no longer exists. Please select another billing address.' }); return null; }
+  if (billingSaved && !hasDeliveryAddress(billingSaved)) {
+    res.status(400).json({ success: false, message: 'The billing address is missing its city, state or PIN code. Please edit it or choose another.' }); return null;
+  }
 
   // Refuse to start a delivery payment without a deliverable address (pickup orders need none)
   if (selection.fulfillment === 'delivery' && !hasDeliveryAddress(shippingAddress)) {
@@ -258,11 +278,15 @@ export const priceCheckout = async (req: Request, res: Response) => {
 
   await expireStaleSessions();
   // Only the address fields an order stores; pickup orders keep none (the session snapshot drops it too)
-  const address = totals.fulfillmentMethod === 'pickup' ? undefined : Object.fromEntries(
-    ['street', 'city', 'state', 'zipCode', 'country'].map((k) => [k, typeof shippingAddress?.[k] === 'string' ? shippingAddress[k].trim().slice(0, 200) : '']),
-  );
-  if (address && !address.country) address.country = 'India'; // older saved addresses have none; zones are India-only
-  return { totals, items, shippingAddress: address };
+  const snapshot = (a: any) => {
+    const s = Object.fromEntries(['street', 'city', 'state', 'zipCode', 'country'].map((k) => [k, typeof a?.[k] === 'string' ? a[k].trim().slice(0, 200) : '']));
+    if (!s.country) s.country = 'India'; // older saved addresses have none; zones are India-only
+    return s;
+  };
+  const address = totals.fulfillmentMethod === 'pickup' ? undefined : snapshot(shippingAddress);
+  // Its own copy, never a reference: later edits to the address book or the shipping snapshot cannot change it
+  const billingAddress = billingSaved ? snapshot(billingSaved) : address && { ...address };
+  return { totals, items, shippingAddress: address, billingAddress };
 };
 
 /**
@@ -279,7 +303,7 @@ export const openSession = async (
   const fp = await settingsFingerprint();
   const session = await CheckoutSession.create(snapshotFromQuote(priced.totals, priced.items, {
     user: req.user!._id, razorpayOrderId: gatewayOrderId, gateway, isMock, shippingAddress: priced.shippingAddress,
-    settingsVersion: fp.version, settingsUpdatedAt: fp.updatedAt,
+    billingAddress: priced.billingAddress, settingsVersion: fp.version, settingsUpdatedAt: fp.updatedAt,
   }));
 
   // Reserve stock now (atomic, all or nothing) so concurrent checkouts can never sell the same units
@@ -445,7 +469,7 @@ export const getMyOrders = async (req: Request, res: Response) => {
     res.status(200).json({ success: true, data: orders.map(customerOrderView) });
   } catch (error: any) {
     console.error('Error fetching orders:', error);
-    res.status(500).json({ success: false, message: error.message || 'Error fetching orders' });
+    res.status(500).json({ success: false, message: 'Error fetching orders' });
   }
 };
 
@@ -460,7 +484,7 @@ export const getAllOrders = async (req: Request, res: Response) => {
     res.status(200).json({ success: true, data: orders });
   } catch (error: any) {
     console.error('Error fetching all orders:', error);
-    res.status(500).json({ success: false, message: error.message || 'Error fetching all orders' });
+    res.status(500).json({ success: false, message: 'Error fetching all orders' });
   }
 };
 
@@ -504,7 +528,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
     res.status(200).json({ success: true, data: order });
   } catch (error: any) {
     console.error('Error updating order status:', error);
-    res.status(500).json({ success: false, message: error.message || 'Error updating order status' });
+    res.status(500).json({ success: false, message: 'Error updating order status' });
   }
 };
 
@@ -682,7 +706,7 @@ export const deleteOrder = async (req: Request, res: Response) => {
     res.status(200).json({ success: true, message: 'Order deleted successfully', data: null });
   } catch (error: any) {
     console.error('Error deleting order:', error);
-    res.status(500).json({ success: false, message: error.message || 'Error deleting order' });
+    res.status(500).json({ success: false, message: 'Error deleting order' });
   }
 };
 

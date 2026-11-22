@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.iciciRefund = exports.iciciStatus = exports.checkIciciStatus = exports.iciciSettlementAdvice = exports.iciciPaymentAdvice = exports.iciciCallback = exports.iciciInitiate = void 0;
+exports.iciciRefund = exports.iciciStatus = exports.checkIciciStatus = exports.iciciSettlementAdvice = exports.iciciPaymentAdvice = exports.iciciCallback = exports.iciciInitiate = exports.paymentPageUrl = void 0;
 const Order_1 = __importDefault(require("../models/Order"));
 const Cart_1 = require("../models/Cart");
 const User_1 = require("../models/User");
@@ -96,16 +96,50 @@ const handleGatewayPost = async (p, source) => {
     const code = String(p.responseCode ?? p.respCode ?? '');
     return applyResult(String(p.merchantTxnNo), (0, iciciPg_1.isIciciSuccess)(code), code === 'R1000', String(p.txnID ?? ''), p.amount, `${code} ${p.respDescription ?? ''}`, source);
 };
+/**
+ * UAT testers: comma-separated user _ids (24 hex). Empty -> nobody. Any malformed entry -> null (the whole list is
+ * refused, so a typo blocks everyone instead of half-working).
+ */
+const uatTesterIds = () => {
+    const ids = (process.env.ICICI_PG_UAT_TEST_USER_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
+    return ids.every((id) => /^[a-f\d]{24}$/i.test(id)) ? new Set(ids.map((id) => id.toLowerCase())) : null;
+};
+/**
+ * ICICI's payment page for this sale (redirectURI + tranCtx), or '' when redirectURI is not a parseable https URL or
+ * tranCtx is missing: the customer is never sent to a malformed or plain-http page. URL keeps any query redirectURI has.
+ */
+const paymentPageUrl = (resp) => {
+    try {
+        const u = new URL(String(resp?.redirectURI ?? ''));
+        if (u.protocol !== 'https:' || !resp?.tranCtx)
+            return '';
+        u.searchParams.set('tranCtx', String(resp.tranCtx));
+        return u.toString();
+    }
+    catch {
+        return '';
+    }
+};
+exports.paymentPageUrl = paymentPageUrl;
 // POST /payments/icici/initiate (customer): quote, reserve stock, initiateSale, return the gateway URL to redirect to
 const iciciInitiate = async (req, res) => {
     try {
         if (!(0, iciciPg_1.iciciConfigured)())
             return res.status(503).json({ success: false, message: 'ICICI payments are not available' });
-        // UAT credentials on the live server: test-card "payments" must never become real customer orders, so only the
-        // customer accounts listed in ICICI_PG_UAT_TEST_EMAILS may pay. Admin accounts cannot sign in on the storefront.
-        const uatTesters = (process.env.ICICI_PG_UAT_TEST_EMAILS || '').toLowerCase().split(',').map((e) => e.trim()).filter(Boolean);
-        if ((0, iciciPg_1.icici)().initiateSaleUrl.includes('pgpayuat') && process.env.NODE_ENV === 'production' && !uatTesters.includes(String(req.user?.email).toLowerCase())) {
-            return res.status(403).json({ success: false, message: 'Online payment is being set up and is not available yet. Please try again later.' });
+        // Test (UAT / mixed / unknown) gateway config on any server except NODE_ENV exactly "development": test-card
+        // "payments" must never become real customer orders, so only the accounts whose _id is listed in
+        // ICICI_PG_UAT_TEST_USER_IDS may pay. Fail-safe: NODE_ENV unset, "staging", "Production" etc. are all gated.
+        // By _id, never email: registration does not prove email ownership and emails are stored case-sensitively, so
+        // anyone could register a tester's address (or a case variant of it). req.user comes from the signed token's id.
+        if (!(0, iciciPg_1.iciciLive)() && process.env.NODE_ENV !== 'development') {
+            const testers = uatTesterIds();
+            if (!testers?.has(String(req.user._id))) {
+                if (!testers)
+                    console.error('ICICI UAT gate: ICICI_PG_UAT_TEST_USER_IDS has a malformed entry (each must be a 24-hex user _id): every customer is blocked');
+                if (process.env.ICICI_PG_UAT_TEST_EMAILS)
+                    console.warn('ICICI UAT gate: ICICI_PG_UAT_TEST_EMAILS is no longer used; list tester user _ids in ICICI_PG_UAT_TEST_USER_IDS');
+                return res.status(403).json({ success: false, message: 'Online payment is being set up and is not available yet. Please try again later.' });
+            }
         }
         // Back from ICICI's page without paying and trying again: release this customer's earlier unpaid holds first, so
         // the last unit is not blocked by their own reservation. If an earlier one is paid after all, it re-reserves.
@@ -141,19 +175,21 @@ const iciciInitiate = async (req, res) => {
         }
         catch (err) {
             await releaseSession(session._id, `initiateSale error: ${err?.message}`);
-            console.error(`ICICI initiateSale ${merchantTxnNo} failed:`, err?.message);
-            return res.status(502).json({ success: false, message: 'Could not reach the payment gateway. Please try again.' });
+            // No reply at all (seen when ICICI's firewall drops callers whose IP it has not allow-listed): say what to check
+            const hint = err?.name === 'TimeoutError' ? ' (no response in 20 s: check that this server\'s public IP is allow-listed with ICICI for this environment)' : '';
+            console.error(`ICICI initiateSale ${merchantTxnNo} failed: ${err?.message}${hint}`);
+            return res.status(502).json({ success: false, message: 'Could not reach the ICICI payment gateway. You have not been charged. Please try again in a few minutes.' });
         }
-        const ok = resp?.responseCode === 'R1000' && resp.redirectURI && resp.tranCtx && (0, iciciPg_1.verifyV1)(resp);
+        const redirectUrl = (0, exports.paymentPageUrl)(resp);
+        const ok = resp?.responseCode === 'R1000' && !!redirectUrl && (0, iciciPg_1.verifyV1)(resp);
         if (!ok || resp.showOTPCapturePage === 'Y') {
             // showOTPCapturePage "Y" means a merchant-hosted OTP page (Direct / payType 1 only); never expected for payType 0
-            const why = `responseCode ${resp?.responseCode} ${resp?.respDescription ?? ''}${ok ? ' (OTP capture page requested)' : (0, iciciPg_1.verifyV1)(resp ?? {}) ? '' : ' (secureHash mismatch)'}`;
+            const why = `responseCode ${resp?.responseCode} ${resp?.respDescription ?? ''}${ok ? ' (OTP capture page requested)' : !(0, iciciPg_1.verifyV1)(resp ?? {}) ? ' (secureHash mismatch)' : !redirectUrl ? ' (no https redirectURI / tranCtx)' : ''}`;
             await releaseSession(session._id, `initiateSale refused: ${why}`);
             console.error(`ICICI initiateSale ${merchantTxnNo} refused: ${why}`);
-            return res.status(502).json({ success: false, message: 'The payment gateway could not start this payment. Please try again.' });
+            return res.status(502).json({ success: false, message: 'The ICICI payment gateway could not start this payment. You have not been charged. Please try again.' });
         }
         await CheckoutSession_1.CheckoutSession.updateOne({ _id: session._id }, { $push: { events: { at: new Date(), type: 'icici-initiated', detail: String(resp.tranCtx) } } });
-        const redirectUrl = `${resp.redirectURI}?tranCtx=${encodeURIComponent(resp.tranCtx)}`;
         return res.status(200).json({ success: true, data: { redirectUrl, merchantTxnNo } });
     }
     catch (error) {

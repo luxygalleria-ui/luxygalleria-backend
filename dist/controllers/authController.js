@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.googleAuth = exports.loginCustomer = exports.resendOtp = exports.verifyOtp = exports.registerCustomer = exports.createTestAdmin = exports.loginAdmin = void 0;
+exports.googleAuth = exports.loginCustomer = exports.resendOtp = exports.verifyOtp = exports.registerCustomer = exports.loginAdmin = exports.secureCookies = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const User_1 = require("../models/User");
 const asyncHandler_1 = require("../utils/asyncHandler");
@@ -11,6 +11,10 @@ const responseHandler_1 = require("../utils/responseHandler");
 const env_1 = require("../config/env");
 const google_auth_library_1 = require("google-auth-library");
 const crypto_1 = __importDefault(require("crypto"));
+// Secure unless NODE_ENV is exactly "development" (local http). Unset, "staging", "Production" or any typo fail safe to
+// Secure: the cookie then only travels over HTTPS, which production and HTTPS staging already use.
+const secureCookies = () => process.env.NODE_ENV !== 'development';
+exports.secureCookies = secureCookies;
 const generateToken = (id, role) => {
     return jsonwebtoken_1.default.sign({ id, role }, env_1.ENV.JWT_SECRET, {
         expiresIn: env_1.ENV.JWT_EXPIRES_IN,
@@ -38,7 +42,7 @@ exports.loginAdmin = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     // Set Cookie for extra security (HTTP-Only)
     res.cookie('jwt', token, {
         httpOnly: true,
-        secure: env_1.ENV.NODE_ENV === 'production',
+        secure: (0, exports.secureCookies)(),
         sameSite: 'strict',
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
@@ -49,41 +53,6 @@ exports.loginAdmin = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         phone: user.phone,
         role: user.role,
         token
-    });
-});
-// Helper to quickly create a test admin user (Can be removed later)
-exports.createTestAdmin = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
-    if (env_1.ENV.NODE_ENV !== 'development') {
-        return (0, responseHandler_1.errorResponse)(res, 403, 'Test admin setup is only available in development');
-    }
-    const adminEmail = process.env.ADMIN_EMAIL || 'admin@luxygalleria.com';
-    const adminPassword = process.env.ADMIN_PASSWORD || 'password123';
-    const userExists = await User_1.User.findOne({ email: adminEmail }).select('+password');
-    if (userExists) {
-        if (userExists.role === 'admin' || userExists.role === 'superadmin') {
-            userExists.password = adminPassword;
-            userExists.role = 'superadmin';
-            userExists.isVerified = true;
-            userExists.isActive = true;
-            await userExists.save();
-            return (0, responseHandler_1.successResponse)(res, 200, 'Test admin reset successfully. You can now login.', {
-                email: adminEmail,
-                password: adminPassword
-            });
-        }
-        return (0, responseHandler_1.errorResponse)(res, 400, 'Email is already registered as a customer');
-    }
-    const admin = await User_1.User.create({
-        name: 'System Admin',
-        email: adminEmail,
-        password: adminPassword,
-        role: 'superadmin',
-        isVerified: true,
-        isActive: true,
-    });
-    (0, responseHandler_1.successResponse)(res, 201, 'Test admin created successfully. You can now login.', {
-        email: admin.email,
-        password: adminPassword
     });
 });
 const sendEmail_1 = require("../utils/sendEmail");
@@ -110,7 +79,7 @@ exports.registerCustomer = (0, asyncHandler_1.asyncHandler)(async (req, res) => 
     const token = generateToken(user._id.toString(), user.role);
     res.cookie('jwt', token, {
         httpOnly: true,
-        secure: env_1.ENV.NODE_ENV === 'production',
+        secure: (0, exports.secureCookies)(),
         sameSite: 'strict',
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
@@ -149,7 +118,7 @@ exports.verifyOtp = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const token = generateToken(user._id.toString(), user.role);
     res.cookie('jwt', token, {
         httpOnly: true,
-        secure: env_1.ENV.NODE_ENV === 'production',
+        secure: (0, exports.secureCookies)(),
         sameSite: 'strict',
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
@@ -175,7 +144,7 @@ exports.resendOtp = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         return (0, responseHandler_1.errorResponse)(res, 400, 'User is already verified');
     }
     // Generate 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = crypto_1.default.randomInt(100000, 1000000).toString(); // CSPRNG: Math.random is predictable
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
     user.otp = otp;
     user.otpExpires = otpExpires;
@@ -237,7 +206,7 @@ exports.loginCustomer = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         const token = generateToken(user._id.toString(), user.role);
         res.cookie('jwt', token, {
             httpOnly: true,
-            secure: env_1.ENV.NODE_ENV === 'production',
+            secure: (0, exports.secureCookies)(),
             sameSite: 'strict',
             maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
         });
@@ -251,8 +220,8 @@ exports.loginCustomer = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         });
     }
     catch (error) {
-        console.error("[DEBUG LOGIN] 8. Unexpected error in loginCustomer:", error);
-        return (0, responseHandler_1.errorResponse)(res, 500, error.message || 'Internal Server Error');
+        console.error("Unexpected error in loginCustomer:", error?.message);
+        return (0, responseHandler_1.errorResponse)(res, 500, "Internal Server Error");
     }
 });
 // Google OAuth Sign-In (supports both ID token and access token flows)
@@ -346,7 +315,7 @@ exports.googleAuth = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         const token = generateToken(user._id.toString(), user.role);
         res.cookie('jwt', token, {
             httpOnly: true,
-            secure: env_1.ENV.NODE_ENV === 'production',
+            secure: (0, exports.secureCookies)(),
             sameSite: 'strict',
             maxAge: 7 * 24 * 60 * 60 * 1000
         });

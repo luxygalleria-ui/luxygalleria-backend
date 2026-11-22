@@ -177,7 +177,8 @@ export const loadCheckoutSettings = async () => {
   try {
     doc = await Settings.findOne().lean();
   } catch (err: any) {
-    throw new CheckoutSettingsError(`Checkout settings could not be loaded: ${err?.message || err}`);
+    console.error("Checkout settings could not be loaded:", err?.message); // the driver message stays in the server log
+    throw new CheckoutSettingsError("Checkout settings could not be loaded");
   }
   return effectiveCheckoutSettings(doc);
 };
