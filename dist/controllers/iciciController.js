@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.iciciRefund = exports.iciciStatus = exports.checkIciciStatus = exports.iciciSettlementAdvice = exports.iciciPaymentAdvice = exports.iciciCallback = exports.iciciInitiate = exports.paymentPageUrl = void 0;
+exports.iciciRefund = exports.iciciStatus = exports.checkIciciStatus = exports.iciciSettlementAdvice = exports.iciciPaymentAdvice = exports.iciciCallback = exports.iciciInitiate = exports.localMockDown = exports.paymentPageUrl = void 0;
 const Order_1 = __importDefault(require("../models/Order"));
 const Cart_1 = require("../models/Cart");
 const User_1 = require("../models/User");
@@ -121,6 +121,21 @@ const paymentPageUrl = (resp) => {
     }
 };
 exports.paymentPageUrl = paymentPageUrl;
+/** NODE_ENV exactly "development", a loopback gateway URL, and the connection refused: the local ICICI mock is not running. */
+const localMockDown = (err, url) => {
+    if (process.env.NODE_ENV !== 'development')
+        return false;
+    let host = '';
+    try {
+        host = new URL(url).hostname;
+    }
+    catch {
+        return false;
+    }
+    const code = [err?.cause?.code, err?.code].find((c) => typeof c === 'string');
+    return ['localhost', '127.0.0.1', '[::1]', '::1'].includes(host) && code === 'ECONNREFUSED';
+};
+exports.localMockDown = localMockDown;
 // POST /payments/icici/initiate (customer): quote, reserve stock, initiateSale, return the gateway URL to redirect to
 const iciciInitiate = async (req, res) => {
     try {
@@ -180,6 +195,11 @@ const iciciInitiate = async (req, res) => {
             const hint = err?.name === 'TimeoutError' ? ' (no response in 20 s: check that this server\'s public IP is allow-listed with ICICI for this environment)'
                 : /ECONNREFUSED/.test(failure) ? ' (connection refused: is the configured gateway, or the local mock, running at this address?)' : '';
             console.error(`ICICI initiateSale ${merchantTxnNo} failed: ${failure}${hint}`);
+            // Local development only: a refused loopback gateway is the local mock not running (plain npm run dev). Say so in
+            // the reply the browser shows. Every other environment and failure keeps the generic customer message.
+            if ((0, exports.localMockDown)(err, c.initiateSaleUrl)) {
+                return res.status(502).json({ success: false, code: 'ICICI_LOCAL_MOCK_DOWN', message: `Local ICICI mock is not running at ${new URL(c.initiateSaleUrl).host}. Start the whole local checkout with: npm run dev:icici-mock (in luxy-backend). You have not been charged.` });
+            }
             return res.status(502).json({ success: false, message: 'Could not reach the ICICI payment gateway. You have not been charged. Please try again in a few minutes.' });
         }
         const redirectUrl = (0, exports.paymentPageUrl)(resp);

@@ -25,6 +25,7 @@ import { Cart } from '../models/Cart';
 import Order from '../models/Order';
 import { CheckoutSession } from '../models/CheckoutSession';
 import { hashV1, hashV2, verifyV1, istTimestamp, saleTxnDate, assertGatewayAllowed, postForm, postJson, gatewayFailure } from '../utils/iciciPg';
+import { localMockDown } from '../controllers/iciciController';
 
 let passed = 0;
 const test = async (name: string, fn: () => Promise<void>) => { await fn(); passed++; console.log(`  ✅ ${name}`); };
@@ -379,6 +380,56 @@ const run = async () => {
       assert.ok(secret && !logged.some((l) => l.includes(secret) || /secureHash"?\s*[:=]/.test(l)), 'no key or hash logged');
       const s = await CheckoutSession.findOne({}, {}, { sort: { createdAt: -1 } }).lean();
       assert.ok(s!.events.some((e: any) => e.type === 'icici-released' && e.detail.includes('ECONNREFUSED')), 'the reason is kept on the session');
+    });
+
+    await test('local development, loopback mock refused: 502 names the mock and the start command; production and other failures keep the generic message', async () => {
+      const keys = ['NODE_ENV', 'ICICI_PG_INITIATE_SALE_URL', 'ICICI_PG_UAT_TEST_USER_IDS'];
+      const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+      const refused = () => { throw new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:8442'), { code: 'ECONNREFUSED' }) }); };
+      const GENERIC = 'Could not reach the ICICI payment gateway. You have not been charged. Please try again in a few minutes.';
+      const LOCAL = 'http://localhost:8442/tsp/pg/api/v2/initiateSale';
+      const origError = console.error; console.error = () => {};
+      try {
+        const run = async (env: Record<string, string>, reply: () => never) => {
+          Object.assign(process.env, env);
+          const before = await stock(); const orders = await Order.countDocuments();
+          nextReply = reply;
+          try {
+            const r = await initiate();
+            return { r, released: (await stock()) >= before, noOrder: (await Order.countDocuments()) === orders };
+          } finally { nextReply = null; }
+        };
+        const dev = await run({ NODE_ENV: 'development', ICICI_PG_INITIATE_SALE_URL: LOCAL }, refused);
+        assert.strictEqual(dev.r.status, 502, 'still a 502: never turned into a success');
+        assert.strictEqual(dev.r.json.code, 'ICICI_LOCAL_MOCK_DOWN');
+        assert.ok(/Local ICICI mock is not running at localhost:8442/.test(dev.r.json.message) && /npm run dev:icici-mock/.test(dev.r.json.message) && /not been charged/.test(dev.r.json.message), dev.r.json.message);
+        assert.ok(dev.released && dev.noOrder, 'reservation released, no order');
+        // production + a non-live URL: the UAT gate applies, so the test customer is listed as the approved tester
+        const prod = await run({ NODE_ENV: 'production', ICICI_PG_INITIATE_SALE_URL: LOCAL, ICICI_PG_UAT_TEST_USER_IDS: String(ann._id) }, refused);
+        assert.deepStrictEqual([prod.r.status, prod.r.json.message, prod.r.json.code], [502, GENERIC, undefined], 'production never mentions the mock');
+        const timeout = await run({ NODE_ENV: 'development', ICICI_PG_INITIATE_SALE_URL: LOCAL }, () => { throw new DOMException('timed out', 'TimeoutError'); });
+        assert.deepStrictEqual([timeout.r.status, timeout.r.json.message, timeout.r.json.code], [502, GENERIC, undefined], 'a timeout is not "mock not running"');
+      } finally {
+        console.error = origError;
+        for (const k of keys) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+      }
+    });
+
+    await test('localMockDown: only exact development + loopback host + ECONNREFUSED', async () => {
+      const refused = { cause: { code: 'ECONNREFUSED' } };
+      const saved = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'development';
+        for (const u of ['http://localhost:8442/x', 'http://127.0.0.1:8442/x', 'http://[::1]:8442/x']) assert.strictEqual(localMockDown(refused, u), true, u);
+        assert.strictEqual(localMockDown(refused, 'https://pgpayuat.icicibank.com/tsp/pg/api/v2/initiateSale'), false, 'real UAT host');
+        assert.strictEqual(localMockDown(refused, 'http://localhost.evil.test:8442/x'), false, 'lookalike host');
+        assert.strictEqual(localMockDown({ cause: { code: 'ENOTFOUND' } }, 'http://localhost:8442/x'), false, 'other network error');
+        assert.strictEqual(localMockDown(undefined, 'http://localhost:8442/x'), false, 'no error detail');
+        assert.strictEqual(localMockDown(refused, 'not a url'), false, 'bad URL');
+        for (const env of ['production', 'Development', 'staging', 'test']) { process.env.NODE_ENV = env; assert.strictEqual(localMockDown(refused, 'http://localhost:8442/x'), false, env); }
+        delete process.env.NODE_ENV;
+        assert.strictEqual(localMockDown(refused, 'http://localhost:8442/x'), false, 'unset');
+      } finally { if (saved === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = saved; }
     });
 
     await test('gatewayFailure: host and network code only, safe for odd inputs', async () => {
