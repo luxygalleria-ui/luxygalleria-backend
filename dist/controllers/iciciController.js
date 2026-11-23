@@ -28,7 +28,8 @@ const gatewayParams = (req) => {
     let body = {};
     if (req.is('application/json')) {
         try {
-            const parsed = JSON.parse(raw || '{}', (_k, v, ctx) => (typeof v === 'number' ? ctx?.source ?? String(v) : v));
+            // Numbers keep their sent text (600.00), as the hash covers it: no reviver context.source, which Node 20 lacks
+            const parsed = (0, iciciPg_1.parseJsonKeepNumberText)(raw || '{}');
             if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
                 body = parsed;
         }

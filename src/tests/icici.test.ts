@@ -24,7 +24,7 @@ import { Product } from '../models/Product';
 import { Cart } from '../models/Cart';
 import Order from '../models/Order';
 import { CheckoutSession } from '../models/CheckoutSession';
-import { hashV1, hashV2, verifyV1, istTimestamp, saleTxnDate, assertGatewayAllowed, postForm, postJson, gatewayFailure } from '../utils/iciciPg';
+import { hashV1, hashV2, verifyV1, istTimestamp, saleTxnDate, assertGatewayAllowed, postForm, postJson, gatewayFailure, parseJsonKeepNumberText } from '../utils/iciciPg';
 import { localMockDown } from '../controllers/iciciController';
 
 let passed = 0;
@@ -60,6 +60,27 @@ const run = async () => {
     assert.match(hashV1(req, 'k'), /^[0-9a-f]{64}$/);
     assert.ok(verifyV1(sign(req)) && !verifyV1({ ...sign(req), amount: '3.00' }) && !verifyV1({ ...req, secureHash: 'x' }));
     assert.ok(verifyV1({ ...sign(req), secureHash: sign(req).secureHash.toUpperCase() }), 'case-insensitive compare');
+  });
+
+  await test(`JSON numbers keep their exact sent text on any Node version (running ${process.version}): 600.00 is not 600`, async () => {
+    const J = (raw: string) => parseJsonKeepNumberText(raw) as any;
+    // 1. 600.00 keeps its trailing zeros; 2. 600 stays "600", a different value for the hash
+    assert.deepStrictEqual(J('{"amount":600.00}'), { amount: '600.00' });
+    assert.deepStrictEqual(J('{"amount":600}'), { amount: '600' });
+    assert.notStrictEqual(hashV1(J('{"amount":600.00}'), 'k'), hashV1(J('{"amount":600}'), 'k'), '600 and 600.00 sign differently');
+    assert.strictEqual(hashV1(J('{"amount":600.00,"merchantTxnNo":"T1"}'), 'k'), hashV1({ amount: '600.00', merchantTxnNo: 'T1' }, 'k'), 'same hash as the string form');
+    // 3. decimals, negatives, exponents and integers beyond float precision come through untouched (never a JS number)
+    for (const lit of ['0.10', '-12.50', '1.50E+2', '1e3', '0', '-0', '123456789012345678901234567890', '9007199254740993', '0.30000000000000004000']) {
+      assert.strictEqual(J(`{"v":${lit}}`).v, lit, lit);
+    }
+    // nested objects and arrays, whitespace around numbers
+    assert.deepStrictEqual(J('{ "a" : [ 1.10 , { "b" : 2.0 } ] , "c" :\n 3 }'), { a: ['1.10', { b: '2.0' }], c: '3' });
+    // strings are copied as they are: digits, quotes and backslashes inside them are never touched
+    assert.deepStrictEqual(J('{"s":"pay 1.50 now \\"2.00\\" 3","t":"\\\\","u":"\\u0031.0"}'), { s: 'pay 1.50 now "2.00" 3', t: '\\', u: '1.0' });
+    // booleans and null stay what they were (null is still skipped by the hash)
+    assert.deepStrictEqual(J('{"t":true,"f":false,"n":null}'), { t: true, f: false, n: null });
+    // invalid JSON still throws (rejected by the caller as an unverifiable post)
+    for (const bad of ['{"a":01}', '{"a":-}', '{"a":1.}', '{"a":.5}', '{"a":"x}', '{"a":1', '']) assert.throws(() => J(bad), SyntaxError, bad);
   });
 
   assert.ok(TEST_DB.endsWith('_test'));
@@ -338,6 +359,30 @@ const run = async () => {
       assert.ok(!/payerVpa|okicici|secureHash|aaaa/.test(line!), line);
     });
 
+    await test('JSON payment advice: the signed 600.00 text verifies; the same amount re-sent as 600 or 600.000 is rejected; form posts unchanged', async () => {
+      const t = (await initiate()).json.data.merchantTxnNo;
+      const a = total.toFixed(2);
+      const signedJson = JSON.stringify(paid(t));                       // signed over amount "<a>" (e.g. "600.00")
+      const asNumber = (lit: string) => signedJson.replace(`"amount":"${a}"`, `"amount":${lit}`);
+      const post = (body: string) => fetch(`${base}/payments/icici/payment-advice`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+      // Tampered representations of the same value are refused: the hash covers the exact text
+      for (const lit of [String(Number(a)), `${a}0`]) {
+        if (lit === a) continue;
+        assert.strictEqual((await post(asNumber(lit))).status, 400, `amount sent as ${lit}`);
+      }
+      assert.strictEqual(await Order.countDocuments({ razorpayOrderId: t }), 0, 'no order from a rejected advice');
+      assert.strictEqual((await post(JSON.stringify({ ...paid(t), secureHash: 'f'.repeat(64) }))).status, 400, 'forged hash');
+      // The exact signed text as a JSON number literal verifies and creates exactly one order (twice: still one)
+      assert.strictEqual((await post(asNumber(a))).status, 200);
+      assert.strictEqual((await post(asNumber(a))).status, 200, 'a repeated advice is accepted');
+      assert.strictEqual(await Order.countDocuments({ razorpayOrderId: t }), 1, 'exactly one order');
+      // Form-encoded posts are parsed exactly as before
+      const t2 = (await initiate()).json.data.merchantTxnNo;
+      assert.strictEqual((await formPost('/payments/icici/callback', paid(t2))).location, 'https://shop.test/order-success');
+      assert.strictEqual(await Order.countDocuments({ razorpayOrderId: t2 }), 1);
+      await Product.updateOne({ _id: tea._id }, { $inc: { 'variants.0.stock': 4 } }); // give back the 2 x 2 units, for the tests below
+    });
+
     await test('UPI R1000 (pending) on the return URL goes to the pending page; the later payment advice completes the order', async () => {
       const t = (await initiate()).json.data.merchantTxnNo;
       assert.strictEqual((await formPost('/payments/icici/callback', paid(t, { responseCode: 'R1000' }))).location, 'https://shop.test/order-failure?reason=pending');
@@ -538,6 +583,129 @@ const run = async () => {
       assert.strictEqual(sent.length, calls, 'no second refund request');
       // The Razorpay refund route never touches an ICICI order
       assert.strictEqual((await call(`/payments/admin/orders/${o._id}/refund`, { reason: 'x'.repeat(5) }, superT)).status, 400);
+    });
+
+    await test('status and refund replies: JSON number literals (600.00) verify over their exact text; 600 / 600.000 or a forged hash is refused', async () => {
+      const a = total.toFixed(2);
+      // A raw ICICI reply whose numeric fields are JSON number literals, signed over their exact text (as ICICI does)
+      const raw = (fields: Record<string, any>, numeric: string[], alter: Record<string, string> = {}) => {
+        let text = JSON.stringify(sign(fields));
+        for (const k of numeric) text = text.replace(`"${k}":"${fields[k]}"`, `"${k}":${alter[k] ?? fields[k]}`);
+        return new Response(text, { status: 200, headers: { 'Content-Type': 'application/json' } });
+      };
+      const others = [String(Number(a)), `${a}0`].filter((x) => x !== a);
+      const origError = console.error; console.error = () => {};
+      try {
+        // ---- STATUS: amount 600.00 and oth_charge 0 as number literals
+        const stockBefore = await stock();
+        await Product.updateOne({ _id: tea._id }, { $inc: { 'variants.0.stock': 2 } }); // the 2 units this test's order takes
+        const started = await initiate();
+        assert.strictEqual(started.status, 200, `initiate: ${JSON.stringify(started.json)}`);
+        const t = started.json.data.merchantTxnNo;
+        const statusFields = (b: any) => ({ responseCode: '000', merchantId: b.merchantId, merchantTxnNo: t, txnStatus: 'SUC', txnResponseCode: '0000', txnID: 'T-num', amount: a, oth_charge: '0' });
+        for (const lit of others) {
+          nextReply = (b) => raw(statusFields(b), ['amount', 'oth_charge'], { amount: lit });
+          const r = await call('/payments/icici/status', { merchantTxnNo: t }, annT);
+          assert.strictEqual(r.status, 502, `status reply with amount ${lit} instead of ${a}: ${JSON.stringify(r.json)}`);
+        }
+        const forged = (b: any) => new Response(JSON.stringify({ ...sign(statusFields(b)), secureHash: 'f'.repeat(64) }).replace(`"amount":"${a}"`, `"amount":${a}`), { status: 200 });
+        nextReply = forged;
+        assert.strictEqual((await call('/payments/icici/status', { merchantTxnNo: t }, annT)).status, 502, 'forged status hash');
+        assert.strictEqual(await Order.countDocuments({ razorpayOrderId: t }), 0, 'no order from an unverifiable status reply');
+        nextReply = (b) => raw(statusFields(b), ['amount', 'oth_charge']);
+        const ok = await call('/payments/icici/status', { merchantTxnNo: t }, annT);
+        assert.strictEqual(ok.status, 200, JSON.stringify(ok.json));
+        assert.deepStrictEqual([ok.json.data.txnStatus, ok.json.data.outcome], ['SUC', 'created'], 'exact 600.00 text verifies and completes the order');
+        assert.strictEqual(await Order.countDocuments({ razorpayOrderId: t }), 1);
+
+        // ---- REFUND of that order: amount 600.00 as a number literal in the reply
+        const o: any = await Order.findOne({ razorpayOrderId: t });
+        const refundFields = (b: any) => ({ responseCode: '000', respDescription: 'Request processed successfully', merchantId: b.merchantId, merchantTxnNo: b.merchantTxnNo, txnID: 'RF-num', amount: a });
+        const sends = sent.length;
+        nextReply = (b) => raw(refundFields(b), ['amount'], { amount: others[0] });
+        const bad = await call('/payments/icici/refund', { orderId: String(o._id), reason: 'customer request' }, superT);
+        assert.deepStrictEqual([bad.status, bad.json.code], [502, 'REFUND_UNCONFIRMED'], `altered refund reply: ${JSON.stringify(bad.json)}`);
+        const firstRefundTxn = sent.at(-1)!.body.merchantTxnNo;
+        assert.strictEqual(((await Order.findById(o._id).lean()) as any).refund.status, 'requested', 'unconfirmed: stays requested, never marked refunded');
+        nextReply = (b) => new Response(JSON.stringify({ ...sign(refundFields(b)), secureHash: 'f'.repeat(64) }), { status: 200 });
+        assert.strictEqual((await call('/payments/icici/refund', { orderId: String(o._id), reason: 'customer request' }, superT)).status, 502, 'forged refund hash');
+        nextReply = (b) => raw(refundFields(b), ['amount']);
+        const good = await call('/payments/icici/refund', { orderId: String(o._id), reason: 'customer request' }, superT);
+        assert.strictEqual(good.status, 200, JSON.stringify(good.json));
+        assert.strictEqual(sent.at(-1)!.body.merchantTxnNo, firstRefundTxn, 'a retry reuses the same refund reference');
+        assert.strictEqual(sent.length - sends, 3, 'one gateway request per attempt');
+        const after: any = await Order.findById(o._id).lean();
+        assert.deepStrictEqual([after.paymentStatus, after.refund.status], ['refunded', 'processed']);
+        const calls = sent.length;
+        assert.strictEqual((await call('/payments/icici/refund', { orderId: String(o._id), reason: 'again' }, superT)).status, 200);
+        assert.strictEqual(sent.length, calls, 'no second refund request after it is processed');
+        assert.strictEqual(await stock(), stockBefore, 'test isolation: shared stock back where it started (top-up 2, order took 2)');
+      } finally { console.error = origError; nextReply = null; }
+    });
+
+    await test('booleans are signed as their JSON text (true/false); flipping one is refused [ICICI boolean rule UNVERIFIED]', async () => {
+      // Only evidence: ICICI's STATUS sample carries "oth_charge":false inside a signed reply (spec p.74); the key is unknown,
+      // so this pins the current rule (the literal text "false"), it does not prove ICICI's
+      const stockBefore = await stock();
+      await Product.updateOne({ _id: tea._id }, { $inc: { 'variants.0.stock': 2 } }); // the 2 units this test's order takes
+      const t = (await initiate()).json.data.merchantTxnNo;
+      const body = JSON.stringify(paid(t, { oth_charge: 'false' })).replace('"oth_charge":"false"', '"oth_charge":false');
+      const flipped = body.replace('"oth_charge":false', '"oth_charge":true');
+      const post = (b: string) => fetch(`${base}/payments/icici/payment-advice`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: b });
+      assert.strictEqual((await post(flipped)).status, 400, 'a flipped boolean breaks the signature');
+      assert.strictEqual(await Order.countDocuments({ razorpayOrderId: t }), 0);
+      assert.strictEqual((await post(body)).status, 200, 'false signed as "false" verifies');
+      assert.strictEqual(await Order.countDocuments({ razorpayOrderId: t }), 1);
+      assert.strictEqual(await stock(), stockBefore, 'test isolation: shared stock back where it started');
+    });
+
+    await test('nested objects / arrays (undocumented by ICICI) are fail-closed: a notice signed any other way is refused, no order', async () => {
+      // ICICI documents only flat fields for every notice (spec ch. 7-9). A nested value can never verify against a hash
+      // ICICI computed some other way, so such a notice is rejected rather than trusted. The hash is checked before any
+      // session lookup, so an unused reference is enough (no stock is touched).
+      const t = 'LGNESTEDTEST0001';
+      const stockBefore = await stock();
+      const post = (b: string, path = 'payment-advice') => fetch(`${base}/payments/icici/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: b });
+      const origError = console.error; console.error = () => {};
+      try {
+        for (const [label, nested] of [['object', { bank: 'X', ref: 1 }], ['array', ['a', 2]], ['empty object', {}], ['empty array', []]] as const) {
+          // signed by a signer that would put the nested value's JSON text into the hash string
+          const flat = paid(t, { extra: JSON.stringify(nested) });
+          const body = JSON.stringify(flat).replace(`"extra":${JSON.stringify(JSON.stringify(nested))}`, `"extra":${JSON.stringify(nested)}`);
+          assert.strictEqual((await post(body)).status, 400, `payment notice with nested ${label}`);
+        }
+        const settle = sign({ merchantId: '100000000007164', merchantTxnNo: txnNo, settlementID: 'NESTED-1', settledAmount: total.toFixed(2), detail: JSON.stringify({ a: 1 }) });
+        assert.strictEqual((await post(JSON.stringify(settle).replace('"detail":"{\\"a\\":1}"', '"detail":{"a":1}'), 'settlement-advice')).status, 400, 'settlement notice with a nested object');
+      } finally { console.error = origError; }
+      assert.strictEqual(await Order.countDocuments({ razorpayOrderId: t }), 0, 'no order from any nested notice');
+      assert.notStrictEqual(((await Order.findOne({ razorpayOrderId: txnNo }).lean()) as any)?.iciciSettlement?.settlementID, 'NESTED-1', 'settlement not recorded');
+      assert.strictEqual(await stock(), stockBefore, 'no stock touched');
+    });
+
+    await test('refund reply R1000 ("Request processed successfully", ICICI refund sample p.73): pending, same reference kept, never refunded twice', async () => {
+      const stockBefore = await stock();
+      await Product.updateOne({ _id: tea._id }, { $inc: { 'variants.0.stock': 2 } });
+      const t = (await initiate()).json.data.merchantTxnNo;
+      assert.strictEqual((await formPost('/payments/icici/callback', paid(t))).location, 'https://shop.test/order-success');
+      const o: any = await Order.findOne({ razorpayOrderId: t });
+      nextReply = (b) => sign({ responseCode: 'R1000', respDescription: 'Request processed successfully', merchantId: b.merchantId, merchantTxnNo: b.merchantTxnNo, txnID: 'RF-R1000' });
+      const r = await call('/payments/icici/refund', { orderId: String(o._id), reason: 'customer request' }, superT);
+      assert.strictEqual(r.status, 200, JSON.stringify(r.json));
+      const after: any = await Order.findById(o._id).lean();
+      assert.deepStrictEqual([after.paymentStatus, after.refund.status], ['completed', 'pending'], 'accepted, not yet refunded, not failed');
+      assert.ok(after.iciciRefundTxnNo, 'the refund reference is kept for the follow-up');
+      const calls = sent.length;
+      const again = await call('/payments/icici/refund', { orderId: String(o._id), reason: 'again' }, superT);
+      assert.deepStrictEqual([again.status, sent.length], [200, calls], 'a second click sends nothing (refund already in progress)');
+      // the customer sees it as in progress, never as refunded
+      const view = await fetch(`${base}/payments/myorders`, { headers: { Authorization: `Bearer ${annT}` } });
+      const list = ((await view.json()) as any).data;
+      assert.strictEqual(view.status, 200);
+      const mine = list.find((x: any) => String(x._id) === String(o._id));
+      assert.ok(mine, 'the order is in the customer list');
+      assert.strictEqual(mine.refund?.state, 'in_progress', 'customer sees the refund as in progress');
+      assert.strictEqual(mine.paymentStatus, 'completed');
+      assert.strictEqual(await stock(), stockBefore, 'test isolation: shared stock back where it started');
     });
 
     await test('settlement advice is recorded on the order; unsigned ones are refused', async () => {

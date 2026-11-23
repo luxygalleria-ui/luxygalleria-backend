@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isIciciSuccess = exports.gatewayFailure = exports.postForm = exports.postJson = exports.assertGatewayAllowed = exports.signed = exports.saleTxnDate = exports.istTimestamp = exports.newTxnNo = exports.verifyV1 = exports.hashV2 = exports.hashV1 = exports.iciciLive = exports.iciciConfigured = exports.icici = void 0;
+exports.isIciciSuccess = exports.gatewayFailure = exports.postForm = exports.postJson = exports.parseJsonKeepNumberText = exports.assertGatewayAllowed = exports.signed = exports.saleTxnDate = exports.istTimestamp = exports.newTxnNo = exports.verifyV1 = exports.hashV2 = exports.hashV1 = exports.iciciLive = exports.iciciConfigured = exports.icici = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 /**
  * ICICI Orange PG (Gateway_Interface_Specifiation_V0.4_Orange_PG.pdf). Server-side only: the secret key never leaves
@@ -100,10 +100,46 @@ const assertGatewayAllowed = (url) => {
     }
 };
 exports.assertGatewayAllowed = assertGatewayAllowed;
+/**
+ * JSON.parse that keeps every number as the exact text that was sent ("600.00" stays "600.00", never 600), because
+ * ICICI's secureHash covers that text. Works on every Node version: Node 20 has no JSON.parse reviver `context.source`.
+ * Number literals outside strings are quoted before a normal JSON.parse; strings (escapes included), true, false and
+ * null are copied as they are, and invalid JSON still throws.
+ */
+const JSON_NUMBER = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
+const parseJsonKeepNumberText = (raw) => {
+    let out = '';
+    let i = 0;
+    while (i < raw.length) {
+        const ch = raw[i];
+        if (ch === '"') { // copy a whole string literal, so digits inside it are never touched
+            let j = i + 1;
+            while (j < raw.length && raw[j] !== '"')
+                j += raw[j] === '\\' ? 2 : 1;
+            out += raw.slice(i, j + 1);
+            i = j + 1;
+            continue;
+        }
+        if (ch === '-' || (ch >= '0' && ch <= '9')) {
+            JSON_NUMBER.lastIndex = i;
+            const m = JSON_NUMBER.exec(raw);
+            if (m) {
+                out += `"${m[0]}"`;
+                i += m[0].length;
+                continue;
+            }
+        }
+        out += ch;
+        i++;
+    }
+    return JSON.parse(out);
+};
+exports.parseJsonKeepNumberText = parseJsonKeepNumberText;
 const readJson = async (r) => {
     const text = await r.text();
+    // Numbers keep their sent text (600.00) here too: initiateSale, STATUS and REFUND replies are verified over it
     try {
-        return JSON.parse(text);
+        return (0, exports.parseJsonKeepNumberText)(text);
     }
     catch {
         throw new Error(`ICICI HTTP ${r.status}: ${text.slice(0, 200)}`);

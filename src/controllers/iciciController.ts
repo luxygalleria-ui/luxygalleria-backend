@@ -4,7 +4,7 @@ import { Cart } from '../models/Cart';
 import { User } from '../models/User';
 import { CheckoutSession } from '../models/CheckoutSession';
 import { finalizeSession, releaseStock } from '../utils/checkoutSessions';
-import { gatewayFailure, icici, iciciConfigured, iciciLive, isIciciSuccess, saleTxnDate, newTxnNo, postForm, postJson, signed, verifyV1 } from '../utils/iciciPg';
+import { gatewayFailure, icici, iciciConfigured, iciciLive, isIciciSuccess, parseJsonKeepNumberText, saleTxnDate, newTxnNo, postForm, postJson, signed, verifyV1 } from '../utils/iciciPg';
 import { openSession, priceCheckout, sendOrderConfirmationEmail } from './paymentController';
 
 /**
@@ -26,7 +26,8 @@ const gatewayParams = (req: Request): Record<string, any> => {
   let body: Record<string, any> = {};
   if (req.is('application/json')) {
     try {
-      const parsed = (JSON.parse as any)(raw || '{}', (_k: string, v: unknown, ctx?: { source?: string }) => (typeof v === 'number' ? ctx?.source ?? String(v) : v));
+      // Numbers keep their sent text (600.00), as the hash covers it: no reviver context.source, which Node 20 lacks
+      const parsed: any = parseJsonKeepNumberText(raw || '{}');
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) body = parsed;
     } catch { /* unparseable: rejected below as no merchantTxnNo */ }
   } else {
