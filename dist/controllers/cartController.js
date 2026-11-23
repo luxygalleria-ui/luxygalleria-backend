@@ -35,16 +35,16 @@ const repairCart = async (cart) => {
         await cart.save();
     }
 };
+/**
+ * The caller's cart, created atomically when missing. Find-then-create raced: right after sign-in the page loads the
+ * cart while an item is being added, both created it, and one request failed with a duplicate-key 500.
+ */
+const ensureCart = (userId) => Cart_1.Cart.findOneAndUpdate({ user: userId }, { $setOnInsert: { user: userId, items: [] } }, { upsert: true, new: true });
 // Get Cart
 exports.getCart = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
-    let cart = await Cart_1.Cart.findOne({ user: req.user?._id });
-    if (!cart) {
-        cart = await Cart_1.Cart.create({ user: req.user?._id, items: [] });
-    }
-    else {
-        await repairCart(cart);
-        await cart.populate('items.product');
-    }
+    const cart = (await ensureCart(req.user?._id));
+    await repairCart(cart);
+    await cart.populate('items.product');
     return (0, responseHandler_1.successResponse)(res, 200, 'Cart fetched successfully', cart);
 });
 /**
@@ -76,7 +76,7 @@ const resolveLine = async (body, { allowZero = false } = {}) => {
 const sameLine = (item, productId, variantId) => item.product && item.product.toString() === String(productId) && item.variantId && item.variantId.toString() === String(variantId);
 /** The cart for the request's user, created when missing (a new account has none yet). */
 const cartOf = async (req) => {
-    const cart = (await Cart_1.Cart.findOne({ user: req.user?._id })) ?? (await Cart_1.Cart.create({ user: req.user?._id, items: [] }));
+    const cart = (await ensureCart(req.user?._id));
     await repairCart(cart);
     return cart;
 };

@@ -4,6 +4,7 @@ exports.toggleCustomerStatus = exports.getAllCustomers = exports.editAddress = e
 const User_1 = require("../models/User");
 const asyncHandler_1 = require("../utils/asyncHandler");
 const responseHandler_1 = require("../utils/responseHandler");
+const addressRules_1 = require("../utils/addressRules");
 exports.getProfile = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const user = await User_1.User.findById(req.user?._id).select('-password');
     if (!user)
@@ -14,7 +15,8 @@ exports.getProfile = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
-        avatar: user.avatar
+        avatar: user.avatar,
+        googleLinked: !!user.googleId // whether Google sign-in is linked (never the id itself)
     };
     (0, responseHandler_1.successResponse)(res, 200, 'Profile fetched successfully', userData);
 });
@@ -40,7 +42,8 @@ exports.updateProfile = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
-        avatar: user.avatar
+        avatar: user.avatar,
+        googleLinked: !!user.googleId // whether Google sign-in is linked (never the id itself)
     };
     (0, responseHandler_1.successResponse)(res, 200, 'Profile updated successfully', updatedUser);
 });
@@ -54,6 +57,13 @@ exports.addAddress = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const { street, apartment, landmark, city, state, zipCode, country } = req.body;
     if (!city || !state) {
         return (0, responseHandler_1.errorResponse)(res, 400, 'City and State are required');
+    }
+    // PIN format and the Kerala PIN/state boundary (delivery is priced by state); nothing is changed for the customer
+    const problem = (0, addressRules_1.addressProblem)({ state, zipCode, country });
+    if (problem)
+        return (0, responseHandler_1.errorResponse)(res, 400, problem);
+    if (user.addresses.some((a) => (0, addressRules_1.addressKey)(a) === (0, addressRules_1.addressKey)({ street, apartment, city, state, zipCode, country }))) {
+        return (0, responseHandler_1.errorResponse)(res, 409, 'This address is already saved. Choose it from your saved addresses.');
     }
     user.addresses.push({ street, apartment, landmark, city, state, zipCode, country });
     await user.save();
@@ -99,18 +109,15 @@ exports.editAddress = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     if (!city || !state) {
         return (0, responseHandler_1.errorResponse)(res, 400, 'City and State are required');
     }
-    if (user.addresses) {
-        user.addresses[addressIndex] = {
-            ...user.addresses[addressIndex],
-            street,
-            apartment,
-            landmark,
-            city,
-            state,
-            zipCode,
-            country
-        };
+    const problem = (0, addressRules_1.addressProblem)({ state, zipCode, country });
+    if (problem)
+        return (0, responseHandler_1.errorResponse)(res, 400, problem);
+    if (user.addresses?.some((a, i) => i !== addressIndex && (0, addressRules_1.addressKey)(a) === (0, addressRules_1.addressKey)({ street, apartment, city, state, zipCode, country }))) {
+        return (0, responseHandler_1.errorResponse)(res, 409, 'Another saved address is already exactly this one.');
     }
+    // Update the saved entry in place: replacing it with a copied object dropped its _id, so every edit gave the
+    // address a new id and a checkout still holding the old one was told the address "no longer exists"
+    user.addresses[addressIndex].set({ street, apartment, landmark, city, state, zipCode, country });
     await user.save();
     (0, responseHandler_1.successResponse)(res, 200, 'Address updated successfully', user.addresses);
 });

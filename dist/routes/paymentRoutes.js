@@ -27,7 +27,8 @@ router.post('/icici/refund', authMiddleware_1.protect, (0, authMiddleware_1.auth
 // Admin routes
 router.get('/admin/orders', authMiddleware_1.protect, (0, authMiddleware_1.authorize)('admin', 'superadmin'), paymentController_1.getAllOrders);
 router.put('/admin/orders/:id/status', authMiddleware_1.protect, (0, authMiddleware_1.authorize)('admin', 'superadmin'), paymentController_1.updateOrderStatus);
-router.delete('/admin/orders/:id', authMiddleware_1.protect, (0, authMiddleware_1.authorize)('admin', 'superadmin'), paymentController_1.deleteOrder);
+// Superadmin only, and only unpaid/failed orders (see deleteOrder): payment and refund records are never deleted
+router.delete('/admin/orders/:id', authMiddleware_1.protect, (0, authMiddleware_1.authorize)('superadmin'), paymentController_1.deleteOrder);
 // Money movements: super admin only
 router.post('/admin/orders/:id/refund', authMiddleware_1.protect, (0, authMiddleware_1.authorize)('superadmin'), paymentController_1.refundOrder);
 router.post('/admin/reconcile', authMiddleware_1.protect, (0, authMiddleware_1.authorize)('superadmin'), paymentController_1.reconcilePayments);

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { User } from '../models/User';
 import { asyncHandler } from '../utils/asyncHandler';
 import { successResponse, errorResponse } from '../utils/responseHandler';
+import { addressKey, addressProblem } from '../utils/addressRules';
 
 export const getProfile = asyncHandler(async (req: Request, res: Response) => {
   const user = await User.findById(req.user?._id).select('-password');
@@ -13,7 +14,8 @@ export const getProfile = asyncHandler(async (req: Request, res: Response) => {
     email: user.email,
     phone: user.phone,
     role: user.role,
-    avatar: user.avatar
+    avatar: user.avatar,
+    googleLinked: !!user.googleId // whether Google sign-in is linked (never the id itself)
   };
   
   successResponse(res, 200, 'Profile fetched successfully', userData);
@@ -47,7 +49,8 @@ export const updateProfile = asyncHandler(async (req: Request, res: Response) =>
     email: user.email,
     phone: user.phone,
     role: user.role,
-    avatar: user.avatar
+    avatar: user.avatar,
+    googleLinked: !!user.googleId // whether Google sign-in is linked (never the id itself)
   };
 
   successResponse(res, 200, 'Profile updated successfully', updatedUser);
@@ -65,6 +68,12 @@ export const addAddress = asyncHandler(async (req: Request, res: Response) => {
   
   if (!city || !state) {
     return errorResponse(res, 400, 'City and State are required');
+  }
+  // PIN format and the Kerala PIN/state boundary (delivery is priced by state); nothing is changed for the customer
+  const problem = addressProblem({ state, zipCode, country });
+  if (problem) return errorResponse(res, 400, problem);
+  if (user.addresses.some((a: any) => addressKey(a) === addressKey({ street, apartment, city, state, zipCode, country }))) {
+    return errorResponse(res, 409, 'This address is already saved. Choose it from your saved addresses.');
   }
 
   user.addresses.push({ street, apartment, landmark, city, state, zipCode, country });
@@ -125,19 +134,15 @@ export const editAddress = asyncHandler(async (req: Request, res: Response) => {
   if (!city || !state) {
     return errorResponse(res, 400, 'City and State are required');
   }
-
-  if (user.addresses) {
-    user.addresses[addressIndex] = {
-      ...user.addresses[addressIndex],
-      street,
-      apartment,
-      landmark,
-      city,
-      state,
-      zipCode,
-      country
-    };
+  const problem = addressProblem({ state, zipCode, country });
+  if (problem) return errorResponse(res, 400, problem);
+  if (user.addresses?.some((a: any, i: number) => i !== addressIndex && addressKey(a) === addressKey({ street, apartment, city, state, zipCode, country }))) {
+    return errorResponse(res, 409, 'Another saved address is already exactly this one.');
   }
+
+  // Update the saved entry in place: replacing it with a copied object dropped its _id, so every edit gave the
+  // address a new id and a checkout still holding the old one was told the address "no longer exists"
+  (user.addresses![addressIndex] as any).set({ street, apartment, landmark, city, state, zipCode, country });
   
   await user.save();
   successResponse(res, 200, 'Address updated successfully', user.addresses);

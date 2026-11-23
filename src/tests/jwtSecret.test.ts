@@ -108,7 +108,10 @@ try {
       }
       if (!f.endsWith(path.join('config', 'env.ts'))) assert.ok(!src.includes('process.env.JWT_SECRET'), `${path.relative(ROOT, f)} reads process.env.JWT_SECRET directly`);
     }
-    assert.ok(calls >= 4, `found ${calls} jwt.sign/verify calls`); // authController, paymentController x2, authMiddleware
+    assert.ok(calls >= 2, `found ${calls} jwt.sign/verify calls`); // authController (sign) and authMiddleware (verify)
+    // Order emails carry no sign-in token any more (a link in a mailbox must never open the account)
+    const pay = fs.readFileSync(path.join(ROOT, 'src', 'controllers', 'paymentController.ts'), 'utf8');
+    assert.ok(!/jwt\.sign\(/.test(pay) && !/profile\?token=/.test(pay), 'paymentController mints no token and links no ?token=');
   });
 
   console.log(`\n${passed} passed`);

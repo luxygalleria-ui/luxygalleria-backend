@@ -18,6 +18,7 @@ import { parseWeightFromVolume } from '../utils/shippingCalculator';
 import { escapeRegex } from './contactController';
 import { writeCollection } from './productController';
 import { sendOrderStatusEmail } from './paymentController';
+import { afterOrderCancelled } from '../utils/orderCancellation';
 
 // ---------- shared ----------
 
@@ -568,6 +569,9 @@ export const orderStatusWebhook = asyncHandler(async (req: Request, res: Respons
     );
     if (!r.matchedCount) return fail(res, 409, 'Order changed while processing this event; retry it', 'CONFLICT');
   }
+
+  // Same cancellation rules as an admin cancel: restock if not yet shipped (once), flag a paid order for refund
+  if (outcome === 'applied' && e.status === 'cancelled') await afterOrderCancelled(order._id, previousStatus);
 
   await ErpEvent.create({ eventId: e.eventId, type: 'order-status', orderId: order._id, status: e.status, occurredAt, outcome, keyId: req.erpKeyId })
     .catch((err: any) => { if (err?.code !== 11000) throw err; });

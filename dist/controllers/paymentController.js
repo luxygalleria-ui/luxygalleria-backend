@@ -3,15 +3,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.reconcilePayments = exports.refundOrder = exports.razorpayWebhook = exports.isValidWebhookSignature = exports.deleteOrder = exports.sendOrderStatusEmail = exports.correctOrderStatus = exports.updateOrderStatus = exports.getAllOrders = exports.getMyOrders = exports.calculateShipping = exports.verifyPayment = exports.createOrder = exports.openSession = exports.priceCheckout = exports.paymentMatchesSession = exports.customerOrderView = exports.sendOrderConfirmationEmail = exports.isValidRazorpaySignature = exports.isMockPaymentMode = exports.razorpayInstance = void 0;
+exports.reconcilePayments = exports.refundOrder = exports.razorpayWebhook = exports.isValidWebhookSignature = exports.deleteOrder = exports.sendOrderStatusEmail = exports.correctOrderStatus = exports.updateOrderStatus = exports.getAllOrders = exports.getMyOrders = exports.calculateShipping = exports.verifyPayment = exports.createOrder = exports.openSession = exports.priceCheckout = exports.paymentMatchesSession = exports.customerOrderView = exports.customerRefundView = exports.sendOrderConfirmationEmail = exports.isValidRazorpaySignature = exports.isMockPaymentMode = exports.razorpayInstance = void 0;
 const razorpay_1 = __importDefault(require("razorpay"));
 const crypto_1 = __importDefault(require("crypto"));
 const Order_1 = __importDefault(require("../models/Order"));
 const User_1 = require("../models/User");
 const sendEmail_1 = require("../utils/sendEmail");
 const dotenv_1 = __importDefault(require("dotenv"));
-const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const env_1 = require("../config/env");
 const shippingCalculator_1 = require("../utils/shippingCalculator");
 const orderPricing_1 = require("../utils/orderPricing");
 const checkoutSettings_1 = require("../utils/checkoutSettings");
@@ -20,6 +18,8 @@ const checkoutSessions_1 = require("../utils/checkoutSessions");
 const orderStatus_1 = require("../utils/orderStatus");
 const iciciPg_1 = require("../utils/iciciPg");
 const iciciController_1 = require("./iciciController");
+const addressRules_1 = require("../utils/addressRules");
+const orderCancellation_1 = require("../utils/orderCancellation");
 dotenv_1.default.config();
 exports.razorpayInstance = new razorpay_1.default({
     key_id: (process.env.RAZORPAY_KEY_ID || 'dummy_key_id').trim(),
@@ -71,6 +71,7 @@ const selectionFrom = (body, paying) => {
 /** Pricing failures: a rule the customer can act on (400), settings we cannot read (503, never guessed charges), bad items (400). */
 const pricingError = (res, err) => {
     if (err instanceof orderPricing_1.CheckoutRuleError) {
+        console.warn(`Checkout quote refused: ${err.code}`); // the rule only: never the address, cart or customer
         return res.status(400).json({ success: false, message: err.message, code: err.code, data: err.options ? { options: err.options } : null });
     }
     if (err instanceof checkoutSettings_1.CheckoutSettingsError) {
@@ -102,7 +103,7 @@ const chargeRows = (o) => {
 const sendOrderConfirmationEmail = async (newOrder, user) => {
     try {
         if (user && user.email) {
-            const autoLoginToken = jsonwebtoken_1.default.sign({ id: user._id, role: user.role || 'customer' }, env_1.ENV.JWT_SECRET, { expiresIn: '7d' });
+            // No sign-in token in emails: a link in a mailbox (forwarded, scanned, logged) must never open the account
             const itemsHtml = newOrder.items.map((item) => {
                 const product = item.product;
                 return `
@@ -164,7 +165,7 @@ const sendOrderConfirmationEmail = async (newOrder, user) => {
                   We will send you another email once your order has been shipped. If you have any questions, feel free to reply to this email.
                 </p>
                 <div style="text-align: center;">
-                  <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/profile?token=${autoLoginToken}" style="background-color: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block;">View Order Details</a>
+                  <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/profile" style="background-color: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block;">View Order Details</a>
                 </div>
               </div>
               <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #eaeaea;">
@@ -190,6 +191,23 @@ exports.sendOrderConfirmationEmail = sendOrderConfirmationEmail;
  * fields stay private by default: payment ids and signature, ERP references, refund records, internal notes, the
  * checkout session and the user id never leave the server. Fields absent on an order stay absent.
  */
+/**
+ * What the customer may see of a refund: only whether it is in progress or done, the amount and the date it was
+ * processed. Never the gateway references, the reason typed by staff, staff ids or error text. null = no refund.
+ */
+const customerRefundView = (o) => {
+    const r = o?.refund;
+    if (o?.paymentStatus !== 'refunded' && !(r && r.status))
+        return null;
+    const done = o.paymentStatus === 'refunded' || r?.status === 'processed';
+    const processedAt = [...(r?.events || [])].reverse().find((e) => e?.outcome === 'processed')?.at ?? null;
+    return {
+        state: done ? 'refunded' : 'in_progress',
+        amount: typeof r?.amountPaise === 'number' ? r.amountPaise / 100 : o.total,
+        refundedAt: done ? processedAt : null,
+    };
+};
+exports.customerRefundView = customerRefundView;
 const customerOrderView = (doc) => {
     const o = typeof doc?.toObject === 'function' ? doc.toObject() : doc;
     const product = (p) => (p && typeof p === 'object' && p.name !== undefined ? { _id: p._id, name: p.name, images: p.images } : null);
@@ -200,6 +218,7 @@ const customerOrderView = (doc) => {
         fulfillmentMethod: o.fulfillmentMethod, shippingMethod: o.shippingMethod, shippingAddress: o.shippingAddress,
         billingAddress: o.billingAddress, pickupDetails: o.pickupDetails, pickupFee: o.pickupFee, specialPackagingFee: o.specialPackagingFee, tax: o.tax,
         trackingNumber: o.trackingNumber,
+        refund: (0, exports.customerRefundView)(o),
         items: (o.items || []).map((i) => ({
             product: product(i.product), name: i.name, size: i.size, image: i.image,
             quantity: i.quantity, price: i.price, subtotal: i.subtotal, taxRate: i.taxRate, taxAmount: i.taxAmount,
@@ -258,6 +277,13 @@ const priceCheckout = async (req, res) => {
     // Refuse to start a delivery payment without a deliverable address (pickup orders need none)
     if (selection.fulfillment === 'delivery' && !hasDeliveryAddress(shippingAddress)) {
         res.status(400).json({ success: false, message: 'Please select or add a shipping address' });
+        return null;
+    }
+    // A saved address from before the PIN/state checks (e.g. a Kerala PIN with another state) would be priced for the
+    // wrong zone: refuse it with what to fix, never correct it silently
+    const deliveryProblem = selection.fulfillment === 'delivery' ? (0, addressRules_1.addressProblem)(shippingAddress) : '';
+    if (deliveryProblem) {
+        res.status(400).json({ success: false, code: 'ADDRESS_INCONSISTENT', message: `Your delivery address needs a correction: ${deliveryProblem}` });
         return null;
     }
     if (typeof total !== 'number' || Number.isNaN(total) || total <= 0) {
@@ -515,9 +541,14 @@ const updateOrderStatus = async (req, res) => {
         }
         // Conditional on the status checked above, so a concurrent ERP callback or second admin is never overwritten.
         // statusUpdatedAt makes an older ERP event arriving later count as stale, as it would against an ERP change.
-        const order = await populated(Order_1.default.findOneAndUpdate({ _id: id, orderStatus: current.orderStatus }, { $set: { orderStatus, statusUpdatedAt: new Date() } }, { new: true, runValidators: true }));
+        let order = await populated(Order_1.default.findOneAndUpdate({ _id: id, orderStatus: current.orderStatus }, { $set: { orderStatus, statusUpdatedAt: new Date() } }, { new: true, runValidators: true }));
         if (!order) {
             return res.status(409).json({ success: false, code: 'CONFLICT', message: 'Order status changed while saving; reload and try again' });
+        }
+        if (orderStatus === 'cancelled') {
+            // Before shipping: units back to stock (once); a paid order is flagged for refund
+            await (0, orderCancellation_1.afterOrderCancelled)(order._id, current.orderStatus);
+            order = (await populated(Order_1.default.findById(order._id))) ?? order; // the reply shows the refund flag it just set
         }
         await (0, exports.sendOrderStatusEmail)(order, orderStatus);
         res.status(200).json({ success: true, data: order });
@@ -574,7 +605,7 @@ const sendOrderStatusEmail = async (order, orderStatus) => {
     try {
         const user = order.user;
         if (user && user.email) {
-            const autoLoginToken = jsonwebtoken_1.default.sign({ id: user._id, role: user.role || 'customer' }, env_1.ENV.JWT_SECRET, { expiresIn: '7d' });
+            // No sign-in token in emails: a link in a mailbox (forwarded, scanned, logged) must never open the account
             let statusColor = '#3b82f6'; // default blue
             let statusMessage = "There is an update regarding your recent order.";
             let subject = `Order Status Update - Luxy Galleria`;
@@ -663,7 +694,7 @@ const sendOrderStatusEmail = async (order, orderStatus) => {
                   Thank you for shopping with Luxy Galleria. If you have any questions, feel free to reply to this email.
                 </p>
                 <div style="text-align: center;">
-                  <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/profile?token=${autoLoginToken}" style="background-color: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block;">View Order History</a>
+                  <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/profile" style="background-color: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block;">View Order History</a>
                 </div>
               </div>
               <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #eaeaea;">
@@ -694,7 +725,15 @@ const deleteOrder = async (req, res) => {
         if (!order) {
             return res.status(404).json({ success: false, message: 'Order not found' });
         }
-        await Order_1.default.findByIdAndDelete(id);
+        // Payment and refund records are never destroyed: only an unpaid or failed order may be deleted (superadmin route)
+        if (!['pending', 'failed'].includes(order.paymentStatus)) {
+            return res.status(409).json({ success: false, code: 'ORDER_NOT_DELETABLE', message: `A ${order.paymentStatus === 'refunded' ? 'refunded' : 'paid'} order cannot be deleted. Cancel it instead; payment and refund records are kept.` });
+        }
+        // Deleted only if still unpaid at this instant (a payment landing meanwhile keeps the order)
+        const deleted = await Order_1.default.findOneAndDelete({ _id: id, paymentStatus: { $in: ['pending', 'failed'] } });
+        if (!deleted)
+            return res.status(409).json({ success: false, code: 'ORDER_NOT_DELETABLE', message: 'The order changed while deleting; reload and check it.' });
+        console.warn(`Order ${id} (payment ${order.paymentStatus}) deleted by superadmin ${String(req.user?._id)}`);
         res.status(200).json({ success: true, message: 'Order deleted successfully', data: null });
     }
     catch (error) {

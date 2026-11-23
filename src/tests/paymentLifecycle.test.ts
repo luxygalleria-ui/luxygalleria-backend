@@ -383,7 +383,7 @@ const run = async () => {
     console.log('Customer order data');
     await test('customers get only their own orders, with no payment signature, payment ids, ERP ids or internal records', async () => {
       const ORDER_KEYS = ['_id', 'createdAt', 'updatedAt', 'orderStatus', 'paymentStatus', 'paymentMethod', 'subtotal', 'discount', 'shippingFee', 'total',
-        'fulfillmentMethod', 'shippingMethod', 'shippingAddress', 'billingAddress', 'pickupDetails', 'pickupFee', 'specialPackagingFee', 'tax', 'trackingNumber', 'items'];
+        'fulfillmentMethod', 'shippingMethod', 'shippingAddress', 'billingAddress', 'pickupDetails', 'pickupFee', 'specialPackagingFee', 'tax', 'trackingNumber', 'refund', 'items'];
       const ITEM_KEYS = ['product', 'name', 'size', 'image', 'quantity', 'price', 'subtotal', 'taxRate', 'taxAmount'];
       const p = await mkProduct('Private Tea', 100, 5);
       const c = await checkout([item(p)], annT);

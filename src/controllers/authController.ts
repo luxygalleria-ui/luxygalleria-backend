@@ -62,6 +62,7 @@ export const loginAdmin = asyncHandler(async (req: Request, res: Response) => {
 });
 
 import { sendEmail } from '../utils/sendEmail';
+import { addressProblem } from '../utils/addressRules';
 
 export const registerCustomer = asyncHandler(async (req: Request, res: Response) => {
   const { name, email, password, phone, addresses } = req.body;
@@ -69,6 +70,18 @@ export const registerCustomer = asyncHandler(async (req: Request, res: Response)
   if (!name || !email || !password) {
     return errorResponse(res, 400, 'Please provide name, email and password');
   }
+
+  // The sign-up address is optional: a blank entry is dropped (it used to be stored as an empty saved address that
+  // checkout then reported as incomplete); a filled one follows the same rules as the address book
+  const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+  const given = (Array.isArray(addresses) ? addresses : []).filter((a: any) => a && typeof a === 'object'
+    && [a.street, a.city, a.state, a.zipCode].some((v) => text(v)));
+  for (const a of given) {
+    if (!text(a.city) || !text(a.state)) return errorResponse(res, 400, 'The address needs a city and a state (or leave the address empty).');
+    const problem = addressProblem(a);
+    if (problem) return errorResponse(res, 400, problem);
+  }
+  const signupAddresses = given.map((a: any) => ({ street: a.street, apartment: a.apartment, landmark: a.landmark, city: a.city, state: a.state, zipCode: a.zipCode, country: a.country }));
 
   const existing = await User.findOne({ email });
   if (existing) {
@@ -82,7 +95,7 @@ export const registerCustomer = asyncHandler(async (req: Request, res: Response)
     password,
     phone,
     role: 'customer',
-    addresses,
+    addresses: signupAddresses,
     isVerified: true,
     isActive: true,
   });
@@ -271,31 +284,25 @@ export const loginCustomer = asyncHandler(async (req: Request, res: Response) =>
 });
 
 // Google OAuth Sign-In (supports both ID token and access token flows)
-export const googleAuth = asyncHandler(async (req: Request, res: Response) => {
-  const { credential, googleId: bodyGoogleId, name: bodyName, picture: bodyPicture } = req.body;
-
-  let email: string | undefined;
-  let name: string | undefined;
-  let picture: string | undefined;
-  let googleId: string | undefined;
-  let emailVerified = false;
-
+/**
+ * Verifies a Google credential with Google and returns the identity Google vouches for (never the request body's).
+ * Access token (useGoogleLogin, with googleId in the body) -> tokeninfo + audience; otherwise an ID token.
+ */
+type GoogleIdentity = { email: string; googleId: string; name?: string; picture?: string };
+const verifyGoogleCredential = async (body: any): Promise<{ ok: true; id: GoogleIdentity } | { ok: false; status: number; message: string }> => {
+  const { credential, googleId: bodyGoogleId, name: bodyName, picture: bodyPicture } = body || {};
   const googleClientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-  if (!googleClientId) {
-    return errorResponse(res, 500, 'Google OAuth is not configured');
-  }
-  if (!credential || typeof credential !== 'string') {
-    return errorResponse(res, 400, 'Google credential is required');
-  }
+  if (!googleClientId) return { ok: false, status: 500, message: 'Google OAuth is not configured' };
+  if (!credential || typeof credential !== 'string') return { ok: false, status: 400, message: 'Google credential is required' };
 
+  let email: string | undefined; let googleId: string | undefined; let name: string | undefined; let picture: string | undefined;
+  let emailVerified = false;
   const client = new OAuth2Client(googleClientId);
   try {
     if (bodyGoogleId) {
       // Access token (useGoogleLogin): identity comes only from Google, never from the request body.
       const info = await client.getTokenInfo(credential);
-      if (info.aud !== googleClientId) {
-        return errorResponse(res, 401, 'Invalid Google token');
-      }
+      if (info.aud !== googleClientId) return { ok: false, status: 401, message: 'Invalid Google token' };
       email = info.email;
       googleId = info.sub;
       emailVerified = String(info.email_verified) === 'true';
@@ -313,16 +320,17 @@ export const googleAuth = asyncHandler(async (req: Request, res: Response) => {
     }
   } catch (error: any) {
     console.error('Google token verification failed:', error.message);
-    return errorResponse(res, 401, 'Invalid Google token');
+    return { ok: false, status: 401, message: 'Invalid Google token' };
   }
+  if (!emailVerified) return { ok: false, status: 401, message: 'Google account email is not verified' };
+  if (!email || !googleId) return { ok: false, status: 400, message: 'Invalid Google authentication data' };
+  return { ok: true, id: { email, googleId, name, picture } };
+};
 
-  if (!emailVerified) {
-    return errorResponse(res, 401, 'Google account email is not verified');
-  }
-
-  if (!email || !googleId) {
-    return errorResponse(res, 400, 'Invalid Google authentication data');
-  }
+export const googleAuth = asyncHandler(async (req: Request, res: Response) => {
+  const verified = await verifyGoogleCredential(req.body);
+  if (!verified.ok) return errorResponse(res, verified.status, verified.message);
+  const { email, googleId, name, picture } = verified.id;
 
   try {
     // Check if user already exists
@@ -337,15 +345,17 @@ export const googleAuth = asyncHandler(async (req: Request, res: Response) => {
       if (user.role !== 'customer') {
         return errorResponse(res, 403, 'This is a staff account. Please sign in through the admin portal.', { code: 'USE_ADMIN_PORTAL' });
       }
-      // Update Google ID if not set, and make sure user is marked verified
-      if (!user.googleId || !user.isVerified) {
-        const updateFields: any = {};
-        if (!user.googleId) updateFields.googleId = googleId;
-        if (!user.isVerified) updateFields.isVerified = true;
-        
-        await User.findByIdAndUpdate(user._id, { $set: updateFields });
-        
-        if (!user.googleId) user.googleId = googleId;
+      // Never link automatically: anyone can register an email address without proving they own it, so an existing
+      // password account is only ever linked by its signed-in owner (POST /auth/google/link). Signing in with Google
+      // works only for the Google identity already on the account.
+      if (!user.googleId) {
+        return errorResponse(res, 409, 'An account with this email already exists. Sign in with your email and password, then link Google from your profile.', { code: 'GOOGLE_LINK_REQUIRED' });
+      }
+      if (user.googleId !== googleId) {
+        return errorResponse(res, 409, 'This account is linked to a different Google account. Sign in with your email and password.', { code: 'GOOGLE_ACCOUNT_MISMATCH' });
+      }
+      if (!user.isVerified) {
+        await User.findByIdAndUpdate(user._id, { $set: { isVerified: true } });
         user.isVerified = true;
       }
     } else {
@@ -384,4 +394,25 @@ export const googleAuth = asyncHandler(async (req: Request, res: Response) => {
     console.error('Google auth error:', error);
     return errorResponse(res, 401, 'Google authentication failed');
   }
+});
+
+// POST /auth/google/link (signed-in customer): the owner explicitly links their Google account. The Google email must
+// be the account's email, and one Google identity can belong to one account only.
+export const linkGoogleAccount = asyncHandler(async (req: Request, res: Response) => {
+  const user = await User.findById(req.user?._id);
+  if (!user) return errorResponse(res, 404, 'User not found');
+  if (user.role !== 'customer') return errorResponse(res, 403, 'Only customer accounts can link Google');
+  const verified = await verifyGoogleCredential(req.body);
+  if (!verified.ok) return errorResponse(res, verified.status, verified.message);
+  const { email, googleId } = verified.id;
+  if (email.trim().toLowerCase() !== String(user.email).trim().toLowerCase()) {
+    return errorResponse(res, 409, 'This Google account uses a different email address. Link the Google account for ' + user.email + '.', { code: 'GOOGLE_EMAIL_MISMATCH' });
+  }
+  if (user.googleId === googleId) return successResponse(res, 200, 'Google account already linked', { googleLinked: true });
+  if (user.googleId) return errorResponse(res, 409, 'A different Google account is already linked to this account.', { code: 'GOOGLE_ACCOUNT_MISMATCH' });
+  if (await User.exists({ googleId, _id: { $ne: user._id } })) {
+    return errorResponse(res, 409, 'This Google account is already linked to another account.', { code: 'GOOGLE_ALREADY_LINKED' });
+  }
+  await User.updateOne({ _id: user._id, googleId: { $exists: false } }, { $set: { googleId } });
+  successResponse(res, 200, 'Google account linked', { googleLinked: true });
 });

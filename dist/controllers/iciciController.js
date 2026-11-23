@@ -153,7 +153,9 @@ const iciciInitiate = async (req, res) => {
                     console.error('ICICI UAT gate: ICICI_PG_UAT_TEST_USER_IDS has a malformed entry (each must be a 24-hex user _id): every customer is blocked');
                 if (process.env.ICICI_PG_UAT_TEST_EMAILS)
                     console.warn('ICICI UAT gate: ICICI_PG_UAT_TEST_EMAILS is no longer used; list tester user _ids in ICICI_PG_UAT_TEST_USER_IDS');
-                return res.status(403).json({ success: false, message: 'Online payment is being set up and is not available yet. Please try again later.' });
+                // Says which rule refused (no user data): the browser console and the server log can tell this apart from auth
+                console.warn('ICICI UAT gate: refused a customer who is not an approved UAT tester (gateway is UAT, not live)');
+                return res.status(403).json({ success: false, code: 'ICICI_UAT_TESTER_ONLY', message: 'Online payment is being set up and is not available yet. Please try again later.' });
             }
         }
         // Back from ICICI's page without paying and trying again: release this customer's earlier unpaid holds first, so

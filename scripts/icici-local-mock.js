@@ -166,6 +166,132 @@ const api = http.createServer(async (req, res) => {
   if (await control(url, res) === null) { stats.unknownPaths.push(`${req.method} ${url.pathname}`); json(res, 404, { error: 'unknown mock path' }); }
 });
 
+// ---- hosted payment page markup (presentation only: the outcome still goes through /choose, unchanged)
+/**
+ * A clearly labelled LOCAL MOCK checkout page (not ICICI's page, no bank logos). The demo inputs have no `name` and sit
+ * in no form, so nothing typed is ever submitted, stored or logged: "Pay securely" only shows a short processing state
+ * and then opens the existing /choose?txn=&o= URL with the selected test outcome. Every dynamic value is escaped.
+ */
+const paymentPageHtml = (txnNo, t) => {
+  const choose = (o) => esc(`/choose?txn=${encodeURIComponent(txnNo)}&o=${o}`);
+  const amount = esc(t.amount);
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Luxy Galleria · Local mock payment</title>
+<style>
+:root{--navy:#0b1f3a;--navy2:#1b3458;--ink:#22324a;--muted:#6b7a90;--line:#e3e8ef;--soft:#f6f8fb;--orange:#e8772e;--orange2:#fff3ea;--ok:#1f8a4c;--bad:#c0392b;--warn:#b7791f}
+*{box-sizing:border-box}body{margin:0;background:#fff;color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+.notice{background:var(--orange2);color:#8a3d0c;border-bottom:1px solid #f6d3b8;text-align:center;padding:.6rem 1rem;font-weight:600;font-size:13px;letter-spacing:.02em}
+.top{border-bottom:1px solid var(--line);background:#fff}.top .in{max-width:960px;margin:0 auto;padding:1rem 1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.brand{display:flex;align-items:center;gap:.7rem}.mark{width:36px;height:36px;border-radius:9px;background:var(--navy);color:#fff;display:grid;place-items:center;font-weight:800;letter-spacing:.04em}
+.brand b{display:block;color:var(--navy);font-size:16px}.brand small{color:var(--muted);font-size:12px}
+.badge{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--orange);border:1px solid #f3c39f;border-radius:999px;padding:.25rem .6rem;white-space:nowrap}
+.wrap{max-width:960px;margin:1.5rem auto 3rem;padding:0 1.25rem;display:grid;grid-template-columns:1fr 320px;gap:1.5rem;align-items:start}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 6px 24px rgba(11,31,58,.06)}
+.pay{padding:1.25rem}.h{color:var(--navy);font-size:18px;font-weight:700;margin:0 0 1rem}
+.tabs{display:flex;gap:.4rem;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:.3rem;margin-bottom:1.1rem}
+.tab{flex:1;border:0;background:transparent;border-radius:9px;padding:.65rem .5rem;font:inherit;font-weight:600;color:var(--muted);cursor:pointer}
+.tab[aria-selected="true"]{background:#fff;color:var(--navy);box-shadow:0 1px 4px rgba(11,31,58,.12)}
+.panel{display:none}.panel.on{display:block}
+label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:.2rem 0 .35rem;text-transform:uppercase;letter-spacing:.04em}
+input,select{width:100%;border:1px solid var(--line);border-radius:10px;padding:.75rem .85rem;font:inherit;color:var(--navy);background:#fff;outline:none}
+input:focus,select:focus{border-color:var(--navy2);box-shadow:0 0 0 3px rgba(27,52,88,.12)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}.f{margin-bottom:.85rem}
+.demo{font-size:12px;color:var(--muted);margin:-.2rem 0 .9rem}.demo b{color:var(--orange)}
+.qr{display:flex;gap:1rem;align-items:center;border:1px dashed var(--line);border-radius:12px;padding:.9rem;margin:.2rem 0 .9rem;background:var(--soft)}
+.qrbox{width:96px;height:96px;flex:none;border-radius:8px;background:#fff;border:1px solid var(--line);
+  background-image:linear-gradient(90deg,var(--navy) 50%,transparent 50%),linear-gradient(var(--navy) 50%,transparent 50%);background-size:12px 12px,12px 12px;opacity:.85}
+.banks{display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.9rem}
+.bank{border:1px solid var(--line);border-radius:10px;padding:.7rem .8rem;cursor:pointer;display:flex;gap:.55rem;align-items:center;font-weight:600;color:var(--navy);background:#fff}
+.bank input{width:auto;margin:0}.bank:has(input:checked){border-color:var(--navy2);box-shadow:0 0 0 3px rgba(27,52,88,.1)}
+.btn{width:100%;border:0;border-radius:12px;padding:.95rem 1rem;font:inherit;font-weight:700;font-size:16px;cursor:pointer;background:var(--navy);color:#fff}
+.btn:hover{background:var(--navy2)}.btn[disabled]{opacity:.7;cursor:wait}
+.btn.ghost{background:#fff;color:var(--navy);border:1px solid var(--line);font-size:14px;padding:.75rem}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.9rem}
+.secure{display:flex;align-items:center;justify-content:center;gap:.4rem;color:var(--muted);font-size:12px;margin-top:.75rem}
+.sum{padding:1.25rem}.sum dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:.55rem .8rem;font-size:14px}.sum dt{color:var(--muted)}.sum dd{margin:0;text-align:right;color:var(--navy);font-weight:600;word-break:break-all}
+.total{border-top:1px solid var(--line);margin-top:1rem;padding-top:1rem;display:flex;justify-content:space-between;align-items:baseline}
+.total span{color:var(--muted)}.total b{font-size:26px;color:var(--navy)}
+.test{margin-top:1rem;padding:1rem 1.25rem;background:var(--soft);border-radius:16px;border:1px solid var(--line)}
+.test h3{margin:0 0 .25rem;font-size:13px;color:var(--navy);text-transform:uppercase;letter-spacing:.06em}.test p{margin:0 0 .7rem;font-size:12px;color:var(--muted)}
+.seg{display:flex;gap:.4rem}.seg a{flex:1;text-align:center;text-decoration:none;border:1px solid var(--line);background:#fff;border-radius:9px;padding:.55rem .3rem;font-size:13px;font-weight:600;color:var(--ink)}
+.seg a[aria-pressed="true"]{border-color:var(--navy2);color:var(--navy);box-shadow:0 0 0 3px rgba(27,52,88,.1)}
+.seg a.s::before{content:"● ";color:var(--ok)}.seg a.d::before{content:"● ";color:var(--bad)}.seg a.p::before{content:"● ";color:var(--warn)}
+.proc{display:none;position:fixed;inset:0;background:rgba(255,255,255,.92);align-items:center;justify-content:center;flex-direction:column;gap:1rem;color:var(--navy);font-weight:600;z-index:9}
+.proc.on{display:flex}.spin{width:44px;height:44px;border-radius:50%;border:4px solid var(--line);border-top-color:var(--orange);animation:r 0.9s linear infinite}@keyframes r{to{transform:rotate(360deg)}}
+@media (max-width:760px){.wrap{grid-template-columns:1fr;margin-top:1rem}.badge{display:none}.row,.banks{grid-template-columns:1fr 1fr}}
+@media (max-width:380px){.row,.banks,.two{grid-template-columns:1fr}}
+</style></head><body>
+<div class="notice" role="note">LOCAL TEST ENVIRONMENT — No real money will be charged.</div>
+<header class="top"><div class="in"><div class="brand"><div class="mark">LG</div><div><b>Luxy Galleria</b><small>Secure checkout · local mock payment gateway</small></div></div>
+<span class="badge">Local mock · not a bank page</span></div></header>
+<main class="wrap" data-txn="${esc(encodeURIComponent(txnNo))}">
+<section class="card pay" aria-label="Payment">
+  <h1 class="h">Choose a payment method</h1>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true" data-tab="card">Card</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="upi">UPI</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="nb">Net Banking</button>
+  </div>
+  <!-- Demo inputs: no name attribute and no form, so nothing typed here is ever submitted, stored or logged -->
+  <div class="panel on" data-panel="card">
+    <p class="demo"><b>Demo only.</b> Do not enter real card details; any value works and none is sent.</p>
+    <div class="f"><label for="cn">Card number (demo)</label><input id="cn" inputmode="numeric" autocomplete="off" placeholder="4111 1111 1111 1111"></div>
+    <div class="row"><div class="f"><label for="ce">Expiry (demo)</label><input id="ce" autocomplete="off" placeholder="12/30"></div>
+      <div class="f"><label for="cv">CVV (demo)</label><input id="cv" inputmode="numeric" autocomplete="off" placeholder="123" maxlength="4"></div></div>
+    <div class="f"><label for="ch">Cardholder name (demo)</label><input id="ch" autocomplete="off" placeholder="Demo Customer"></div>
+  </div>
+  <div class="panel" data-panel="upi">
+    <p class="demo"><b>Demo only.</b> Do not enter a real UPI ID; nothing is sent.</p>
+    <div class="f"><label for="vpa">UPI ID (demo)</label><input id="vpa" autocomplete="off" placeholder="demo@upi"></div>
+    <div class="qr"><div class="qrbox" aria-hidden="true"></div><div><b style="color:var(--navy)">Scan to pay (simulated)</b><div class="demo" style="margin:.3rem 0 0">A placeholder pattern, not a real QR code.</div></div></div>
+    <div class="two"><button class="btn ghost" type="button" data-go="success">Approve in UPI app</button><button class="btn ghost" type="button" data-go="pending">Leave pending</button></div>
+  </div>
+  <div class="panel" data-panel="nb">
+    <p class="demo"><b>Demo only.</b> Fictional banks; no bank is contacted and no login is asked for.</p>
+    <div class="banks" role="radiogroup" aria-label="Demo bank">
+      ${['Demo National Bank', 'Sample Co-operative Bank', 'Test Federal Bank', 'Example Gramin Bank'].map((b, i) => `<label class="bank"><input type="radio" name="demo-bank" ${i === 0 ? 'checked' : ''}>${esc(b)}</label>`).join('')}
+    </div>
+  </div>
+  <button class="btn" type="button" id="pay-now">Pay securely ₹${amount}</button>
+  <div class="secure">🔒 Local mock gateway · nothing leaves this computer</div>
+</section>
+<aside>
+  <section class="card sum" aria-label="Order summary">
+    <h2 class="h" style="font-size:16px">Order summary</h2>
+    <dl><dt>Merchant</dt><dd>Luxy Galleria</dd><dt>Order reference</dt><dd id="order-ref">${esc(txnNo)}</dd><dt>Currency</dt><dd>INR</dd></dl>
+    <div class="total"><span>Amount payable</span><b id="amount">₹${amount}</b></div>
+  </section>
+  <section class="test" aria-label="Test outcome">
+    <h3>Test outcome</h3><p>Local testing only: what "Pay securely" will simulate. Each link also completes the payment directly.</p>
+    <div class="seg">
+      <a id="pay-success" class="s" href="${choose('success')}" data-o="success" aria-pressed="true">Success</a>
+      <a id="pay-decline" class="d" href="${choose('decline')}" data-o="decline" aria-pressed="false">Declined</a>
+      <a id="pay-pending" class="p" href="${choose('pending')}" data-o="pending" aria-pressed="false">Pending</a>
+    </div>
+  </section>
+</aside>
+</main>
+<div class="proc" id="proc" role="status" aria-live="polite"><div class="spin"></div><div>Processing your payment…</div><div style="font-size:12px;color:var(--muted)">Local mock · no real money</div></div>
+<script>
+(() => {
+  const txn = document.querySelector('main').dataset.txn; // already URL-encoded on the server
+  let outcome = 'success';
+  const go = (o) => { document.getElementById('proc').classList.add('on'); document.getElementById('pay-now').disabled = true;
+    setTimeout(() => { location.href = '/choose?txn=' + txn + '&o=' + encodeURIComponent(o); }, 1200); };
+  document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach((x) => x.setAttribute('aria-selected', String(x === t)));
+    document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('on', p.dataset.panel === t.dataset.tab));
+  }));
+  // The test-outcome links select what "Pay securely" simulates (they still work as plain links without script)
+  document.querySelectorAll('.seg a').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); outcome = a.dataset.o;
+    document.querySelectorAll('.seg a').forEach((x) => x.setAttribute('aria-pressed', String(x === a))); }));
+  document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
+  document.getElementById('pay-now').addEventListener('click', () => go(outcome));
+})();
+</script>
+</body></html>`;
+};
+
 // ---- hosted payment page (browser), https
 const page = https.createServer(tls, async (req, res) => {
   const url = new URL(req.url, `https://localhost:${PAGE_PORT}`);
@@ -176,14 +302,7 @@ const page = https.createServer(tls, async (req, res) => {
     if (!t) { res.writeHead(404, { 'Content-Type': 'text/html' }); return res.end('Unknown tranCtx'); }
     if (autoOutcome) { res.writeHead(302, { Location: `/choose?txn=${encodeURIComponent(txnNo)}&o=${autoOutcome}` }); return res.end(); }
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    return res.end(`<!doctype html><html><head><title>MOCK ICICI payment</title><style>body{font-family:system-ui;max-width:34rem;margin:3rem auto;padding:0 1rem}
-      a{display:block;margin:.6rem 0;padding:.8rem 1rem;border:1px solid #999;border-radius:.5rem;text-decoration:none;color:#111}</style></head><body>
-      <h1>MOCK ICICI payment page</h1><p><strong>Local test gateway: no real money moves.</strong></p>
-      <p>Order ${esc(txnNo)} &middot; <span id="amount">INR ${esc(t.amount)}</span></p>
-      <a id="pay-success" href="/choose?txn=${encodeURIComponent(txnNo)}&o=success">Pay successfully (card)</a>
-      <a id="pay-decline" href="/choose?txn=${encodeURIComponent(txnNo)}&o=decline">Decline (bank refuses)</a>
-      <a id="pay-pending" href="/choose?txn=${encodeURIComponent(txnNo)}&o=pending">Pending UPI (approve later via /__bank or /__advice)</a>
-      </body></html>`);
+    return res.end(paymentPageHtml(txnNo, t));
   }
   if (url.pathname === '/choose') {
     const txnNo = String(url.searchParams.get('txn') || ''); const o = String(url.searchParams.get('o') || '');

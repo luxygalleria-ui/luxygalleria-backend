@@ -106,6 +106,7 @@ const OrderSchema = new mongoose_1.Schema({
     // Written in the same atomic update as the status it records (paymentController.correctOrderStatus); never edited
     statusCorrections: [{ at: { type: Date, required: true }, by: { type: String, required: true }, from: { type: String, required: true },
             to: { type: String, required: true }, reason: { type: String, required: true }, _id: false }],
+    stockRestoredAt: { type: Date },
     statusUpdatedAt: { type: Date }, // when the status last changed: ERP event time, or the time of an admin change; older ERP events are ignored
     checkoutSession: { type: mongoose_1.Schema.Types.ObjectId, ref: 'CheckoutSession' },
     fulfillmentIssue: { type: String },

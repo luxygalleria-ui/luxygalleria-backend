@@ -122,6 +122,18 @@ const run = async () => {
       assert.strictEqual(await lines(), '200gx2', 'nothing changed by refused requests');
     });
 
+    await test('11. a new account loading and adding to its cart at the same moment (right after sign-in): every request succeeds, one cart (regression: duplicate-key 500)', async () => {
+      const fresh = await User.create({ name: 'Fresh', email: 'fresh@test.local', password: 'Passw0rd#123', role: 'customer', isVerified: true });
+      const F = jwt.sign({ id: String(fresh._id), role: fresh.role }, ENV.JWT_SECRET, { expiresIn: '10m' });
+      const burst = await Promise.all([
+        ...Array.from({ length: 16 }, () => call('GET', '/cart', undefined, F)),
+        call('POST', '/cart', { productId: pid, variantId: v200, quantity: 1 }, F),
+      ]);
+      assert.deepStrictEqual(burst.map((r) => r.status), Array(17).fill(200), JSON.stringify(burst.filter((r) => r.status !== 200).map((r) => r.json)));
+      assert.strictEqual(await Cart.countDocuments({ user: fresh._id }), 1, 'exactly one cart');
+      // ponytail: simultaneous adds of the SAME line can still lose an increment (read-modify-save); not covered here
+    });
+
     await test('10. a deleted product is removed from the stored cart, with or without a variantId (regression)', async () => {
       const gone = await Product.create({ name: 'Gone', category: 'Drinks', description: 'x', stock: 5, variants: [{ volume: '1kg', price: 100, offerPrice: 90, actualPrice: 100, stock: 5, weight: 1 }] });
       const before = (await Cart.findOne({ user: user._id }))!.items.length;

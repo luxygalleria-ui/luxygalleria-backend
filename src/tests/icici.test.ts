@@ -134,6 +134,10 @@ const run = async () => {
       const keys = ['NODE_ENV', 'ICICI_PG_INITIATE_SALE_URL', 'ICICI_PG_COMMAND_URL', 'ICICI_PG_UAT_TEST_USER_IDS', 'ICICI_PG_UAT_TEST_EMAILS', 'ICICI_PG_ALLOW_REAL_GATEWAY_IN_DEV'];
       const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
       const setEnv = (env: Record<string, string | undefined>) => { for (const k of keys) env[k] === undefined ? delete process.env[k] : process.env[k] = env[k]; };
+      const warned: string[] = [];
+      const origWarn = console.warn, origErr = console.error;
+      console.warn = (...a: unknown[]) => { warned.push(a.map(String).join(' ')); };
+      console.error = (...a: unknown[]) => { warned.push(a.map(String).join(' ')); };
       try {
         for (const [i, [label, NODE_ENV, sale, cmd, ids, emails, caller, expected]] of cases.entries()) {
           setEnv({ NODE_ENV, ICICI_PG_INITIATE_SALE_URL: sale, ICICI_PG_COMMAND_URL: cmd, ICICI_PG_UAT_TEST_USER_IDS: ids, ICICI_PG_UAT_TEST_EMAILS: emails, ICICI_PG_ALLOW_REAL_GATEWAY_IN_DEV: 'true' });
@@ -142,11 +146,17 @@ const run = async () => {
           const r = await initiate(who[caller], `10.9.0.${i + 1}`);
           assert.strictEqual(r.status, expected, `${label}: ${JSON.stringify(r.json)}`);
           if (expected === 403) {
+            // Which rule refused, for the browser console: never a tester id, email or the allowlist itself
+            assert.deepStrictEqual([r.json.code, r.json.message], ['ICICI_UAT_TESTER_ONLY', 'Online payment is being set up and is not available yet. Please try again later.'], label);
+            assert.ok(!/[a-f\d]{24}|@/i.test(JSON.stringify(r.json)), `${label}: no id or email in the reply`);
             assert.strictEqual(sent.length, sends, `${label}: nothing sent to ICICI`);
             assert.strictEqual(await CheckoutSession.countDocuments(), sessions, `${label}: no session / stock hold`);
           } else assert.strictEqual(sent.at(-1)!.url, sale, `${label}: sale sent to the configured URL`);
         }
-      } finally { setEnv(saved); }
+      } finally { setEnv(saved); console.warn = origWarn; console.error = origErr; }
+      const gateLines = warned.filter((l) => l.startsWith('ICICI UAT gate: refused'));
+      assert.strictEqual(gateLines.length, cases.filter((c) => c[7] === 403).length, 'one log line per gate refusal');
+      assert.ok(warned.every((l) => !/[a-f\d]{24}|@/i.test(l)), 'gate logs carry no user id or email');
       // Every 200 above is Ann's; her last hold is released by her next initiate (superseded), so later stock checks hold
     });
 

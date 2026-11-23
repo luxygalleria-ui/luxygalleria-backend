@@ -54,9 +54,13 @@ const checkoutOptions = (lines, s, zone, now = new Date()) => {
             reason = `${covered} cannot be sent by ${METHOD_NAME[m]} under the store's chocolate shipping rules`;
         return { fulfillment: 'delivery', shippingMethod: m, offered, allowed: !reason, reason, eta: z[m].eta };
     });
+    // Stored pickup settings passed pickupSchema on read: enabled means the store details are all there
+    const ready = s.pickup.enabled;
     const pickup = {
-        fulfillment: 'pickup', shippingMethod: null, offered: s.pickup.enabled, allowed: s.pickup.enabled,
-        reason: s.pickup.enabled ? '' : 'Store pickup is not available', eta: s.pickup.readyTime,
+        fulfillment: 'pickup', shippingMethod: null, offered: ready, allowed: ready,
+        reason: ready ? '' : 'Store pickup is not available right now', eta: ready ? s.pickup.readyTime : '',
+        // The configured charge, so the checkout can say "Free" or the amount before pickup is chosen (the total is priced here)
+        ...(ready ? { fee: s.pickup.charge } : {}),
     };
     return [...delivery, pickup];
 };

@@ -43,6 +43,8 @@ export interface CheckoutOption {
   allowed: boolean;
   reason: string;
   eta: string;
+  /** Store pickup only: the configured pickup charge (0 = free), present while pickup is offered. */
+  fee?: number;
 }
 
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -83,9 +85,13 @@ export const checkoutOptions = (lines: PricedLine[], s: CheckoutSettings, zone: 
     else if (special && !s.chocolate.allowedMethods[m]) reason = `${covered} cannot be sent by ${METHOD_NAME[m]} under the store's chocolate shipping rules`;
     return { fulfillment: 'delivery', shippingMethod: m, offered, allowed: !reason, reason, eta: z[m].eta };
   });
+  // Stored pickup settings passed pickupSchema on read: enabled means the store details are all there
+  const ready = s.pickup.enabled;
   const pickup: CheckoutOption = {
-    fulfillment: 'pickup', shippingMethod: null, offered: s.pickup.enabled, allowed: s.pickup.enabled,
-    reason: s.pickup.enabled ? '' : 'Store pickup is not available', eta: s.pickup.readyTime,
+    fulfillment: 'pickup', shippingMethod: null, offered: ready, allowed: ready,
+    reason: ready ? '' : 'Store pickup is not available right now', eta: ready ? s.pickup.readyTime : '',
+    // The configured charge, so the checkout can say "Free" or the amount before pickup is chosen (the total is priced here)
+    ...(ready ? { fee: s.pickup.charge } : {}),
   };
   return [...delivery, pickup];
 };

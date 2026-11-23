@@ -172,7 +172,8 @@ export const effectiveCheckoutSettings = (doc: any, env: NodeJS.ProcessEnv = pro
 export class CheckoutSettingsError extends Error {}
 
 /** Current settings straight from the database (no cache: an admin save applies to the next checkout). Throws if unreadable. */
-export const loadCheckoutSettings = async () => {
+/** `replace`: sections about to be saved are taken from it, so a stored copy that no longer validates can be repaired. */
+export const loadCheckoutSettings = async (replace: Partial<Record<Section, unknown>> = {}) => {
   let doc;
   try {
     doc = await Settings.findOne().lean();
@@ -180,7 +181,7 @@ export const loadCheckoutSettings = async () => {
     console.error("Checkout settings could not be loaded:", err?.message); // the driver message stays in the server log
     throw new CheckoutSettingsError("Checkout settings could not be loaded");
   }
-  return effectiveCheckoutSettings(doc);
+  return effectiveCheckoutSettings({ ...(doc ?? {}), ...replace });
 };
 
 /** At least one way to receive an order must stay available. */

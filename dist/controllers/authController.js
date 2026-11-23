@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.googleAuth = exports.loginCustomer = exports.resendOtp = exports.verifyOtp = exports.registerCustomer = exports.loginAdmin = exports.secureCookies = void 0;
+exports.linkGoogleAccount = exports.googleAuth = exports.loginCustomer = exports.resendOtp = exports.verifyOtp = exports.registerCustomer = exports.loginAdmin = exports.secureCookies = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const User_1 = require("../models/User");
 const asyncHandler_1 = require("../utils/asyncHandler");
@@ -56,11 +56,25 @@ exports.loginAdmin = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     });
 });
 const sendEmail_1 = require("../utils/sendEmail");
+const addressRules_1 = require("../utils/addressRules");
 exports.registerCustomer = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const { name, email, password, phone, addresses } = req.body;
     if (!name || !email || !password) {
         return (0, responseHandler_1.errorResponse)(res, 400, 'Please provide name, email and password');
     }
+    // The sign-up address is optional: a blank entry is dropped (it used to be stored as an empty saved address that
+    // checkout then reported as incomplete); a filled one follows the same rules as the address book
+    const text = (v) => (typeof v === 'string' ? v.trim() : '');
+    const given = (Array.isArray(addresses) ? addresses : []).filter((a) => a && typeof a === 'object'
+        && [a.street, a.city, a.state, a.zipCode].some((v) => text(v)));
+    for (const a of given) {
+        if (!text(a.city) || !text(a.state))
+            return (0, responseHandler_1.errorResponse)(res, 400, 'The address needs a city and a state (or leave the address empty).');
+        const problem = (0, addressRules_1.addressProblem)(a);
+        if (problem)
+            return (0, responseHandler_1.errorResponse)(res, 400, problem);
+    }
+    const signupAddresses = given.map((a) => ({ street: a.street, apartment: a.apartment, landmark: a.landmark, city: a.city, state: a.state, zipCode: a.zipCode, country: a.country }));
     const existing = await User_1.User.findOne({ email });
     if (existing) {
         return (0, responseHandler_1.errorResponse)(res, 400, 'Email is already registered');
@@ -72,7 +86,7 @@ exports.registerCustomer = (0, asyncHandler_1.asyncHandler)(async (req, res) => 
         password,
         phone,
         role: 'customer',
-        addresses,
+        addresses: signupAddresses,
         isVerified: true,
         isActive: true,
     });
@@ -224,29 +238,25 @@ exports.loginCustomer = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         return (0, responseHandler_1.errorResponse)(res, 500, "Internal Server Error");
     }
 });
-// Google OAuth Sign-In (supports both ID token and access token flows)
-exports.googleAuth = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
-    const { credential, googleId: bodyGoogleId, name: bodyName, picture: bodyPicture } = req.body;
+const verifyGoogleCredential = async (body) => {
+    const { credential, googleId: bodyGoogleId, name: bodyName, picture: bodyPicture } = body || {};
+    const googleClientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!googleClientId)
+        return { ok: false, status: 500, message: 'Google OAuth is not configured' };
+    if (!credential || typeof credential !== 'string')
+        return { ok: false, status: 400, message: 'Google credential is required' };
     let email;
+    let googleId;
     let name;
     let picture;
-    let googleId;
     let emailVerified = false;
-    const googleClientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    if (!googleClientId) {
-        return (0, responseHandler_1.errorResponse)(res, 500, 'Google OAuth is not configured');
-    }
-    if (!credential || typeof credential !== 'string') {
-        return (0, responseHandler_1.errorResponse)(res, 400, 'Google credential is required');
-    }
     const client = new google_auth_library_1.OAuth2Client(googleClientId);
     try {
         if (bodyGoogleId) {
             // Access token (useGoogleLogin): identity comes only from Google, never from the request body.
             const info = await client.getTokenInfo(credential);
-            if (info.aud !== googleClientId) {
-                return (0, responseHandler_1.errorResponse)(res, 401, 'Invalid Google token');
-            }
+            if (info.aud !== googleClientId)
+                return { ok: false, status: 401, message: 'Invalid Google token' };
             email = info.email;
             googleId = info.sub;
             emailVerified = String(info.email_verified) === 'true';
@@ -266,14 +276,19 @@ exports.googleAuth = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     }
     catch (error) {
         console.error('Google token verification failed:', error.message);
-        return (0, responseHandler_1.errorResponse)(res, 401, 'Invalid Google token');
+        return { ok: false, status: 401, message: 'Invalid Google token' };
     }
-    if (!emailVerified) {
-        return (0, responseHandler_1.errorResponse)(res, 401, 'Google account email is not verified');
-    }
-    if (!email || !googleId) {
-        return (0, responseHandler_1.errorResponse)(res, 400, 'Invalid Google authentication data');
-    }
+    if (!emailVerified)
+        return { ok: false, status: 401, message: 'Google account email is not verified' };
+    if (!email || !googleId)
+        return { ok: false, status: 400, message: 'Invalid Google authentication data' };
+    return { ok: true, id: { email, googleId, name, picture } };
+};
+exports.googleAuth = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    const verified = await verifyGoogleCredential(req.body);
+    if (!verified.ok)
+        return (0, responseHandler_1.errorResponse)(res, verified.status, verified.message);
+    const { email, googleId, name, picture } = verified.id;
     try {
         // Check if user already exists
         let user = await User_1.User.findOne({ email });
@@ -286,16 +301,17 @@ exports.googleAuth = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
             if (user.role !== 'customer') {
                 return (0, responseHandler_1.errorResponse)(res, 403, 'This is a staff account. Please sign in through the admin portal.', { code: 'USE_ADMIN_PORTAL' });
             }
-            // Update Google ID if not set, and make sure user is marked verified
-            if (!user.googleId || !user.isVerified) {
-                const updateFields = {};
-                if (!user.googleId)
-                    updateFields.googleId = googleId;
-                if (!user.isVerified)
-                    updateFields.isVerified = true;
-                await User_1.User.findByIdAndUpdate(user._id, { $set: updateFields });
-                if (!user.googleId)
-                    user.googleId = googleId;
+            // Never link automatically: anyone can register an email address without proving they own it, so an existing
+            // password account is only ever linked by its signed-in owner (POST /auth/google/link). Signing in with Google
+            // works only for the Google identity already on the account.
+            if (!user.googleId) {
+                return (0, responseHandler_1.errorResponse)(res, 409, 'An account with this email already exists. Sign in with your email and password, then link Google from your profile.', { code: 'GOOGLE_LINK_REQUIRED' });
+            }
+            if (user.googleId !== googleId) {
+                return (0, responseHandler_1.errorResponse)(res, 409, 'This account is linked to a different Google account. Sign in with your email and password.', { code: 'GOOGLE_ACCOUNT_MISMATCH' });
+            }
+            if (!user.isVerified) {
+                await User_1.User.findByIdAndUpdate(user._id, { $set: { isVerified: true } });
                 user.isVerified = true;
             }
         }
@@ -333,5 +349,30 @@ exports.googleAuth = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         console.error('Google auth error:', error);
         return (0, responseHandler_1.errorResponse)(res, 401, 'Google authentication failed');
     }
+});
+// POST /auth/google/link (signed-in customer): the owner explicitly links their Google account. The Google email must
+// be the account's email, and one Google identity can belong to one account only.
+exports.linkGoogleAccount = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    const user = await User_1.User.findById(req.user?._id);
+    if (!user)
+        return (0, responseHandler_1.errorResponse)(res, 404, 'User not found');
+    if (user.role !== 'customer')
+        return (0, responseHandler_1.errorResponse)(res, 403, 'Only customer accounts can link Google');
+    const verified = await verifyGoogleCredential(req.body);
+    if (!verified.ok)
+        return (0, responseHandler_1.errorResponse)(res, verified.status, verified.message);
+    const { email, googleId } = verified.id;
+    if (email.trim().toLowerCase() !== String(user.email).trim().toLowerCase()) {
+        return (0, responseHandler_1.errorResponse)(res, 409, 'This Google account uses a different email address. Link the Google account for ' + user.email + '.', { code: 'GOOGLE_EMAIL_MISMATCH' });
+    }
+    if (user.googleId === googleId)
+        return (0, responseHandler_1.successResponse)(res, 200, 'Google account already linked', { googleLinked: true });
+    if (user.googleId)
+        return (0, responseHandler_1.errorResponse)(res, 409, 'A different Google account is already linked to this account.', { code: 'GOOGLE_ACCOUNT_MISMATCH' });
+    if (await User_1.User.exists({ googleId, _id: { $ne: user._id } })) {
+        return (0, responseHandler_1.errorResponse)(res, 409, 'This Google account is already linked to another account.', { code: 'GOOGLE_ALREADY_LINKED' });
+    }
+    await User_1.User.updateOne({ _id: user._id, googleId: { $exists: false } }, { $set: { googleId } });
+    (0, responseHandler_1.successResponse)(res, 200, 'Google account linked', { googleLinked: true });
 });
 //# sourceMappingURL=authController.js.map

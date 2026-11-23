@@ -90,6 +90,26 @@ const run = async () => {
       assert.strictEqual((await call('POST', '/auth/register', { name: 'Cara', email: 'cara@test.local', password: 'x-Passw0rd#1' })).status, 400, 'duplicate refused');
     });
 
+    await test('register address (optional): the blank entry the form sends is not stored; a filled one follows the PIN/state rules', async () => {
+      const reg = (email: string, addresses: unknown) => call('POST', '/auth/register', { name: 'Reg', email, password: 'Reg-Passw0rd#1', addresses });
+      const blank = { street: '', city: '', state: '', zipCode: '', country: 'India' };
+      assert.ok([200, 201].includes((await reg('blank@test.local', [blank])).status));
+      assert.deepStrictEqual((await User.findOne({ email: 'blank@test.local' }).lean())!.addresses, [], 'no empty saved address (the reported bug)');
+      assert.ok([200, 201].includes((await reg('none@test.local', undefined)).status), 'no address at all is fine');
+      const valid = await reg('valid@test.local', [{ street: 'Hilite', city: 'Kozhikode', state: 'Kerala', zipCode: '673007', country: 'India' }]);
+      assert.ok([200, 201].includes(valid.status), valid.text.slice(0, 160));
+      assert.deepStrictEqual((await User.findOne({ email: 'valid@test.local' }).lean())!.addresses!.map((a: any) => [a.city, a.state, a.zipCode]), [['Kozhikode', 'Kerala', '673007']], 'stored as typed');
+      for (const [email, addr, msg] of [
+        ['mismatch@test.local', { city: 'Kozhikode', state: 'Tamil Nadu', zipCode: '673007' }, /673007 is a Kerala PIN code/],
+        ['badpin@test.local', { city: 'Kochi', state: 'Kerala', zipCode: '68200' }, /valid 6-digit PIN/],
+        ['nocity@test.local', { street: 'Somewhere', state: 'Kerala', zipCode: '682001' }, /needs a city and a state/],
+      ] as const) {
+        const r = await reg(email, [addr]);
+        assert.strictEqual(r.status, 400, email); assert.match(r.json.message, msg, email);
+        assert.strictEqual(await User.countDocuments({ email }), 0, `${email}: no account created`);
+      }
+    });
+
     await test('customer login: right password 200 + working token, wrong 401, staff account refused', async () => {
       const ok = await call('POST', '/auth/customer-login', { email: 'ann@test.local', password: PW });
       assert.strictEqual(ok.status, 200);

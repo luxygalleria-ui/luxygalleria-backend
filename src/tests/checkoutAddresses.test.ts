@@ -168,6 +168,27 @@ const run = async () => {
     await test('billing address missing its PIN code', async () => {
       await refused({ shippingAddressId: homeId, billingAddressId: partialId }, /billing address is missing/);
     });
+    await test('a saved address from before the PIN/state checks (Kerala PIN, state "tamilnadu") is refused at payment with what to fix, and left unchanged', async () => {
+      // Stored directly, as older data was: the address API now refuses to save this combination
+      await User.updateOne({ _id: ann._id }, { $push: { addresses: { street: 'Hilite', city: 'kzhikode', state: 'tamilnadu', zipCode: '673007', country: 'India' } } });
+      const legacy = (await User.findById(ann._id).lean())!.addresses!.at(-1) as any;
+      const body = { street: legacy.street, city: legacy.city, state: legacy.state, zipCode: legacy.zipCode, country: legacy.country };
+      const [calls, sessions] = [initiateCalls, await CheckoutSession.countDocuments()];
+      const r = await initiate({ shippingAddressId: String(legacy._id) }, annT, body, await totalFor(body));
+      assert.strictEqual(r.status, 400, JSON.stringify(r.json));
+      assert.strictEqual(r.json.code, 'ADDRESS_INCONSISTENT');
+      assert.match(r.json.message, /delivery address needs a correction: PIN code 673007 is a Kerala PIN code, but the state is "tamilnadu"/);
+      assert.deepStrictEqual([await stock(), initiateCalls, await CheckoutSession.countDocuments()], [10, calls, sessions], 'nothing reserved, no gateway call');
+      const kept = (await User.findById(ann._id).lean())!.addresses!.find((a: any) => String(a._id) === String(legacy._id)) as any;
+      assert.deepStrictEqual([kept.state, kept.zipCode], ['tamilnadu', '673007'], 'never corrected silently');
+      await User.updateOne({ _id: ann._id }, { $pull: { addresses: { _id: legacy._id } } });
+      // pickup never needs (or checks) a delivery address
+      const quote = await call('POST', '/payments/calculate-shipping', { items, fulfillment: { method: 'pickup' } });
+      if (quote.status === 200) {
+        const p = await call('POST', '/payments/icici/initiate', { items, fulfillment: { method: 'pickup' }, total: quote.json.data.grandTotal }, annT);
+        assert.notStrictEqual(p.json?.code, 'ADDRESS_INCONSISTENT');
+      }
+    });
     await test('shipping id of another customer, or of an address deleted since the page loaded', async () => {
       await refused({ shippingAddressId: benOfficeId }, /delivery address no longer exists/);
       const doomed = (await call('POST', '/users/addresses', { ...office, street: 'Old flat' }, annT)).json.data.at(-1)._id;

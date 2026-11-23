@@ -160,7 +160,8 @@ class CheckoutSettingsError extends Error {
 }
 exports.CheckoutSettingsError = CheckoutSettingsError;
 /** Current settings straight from the database (no cache: an admin save applies to the next checkout). Throws if unreadable. */
-const loadCheckoutSettings = async () => {
+/** `replace`: sections about to be saved are taken from it, so a stored copy that no longer validates can be repaired. */
+const loadCheckoutSettings = async (replace = {}) => {
     let doc;
     try {
         doc = await Settings_1.Settings.findOne().lean();
@@ -169,7 +170,7 @@ const loadCheckoutSettings = async () => {
         console.error("Checkout settings could not be loaded:", err?.message); // the driver message stays in the server log
         throw new CheckoutSettingsError("Checkout settings could not be loaded");
     }
-    return (0, exports.effectiveCheckoutSettings)(doc);
+    return (0, exports.effectiveCheckoutSettings)({ ...(doc ?? {}), ...replace });
 };
 exports.loadCheckoutSettings = loadCheckoutSettings;
 /** At least one way to receive an order must stay available. */

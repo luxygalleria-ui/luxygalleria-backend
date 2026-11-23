@@ -16,6 +16,8 @@ import jwt from 'jsonwebtoken';
 import app from '../app';
 import { ENV } from '../config/env';
 import { User } from '../models/User';
+import { Product } from '../models/Product';
+import { Settings } from '../models/Settings';
 
 let passed = 0;
 const test = async (name: string, fn: () => Promise<void>) => { await fn(); passed++; console.log(`  ✅ ${name}`); };
@@ -142,6 +144,61 @@ const run = async () => {
       const r = await put({ ...VALID, paymentOptions: ['pay_now'] });
       assert.strictEqual(r.status, 400, JSON.stringify(r.json));
       assert.match(JSON.stringify(r.json.errors), /Unrecognized key/);
+    });
+
+    console.log('Checkout quotes with pickup (server-priced; nothing from the browser is trusted)');
+    const tea = await Product.create({ name: 'Tea', category: 'Drinks', description: 'Tea', variants: [{ volume: '200g', price: 300, offerPrice: 300, actualPrice: 300, stock: 20, weight: 0.4 }], stock: 20 });
+    const items = [{ product: String(tea._id), variantId: String(tea.variants[0]._id), quantity: 2 }];
+    const kerala = { street: '1 MG Road', city: 'Kochi', state: 'Kerala', zipCode: '682001', country: 'India' };
+    // Delivery is never priced from guessed rates: save the shipping section once, exactly as the admin form does
+    const ship = (await get()).settings.shipping;
+    assert.strictEqual((await call('PUT', '/settings/checkout/shipping', ship, adminT)).status, 200);
+    const quote = (fulfillment: object, extra: object = {}) => call('POST', '/payments/calculate-shipping', { items, fulfillment, ...extra });
+    const pickupOpt = (q: any) => (q.json.data?.options || []).find((o: any) => o.fulfillment === 'pickup');
+    await test('paid pickup: the configured charge once, no road/air shipping, no packaging; details and ready message from settings', async () => {
+      assert.strictEqual((await put(VALID)).status, 200);
+      const q = await quote({ method: 'pickup' }, { pickupFee: 0, shipping: 99, total: 1 }); // browser-sent amounts are ignored
+      assert.strictEqual(q.status, 200, JSON.stringify(q.json));
+      const d = q.json.data;
+      assert.deepStrictEqual([d.fulfillmentMethod, d.shippingMethod, d.shipping, d.specialPackagingFee, d.pickupFee], ['pickup', null, 0, 0, 25.5]);
+      assert.strictEqual(d.grandTotal, d.subtotal - d.discount + (d.tax?.addedToTotal ?? 0) + 25.5, 'pickup charge counted exactly once');
+      assert.deepStrictEqual(d.pickupDetails, { storeName: VALID.storeName, address: VALID.address, openingHours: VALID.openingHours, phone: VALID.phone, instructions: VALID.instructions });
+      assert.deepStrictEqual([pickupOpt(q).offered, pickupOpt(q).allowed, pickupOpt(q).fee, pickupOpt(q).eta], [true, true, 25.5, VALID.readyTime]);
+    });
+    await test('free pickup (charge 0): no pickup charge and no delivery fee; option says fee 0', async () => {
+      assert.strictEqual((await put({ ...VALID, charge: 0 })).status, 200);
+      const q = await quote({ method: 'pickup' });
+      assert.deepStrictEqual([q.status, q.json.data.pickupFee, q.json.data.shipping, q.json.data.grandTotal === q.json.data.subtotal - q.json.data.discount + (q.json.data.tax?.addedToTotal ?? 0), pickupOpt(q).fee], [200, 0, 0, true, 0]);
+      assert.strictEqual((await put(VALID)).status, 200);
+    });
+    await test('switching pickup <-> delivery re-prices: delivery adds shipping and drops the pickup charge, and back', async () => {
+      const pick1 = (await quote({ method: 'pickup' })).json.data;
+      const del = await quote({ method: 'delivery' }, { shippingAddress: kerala });
+      assert.strictEqual(del.status, 200, JSON.stringify(del.json));
+      assert.deepStrictEqual([del.json.data.fulfillmentMethod, del.json.data.pickupFee, del.json.data.pickupDetails], ['delivery', 0, null]);
+      assert.ok(del.json.data.shipping > 0, 'delivery is charged shipping');
+      assert.strictEqual(del.json.data.grandTotal, pick1.grandTotal - 25.5 + del.json.data.shipping + del.json.data.specialPackagingFee);
+      assert.deepStrictEqual((await quote({ method: 'pickup' })).json.data, pick1, 'back to pickup: identical quote, no leftover delivery charge');
+    });
+    await test('pickup switched off: not selectable, with a reason; no store details, ready message or fee exposed', async () => {
+      assert.strictEqual((await put({ ...VALID, enabled: false })).status, 200);
+      const del = await quote({ method: 'delivery' }, { shippingAddress: kerala });
+      assert.deepStrictEqual([pickupOpt(del).offered, pickupOpt(del).allowed, pickupOpt(del).reason, pickupOpt(del).eta, 'fee' in pickupOpt(del)], [false, false, 'Store pickup is not available right now', '', false]);
+      const pick = await quote({ method: 'pickup' });
+      assert.deepStrictEqual([pick.status, pick.json.code], [400, 'OPTION_UNAVAILABLE']);
+      assert.deepStrictEqual((await call('GET', '/settings')).json.data.checkout.pickup, { enabled: false });
+    });
+    await test('switched on but required store details missing (hand-edited data): checkout refuses to price (503), never shows a blank store; an admin re-save restores it', async () => {
+      await Settings.updateOne({}, { $set: { pickup: { ...VALID, address: '', phone: '   ' } } }); // bypasses the admin form's validation on purpose
+      for (const f of [{ method: 'pickup' }, { method: 'delivery' }]) {
+        const q = await quote(f, { shippingAddress: kerala });
+        assert.deepStrictEqual([q.status, q.json.code], [503, 'SETTINGS_UNAVAILABLE'], JSON.stringify(f));
+        assert.ok(!JSON.stringify(q.json).includes(VALID.storeName), 'no store details in the refusal');
+      }
+      const pub = await call('GET', '/settings');
+      assert.ok(!(pub.json?.data?.checkout?.pickup?.enabled === true && !pub.json.data.checkout.pickup.address), 'public view never offers a pickup store without an address');
+      assert.strictEqual((await put(VALID)).status, 200, 'saving complete details through the admin API restores it');
+      assert.strictEqual((await quote({ method: 'pickup' })).status, 200);
     });
 
     console.log('Access');

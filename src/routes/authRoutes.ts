@@ -5,8 +5,10 @@ import {
   loginCustomer,
   verifyOtp,
   resendOtp,
-  googleAuth
+  googleAuth,
+  linkGoogleAccount
 } from '../controllers/authController';
+import { protect } from '../middlewares/authMiddleware';
 import { authLimiter, otpLimiter } from '../middlewares/rateLimiter';
 
 const router = Router();
@@ -17,6 +19,7 @@ router.post('/register', authLimiter, registerCustomer);
 router.post('/verify-otp', otpLimiter, verifyOtp);
 router.post('/resend-otp', otpLimiter, resendOtp);
 router.post('/google', authLimiter, googleAuth);
+router.post('/google/link', authLimiter, protect, linkGoogleAccount);
 
 // Removed: GET /debug-users, POST /fix-user-password and POST /setup-test-admin (unauthenticated; listed customers with
 // OTPs, reset any password, reset the superadmin password and returned it). The development admin comes from

@@ -471,6 +471,39 @@ const api = async () => {
       assert.ok(!('shipping' in pub.json.data) && !JSON.stringify(pub.json.data).includes('rateConfirmed'), 'public view only');
     });
 
+    await test('calculate-shipping 400s: a no-weight product refuses delivery with a per-option reason; valid input passes; bad input is a clear 400; logs name only the rule', async () => {
+      const logged: string[] = [];
+      const origWarn = console.warn;
+      console.warn = (...a: unknown[]) => { logged.push(a.map(String).join(' ')); };
+      try {
+        // What production shows for Frooti / KitKat: size "Standard", no weight -> delivery cannot be priced
+        const noWeight = await Product.create({ name: 'Frooti', category: 'Drinks', description: 'x', variants: [{ volume: 'Standard', size: 'Standard', price: 20, offerPrice: 20, actualPrice: 20, stock: 9, weight: 0 }], stock: 9 });
+        const delivery = await call('POST', '/payments/calculate-shipping', { items: [item(noWeight), item(product)], shippingAddress: kerala, fulfillment: { method: 'delivery' } });
+        assert.strictEqual(delivery.status, 400, JSON.stringify(delivery.json));
+        assert.strictEqual(delivery.json.code, 'WEIGHT_MISSING');
+        assert.match(delivery.json.message, /Frooti/, 'names the product so the shop can fix it');
+        const land = (delivery.json.data?.options || []).find((o: any) => o.fulfillment === 'delivery' && o.shippingMethod === 'land');
+        assert.ok(land && land.allowed === false && /no weight is set for Frooti/.test(land.reason), 'the refusal carries the per-option reason the checkout shows');
+        assert.ok(!/Kochi|682001|MG Road/.test(JSON.stringify(delivery.json)), 'no address echoed');
+        // A valid product and a complete Kerala address are never refused
+        const ok = await call('POST', '/payments/calculate-shipping', { items: [item(product)], shippingAddress: kerala, fulfillment: { method: 'delivery', shippingMethod: 'land' } });
+        assert.strictEqual(ok.status, 200, JSON.stringify(ok.json)); assert.strictEqual(ok.json.data.shippingMethod, 'land');
+        // Invalid input: clear 400s from the validation step
+        for (const [label, body, msg] of [
+          ['no items', { items: [], shippingAddress: kerala }, 'No items to price'],
+          ['unknown fulfillment method', { items: [item(product)], fulfillment: { method: 'drone' } }, 'Invalid fulfillment method'],
+          ['unknown shipping method', { items: [item(product)], fulfillment: { method: 'delivery', shippingMethod: 'sea' } }, 'Invalid shipping method'],
+        ] as const) {
+          const r = await call('POST', '/payments/calculate-shipping', body);
+          assert.deepStrictEqual([r.status, r.json.message], [400, msg], label);
+        }
+        const refusals = logged.filter((l) => l.startsWith('Checkout quote refused:'));
+        assert.deepStrictEqual(refusals, ['Checkout quote refused: WEIGHT_MISSING'], 'one line per rule refusal (validation 400s are not rule refusals)');
+        assert.ok(logged.every((l) => !/Kochi|682001|MG Road|@/.test(l)), 'logs carry no address or customer data');
+        await Product.deleteOne({ _id: noWeight._id });
+      } finally { console.warn = origWarn; }
+    });
+
     await test('Kerala "Deliver here": admin save -> database -> admin and public API -> checkout quote, off and back on', async () => {
       const original = (await call('GET', '/settings/checkout', undefined, adminT)).json.data.settings.shipping;
       const put = async (ship: any) => {

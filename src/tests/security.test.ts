@@ -86,11 +86,16 @@ const run = async () => {
     assert.ok(!r.json?.data?.token);
   });
   await test('C1: body email is ignored; identity comes from Google token', async () => {
-    (OAuth2Client.prototype as any).getTokenInfo = async () => ({ aud: process.env.GOOGLE_CLIENT_ID, email: 'alice@test.local', email_verified: 'true', sub: 'g-alice' });
+    (OAuth2Client.prototype as any).getTokenInfo = async () => ({ aud: process.env.GOOGLE_CLIENT_ID, email: 'alice.google@test.local', email_verified: 'true', sub: 'g-alice' });
     const r = await call('POST', '/auth/google', { credential: 'tok', googleId: 'g-alice', email: 'admin@test.local' });
     assert.strictEqual(r.status, 200);
-    assert.strictEqual(r.json.data.email, 'alice@test.local');
+    assert.strictEqual(r.json.data.email, 'alice.google@test.local');
     assert.strictEqual(r.json.data.role, 'customer');
+  });
+  await test('C1: an existing PASSWORD account is never signed into or linked by Google (pre-hijack); the owner links it after signing in', async () => {
+    (OAuth2Client.prototype as any).getTokenInfo = async () => ({ aud: process.env.GOOGLE_CLIENT_ID, email: 'alice@test.local', email_verified: 'true', sub: 'g-alice-real' });
+    const r = await call('POST', '/auth/google', { credential: 'tok', googleId: 'g-alice-real' });
+    assert.strictEqual(r.status, 409); assert.ok(!r.json?.data?.token, 'no session');
   });
   await test('C1: Google login cannot mint an admin session', async () => {
     (OAuth2Client.prototype as any).getTokenInfo = async () => ({ aud: process.env.GOOGLE_CLIENT_ID, email: 'admin@test.local', email_verified: true, sub: 'g-admin' });

@@ -23,6 +23,7 @@ const shippingCalculator_1 = require("../utils/shippingCalculator");
 const contactController_1 = require("./contactController");
 const productController_1 = require("./productController");
 const paymentController_1 = require("./paymentController");
+const orderCancellation_1 = require("../utils/orderCancellation");
 // ---------- shared ----------
 const fail = (res, status, message, code, field) => (0, responseHandler_1.errorResponse)(res, status, message, [{ code, ...(field ? { field } : {}) }]);
 const invalid = (res, err) => (0, responseHandler_1.errorResponse)(res, 400, 'Validation failed', err.issues.map((i) => ({
@@ -553,6 +554,9 @@ exports.orderStatusWebhook = (0, asyncHandler_1.asyncHandler)(async (req, res) =
         if (!r.matchedCount)
             return fail(res, 409, 'Order changed while processing this event; retry it', 'CONFLICT');
     }
+    // Same cancellation rules as an admin cancel: restock if not yet shipped (once), flag a paid order for refund
+    if (outcome === 'applied' && e.status === 'cancelled')
+        await (0, orderCancellation_1.afterOrderCancelled)(order._id, previousStatus);
     await ErpEvent_1.ErpEvent.create({ eventId: e.eventId, type: 'order-status', orderId: order._id, status: e.status, occurredAt, outcome, keyId: req.erpKeyId })
         .catch((err) => { if (err?.code !== 11000)
         throw err; });

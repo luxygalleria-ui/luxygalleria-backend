@@ -28,15 +28,18 @@ const repairCart = async (cart: any) => {
   }
 };
 
+/**
+ * The caller's cart, created atomically when missing. Find-then-create raced: right after sign-in the page loads the
+ * cart while an item is being added, both created it, and one request failed with a duplicate-key 500.
+ */
+const ensureCart = (userId: unknown) =>
+  Cart.findOneAndUpdate({ user: userId }, { $setOnInsert: { user: userId, items: [] } }, { upsert: true, new: true });
+
 // Get Cart
 export const getCart = asyncHandler(async (req: Request, res: Response) => {
-  let cart = await Cart.findOne({ user: req.user?._id });
-  if (!cart) {
-    cart = await Cart.create({ user: req.user?._id, items: [] });
-  } else {
-    await repairCart(cart);
-    await cart.populate('items.product');
-  }
+  const cart = (await ensureCart(req.user?._id))!;
+  await repairCart(cart);
+  await cart.populate('items.product');
   return successResponse(res, 200, 'Cart fetched successfully', cart);
 });
 
@@ -68,7 +71,7 @@ const sameLine = (item: any, productId: string, variantId: string) =>
 
 /** The cart for the request's user, created when missing (a new account has none yet). */
 const cartOf = async (req: Request) => {
-  const cart = (await Cart.findOne({ user: req.user?._id })) ?? (await Cart.create({ user: req.user?._id, items: [] }));
+  const cart = (await ensureCart(req.user?._id))!;
   await repairCart(cart);
   return cart;
 };

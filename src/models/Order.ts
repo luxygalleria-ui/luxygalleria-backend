@@ -51,6 +51,8 @@ export interface IOrder extends Document {
   erpOrderId?: string;
   trackingNumber?: string;
   statusUpdatedAt?: Date;
+  /** Set once when a cancelled-before-shipping order's units were returned to stock (never twice). */
+  stockRestoredAt?: Date;
   /** Superadmin corrections that the normal forward-only status rule would refuse. Append-only audit trail. */
   statusCorrections?: { at: Date; by: string; from: string; to: string; reason: string }[];
   /** The checkout session (quote snapshot) this order was created from; absent on older orders. */
@@ -143,6 +145,7 @@ const OrderSchema: Schema = new Schema(
     // Written in the same atomic update as the status it records (paymentController.correctOrderStatus); never edited
     statusCorrections: [{ at: { type: Date, required: true }, by: { type: String, required: true }, from: { type: String, required: true },
       to: { type: String, required: true }, reason: { type: String, required: true }, _id: false }],
+    stockRestoredAt: { type: Date },
     statusUpdatedAt: { type: Date }, // when the status last changed: ERP event time, or the time of an admin change; older ERP events are ignored
     checkoutSession: { type: Schema.Types.ObjectId, ref: 'CheckoutSession' },
     fulfillmentIssue: { type: String },

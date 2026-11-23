@@ -81,7 +81,9 @@ export const updateCheckoutSection = asyncHandler(async (req: Request, res: Resp
   if (!parsed.success) return errorResponse(res, 400, 'Please correct the highlighted fields', zodErrors(parsed.error));
   const value = parsed.data;
 
-  const current = await loadCheckoutSettings();
+  // The section being saved replaces its stored copy before the others are re-checked: an invalid stored copy (e.g.
+  // hand-edited) used to make every save of it fail, so the admin could never repair it from this page
+  const current = await loadCheckoutSettings({ [section]: value });
   const next = { ...current.settings, [section]: value };
   // "Deliver here" with every method switched off would show customers at that destination no way to order
   if (section === 'shipping') {
