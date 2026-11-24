@@ -3,6 +3,7 @@ import { connectDB } from './config/db';
 import { ENV } from './config/env';
 import { seedAdmin } from './utils/seedAdmin';
 import { expireStaleSessions } from './utils/checkoutSessions';
+import { iciciMode, iciciModeLine } from './utils/iciciPg';
 
 const startServer = async () => {
   try {
@@ -15,6 +16,8 @@ const startServer = async () => {
     // Start Express Server
     app.listen(ENV.PORT, () => {
       console.log(`🚀 Server running in ${ENV.NODE_ENV} mode on port ${ENV.PORT}`);
+      // Which payment environment is live, so a UAT -> LIVE switch can be confirmed without reading .env
+      (iciciMode() === 'mixed' ? console.warn : console.log)(`💳 ${iciciModeLine()}`);
     });
 
     // Return stock held by abandoned checkouts (also done before each new checkout)

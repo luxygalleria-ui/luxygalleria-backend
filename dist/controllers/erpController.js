@@ -462,7 +462,8 @@ exports.listOrders = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     if (!parsed.success)
         return invalid(res, parsed.error);
     const { page, limit, status, paymentStatus, updatedSince } = parsed.data;
-    const filter = {};
+    // ICICI UAT test orders (no money received) are never exported: the ERP must not fulfil or account for them
+    const filter = { testPayment: { $ne: true } };
     if (status)
         filter.orderStatus = status;
     if (paymentStatus)
@@ -485,7 +486,7 @@ exports.listOrders = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
 exports.getOrder = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     if (!/^[a-f\d]{24}$/i.test(req.params.orderId))
         return fail(res, 400, 'orderId must be a 24-character hex id', 'VALIDATION_ERROR', 'orderId');
-    const o = await Order_1.default.findById(req.params.orderId).lean();
+    const o = await Order_1.default.findOne({ _id: req.params.orderId, testPayment: { $ne: true } }).lean(); // UAT test orders: not exported
     if (!o)
         return fail(res, 404, 'Order not found', 'NOT_FOUND', 'orderId');
     const refs = await loadRefs([o]);
@@ -528,6 +529,8 @@ exports.orderStatusWebhook = (0, asyncHandler_1.asyncHandler)(async (req, res) =
     if (e.erpOrderId && order.erpOrderId && order.erpOrderId !== e.erpOrderId) {
         return fail(res, 409, 'erpOrderId does not match the ERP order already linked to this order', 'CONFLICT', 'erpOrderId');
     }
+    if ((0, orderStatus_1.shipBlocked)(order, e.status))
+        return fail(res, 409, orderStatus_1.TEST_ORDER_NOT_SHIPPABLE.message, orderStatus_1.TEST_ORDER_NOT_SHIPPABLE.code, 'status');
     const previousStatus = order.orderStatus;
     let outcome;
     if (order.statusUpdatedAt && occurredAt <= order.statusUpdatedAt)
@@ -550,7 +553,7 @@ exports.orderStatusWebhook = (0, asyncHandler_1.asyncHandler)(async (req, res) =
         set.orderStatus = e.status;
     if (Object.keys(set).length) {
         // Conditional on what we decided from, so two racing events cannot both apply
-        const r = await Order_1.default.updateOne({ _id: order._id, orderStatus: previousStatus, statusUpdatedAt: order.statusUpdatedAt ?? { $exists: false } }, { $set: set });
+        const r = await Order_1.default.updateOne({ _id: order._id, orderStatus: previousStatus, statusUpdatedAt: order.statusUpdatedAt ?? { $exists: false }, ...(0, orderStatus_1.notShippableTestFilter)(e.status) }, { $set: set });
         if (!r.matchedCount)
             return fail(res, 409, 'Order changed while processing this event; retry it', 'CONFLICT');
     }

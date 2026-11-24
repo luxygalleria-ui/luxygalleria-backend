@@ -533,6 +533,32 @@ const run = async () => {
     assert.strictEqual((await erp('GET', '/orders/123')).status, 400);
     assert.strictEqual((await erp('GET', `/orders/${new mongoose.Types.ObjectId()}`)).status, 404);
   });
+  await test('ICICI UAT test orders (testPayment) are never exported: not listed under any filter, details 404', async () => {
+    const before = (await erp('GET', '/orders?limit=100')).json;
+    const t = await Order.create({
+      user: alice._id, items: [{ product: p._id, variantId: p.variants[0]._id, quantity: 1, price: 450, subtotal: 450, size: '30ml' }],
+      shippingAddress: { street: '1 St', city: 'Kochi', state: 'Kerala', zipCode: '682001', country: 'India' },
+      subtotal: 450, total: 490, shippingFee: 40, paymentMethod: 'icici', paymentStatus: 'completed', orderStatus: 'processing',
+      razorpayOrderId: `LGTEST${Date.now()}`, iciciTxnId: 'T1', testPayment: true,
+    });
+    try {
+      const all = (await erp('GET', '/orders?limit=100')).json;
+      assert.strictEqual(all.pagination.total, before.pagination.total, 'count unchanged');
+      for (const q of ['/orders?limit=100', '/orders?paymentStatus=completed', '/orders?status=processing', `/orders?updatedSince=${encodeURIComponent(iso(-60_000))}`]) {
+        const r = await erp('GET', q);
+        assert.strictEqual(r.status, 200, q);
+        assert.ok(!r.json.data.some((o: any) => o.orderId === String(t._id)), `${q}: test order not exported`);
+      }
+      assert.strictEqual((await erp('GET', `/orders/${t._id}`)).status, 404, 'details: not found');
+      // The status webhook can never ship or deliver it either, even with the id
+      for (const [i, status] of ['shipped', 'delivered'].entries()) {
+        const r = await erp('POST', '/webhooks/order-status', { eventId: `EV-UAT-${i}`, orderId: String(t._id), status, occurredAt: iso(0) });
+        assert.deepStrictEqual([r.status, r.json.errors?.[0]?.code], [409, 'TEST_PAYMENT_NOT_SHIPPABLE'], `webhook -> ${status}: ${JSON.stringify(r.json)}`);
+      }
+      assert.strictEqual(((await Order.findById(t._id).lean()) as any).orderStatus, 'processing', 'still processing');
+      assert.strictEqual((await erp('GET', `/orders/${o1._id}`)).status, 200, 'a real order still exports');
+    } finally { await Order.deleteOne({ _id: t._id }); }
+  });
 
   await test('order lines report the SKU and name as sold; older orders fall back to the current SKU', async () => {
     const sold = await Order.create({

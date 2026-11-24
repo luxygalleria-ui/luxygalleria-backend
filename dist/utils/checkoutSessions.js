@@ -119,6 +119,7 @@ const orderFromSession = (s, paymentId, signature) => ({
     shippingFee: s.breakdown.shipping,
     total: s.breakdown.grandTotal,
     paymentStatus: 'completed',
+    testPayment: s.testPayment === true, // ICICI UAT: no money received; kept out of revenue, the ERP feed and refunds
     razorpayOrderId: s.razorpayOrderId, // unique per order: the idempotency key for every gateway
     ...(s.gateway === 'icici'
         ? { paymentMethod: 'icici', iciciTxnId: paymentId }

@@ -31,6 +31,8 @@ export interface ICheckoutSession extends Document {
   razorpayOrderId: string;
   gateway: 'razorpay' | 'icici';
   isMock: boolean;
+  /** ICICI UAT (test money): decided by the server when the checkout opened, copied to the order. */
+  testPayment?: boolean;
   status: SessionStatus;
   stockReserved: boolean;
   expiresAt: Date;
@@ -81,6 +83,7 @@ const sessionSchema = new Schema<ICheckoutSession>({
   razorpayOrderId: { type: String, required: true, unique: true },
   gateway: { type: String, enum: ['razorpay', 'icici'], default: 'razorpay' },
   isMock: { type: Boolean, default: false },
+  testPayment: { type: Boolean, default: false },
   status: { type: String, enum: ['pending', 'processing', 'paid', 'expired', 'unfulfillable'], default: 'pending', index: true },
   stockReserved: { type: Boolean, default: false },
   expiresAt: { type: Date, required: true },

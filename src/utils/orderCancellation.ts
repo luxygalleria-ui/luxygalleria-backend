@@ -22,7 +22,8 @@ export const afterOrderCancelled = async (orderId: unknown, previousStatus: stri
     }
   }
   await Order.updateOne(
-    { _id: orderId, orderStatus: 'cancelled', paymentStatus: 'completed', $or: [{ 'refund.status': { $exists: false } }, { 'refund.status': null }] },
+    // A UAT test order (testPayment) received no money: nothing to refund
+    { _id: orderId, orderStatus: 'cancelled', paymentStatus: 'completed', testPayment: { $ne: true }, $or: [{ 'refund.status': { $exists: false } }, { 'refund.status': null }] },
     { $set: { 'refund.status': 'required' }, $push: { 'refund.events': { at: new Date(), by: 'system', action: 'required', detail: 'Paid order cancelled: refund the customer' } } },
   );
 };

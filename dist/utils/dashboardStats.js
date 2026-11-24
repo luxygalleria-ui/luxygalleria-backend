@@ -8,8 +8,10 @@ const PAID = ['completed', 'COMPLETED', 'paid', 'PAID'];
 exports.CHART_DAYS = 30;
 const TZ = 'Asia/Kolkata'; // the store's business day
 // Revenue = money actually kept: paid orders that were not cancelled (cancelled-but-paid orders await a manual refund)
-const REVENUE_MATCH = { paymentStatus: { $in: PAID }, orderStatus: { $ne: 'cancelled' } };
-exports.REVENUE_RULE = 'paymentStatus completed and orderStatus not cancelled';
+// ICICI UAT test orders (testPayment) received no money: never revenue, never a refund owed
+const REAL = { testPayment: { $ne: true } };
+const REVENUE_MATCH = { paymentStatus: { $in: PAID }, orderStatus: { $ne: 'cancelled' }, ...REAL };
+exports.REVENUE_RULE = 'paymentStatus completed, orderStatus not cancelled, not a UAT test payment';
 /** Every key present, zero when absent, so the UI can tell a real 0 from a missing field. */
 const tally = (keys, rows) => Object.fromEntries(keys.map((k) => [k, rows.filter((r) => String(r._id).toLowerCase() === k).reduce((a, r) => a + r.n, 0)]));
 /** Last CHART_DAYS business days, oldest first, including days without sales. */
@@ -26,10 +28,10 @@ const orderAndCustomerStats = async (db) => {
     const since = new Date(Date.now() - (exports.CHART_DAYS + 1) * 86400000);
     const [totalOrders, latest, totalCustomers, revenueRows, cancelledPaidRows, statusRows, paymentRows, dayRows] = await Promise.all([
         orders.countDocuments(),
-        orders.find({}, { projection: { total: 1, orderStatus: 1, paymentStatus: 1, createdAt: 1, user: 1 } }).sort({ createdAt: -1 }).limit(5).toArray(),
+        orders.find({}, { projection: { total: 1, orderStatus: 1, paymentStatus: 1, testPayment: 1, createdAt: 1, user: 1 } }).sort({ createdAt: -1 }).limit(5).toArray(),
         db.collection('users').countDocuments({ role: { $in: ['customer', 'user'] } }),
         orders.aggregate([{ $match: REVENUE_MATCH }, { $group: { _id: null, total: { $sum: '$total' }, orders: { $sum: 1 } } }]).toArray(),
-        orders.aggregate([{ $match: { paymentStatus: { $in: PAID }, orderStatus: 'cancelled' } }, { $group: { _id: null, total: { $sum: '$total' }, orders: { $sum: 1 } } }]).toArray(),
+        orders.aggregate([{ $match: { paymentStatus: { $in: PAID }, orderStatus: 'cancelled', ...REAL } }, { $group: { _id: null, total: { $sum: '$total' }, orders: { $sum: 1 } } }]).toArray(),
         orders.aggregate([{ $group: { _id: '$orderStatus', n: { $sum: 1 } } }]).toArray(),
         orders.aggregate([{ $group: { _id: '$paymentStatus', n: { $sum: 1 } } }]).toArray(),
         orders.aggregate([
@@ -42,7 +44,7 @@ const orderAndCustomerStats = async (db) => {
     const names = new Map((await db.collection('users').find({ _id: { $in: latest.map((o) => o.user).filter(Boolean) } }, { projection: { name: 1 } }).toArray())
         .map((u) => [String(u._id), u.name]));
     const recentOrders = latest.map((o) => ({
-        _id: String(o._id), total: o.total, orderStatus: o.orderStatus, paymentStatus: o.paymentStatus, createdAt: o.createdAt,
+        _id: String(o._id), total: o.total, orderStatus: o.orderStatus, paymentStatus: o.paymentStatus, testPayment: o.testPayment === true, createdAt: o.createdAt,
         user: o.user && userIds.includes(String(o.user)) ? { name: names.get(String(o.user)) ?? null } : null,
     }));
     const totalRevenue = revenueRows[0]?.total ?? 0;

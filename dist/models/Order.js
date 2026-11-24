@@ -88,6 +88,7 @@ const OrderSchema = new mongoose_1.Schema({
         enum: ['pending', 'completed', 'failed', 'refunded'],
         default: 'pending',
     },
+    testPayment: { type: Boolean, default: false },
     orderStatus: {
         type: String,
         enum: ['processing', 'shipped', 'delivered', 'cancelled'],

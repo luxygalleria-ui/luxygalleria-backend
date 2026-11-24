@@ -55,6 +55,7 @@ const sessionSchema = new mongoose_1.Schema({
     razorpayOrderId: { type: String, required: true, unique: true },
     gateway: { type: String, enum: ['razorpay', 'icici'], default: 'razorpay' },
     isMock: { type: Boolean, default: false },
+    testPayment: { type: Boolean, default: false },
     status: { type: String, enum: ['pending', 'processing', 'paid', 'expired', 'unfulfillable'], default: 'pending', index: true },
     stockReserved: { type: Boolean, default: false },
     expiresAt: { type: Date, required: true },

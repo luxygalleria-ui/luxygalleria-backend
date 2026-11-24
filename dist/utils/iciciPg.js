@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isIciciSuccess = exports.gatewayFailure = exports.postForm = exports.postJson = exports.parseJsonKeepNumberText = exports.assertGatewayAllowed = exports.signed = exports.saleTxnDate = exports.istTimestamp = exports.newTxnNo = exports.verifyV1 = exports.hashV2 = exports.hashV1 = exports.iciciLive = exports.iciciConfigured = exports.icici = void 0;
+exports.isIciciSuccess = exports.gatewayFailure = exports.postForm = exports.postJson = exports.parseJsonKeepNumberText = exports.assertGatewayAllowed = exports.signed = exports.saleTxnDate = exports.istTimestamp = exports.newTxnNo = exports.verifyV1 = exports.hashV2 = exports.hashV1 = exports.iciciModeLine = exports.uatOpenToAll = exports.iciciMode = exports.iciciLive = exports.iciciConfigured = exports.icici = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 /**
  * ICICI Orange PG (Gateway_Interface_Specifiation_V0.4_Orange_PG.pdf). Server-side only: the secret key never leaves
@@ -39,6 +39,49 @@ const isLiveUrl = (u) => {
  */
 const iciciLive = (c = (0, exports.icici)()) => isLiveUrl(c.initiateSaleUrl) && isLiveUrl(c.commandUrl);
 exports.iciciLive = iciciLive;
+const isUatUrl = (u) => {
+    try {
+        const x = new URL(u);
+        return x.protocol === 'https:' && x.hostname === 'pgpayuat.icicibank.com';
+    }
+    catch {
+        return false;
+    }
+};
+/**
+ * Which ICICI environment the configuration selects (never any value): live = both URLs on the live host, every
+ * signed-in customer may pay; uat = both URLs on ICICI's UAT host (test money only); test = any other non-live
+ * hosts, e.g. the local mock; mixed = one live URL and one not, worth fixing; not-configured = payments answer 503.
+ * Everything but live is tester-only outside development (fail-safe).
+ */
+const iciciMode = (c = (0, exports.icici)()) => {
+    if (!(c.merchantId && c.secret && c.initiateSaleUrl && c.commandUrl && c.returnURL))
+        return 'not-configured';
+    const sale = isLiveUrl(c.initiateSaleUrl), cmd = isLiveUrl(c.commandUrl);
+    if (sale && cmd)
+        return 'live';
+    if (sale || cmd)
+        return 'mixed';
+    return isUatUrl(c.initiateSaleUrl) && isUatUrl(c.commandUrl) ? 'uat' : 'test';
+};
+exports.iciciMode = iciciMode;
+/**
+ * ICICI_PG_UAT_ALL_CUSTOMERS exactly "true" lets every signed-in customer make UAT test payments, but only while the
+ * gateway really is ICICI UAT: no effect in live (already open), mixed, test/mock or unconfigured setups.
+ */
+const uatOpenToAll = (c = (0, exports.icici)()) => (0, exports.iciciMode)(c) === 'uat' && process.env.ICICI_PG_UAT_ALL_CUSTOMERS === 'true';
+exports.uatOpenToAll = uatOpenToAll;
+/** One startup line saying which payment environment is in force (no URLs, IDs or keys). */
+const iciciModeLine = (c = (0, exports.icici)()) => ({
+    live: 'ICICI gateway: LIVE - every signed-in customer can pay online',
+    uat: (0, exports.uatOpenToAll)(c)
+        ? 'ICICI gateway: UAT/test - EVERY signed-in customer can make TEST payments (ICICI_PG_UAT_ALL_CUSTOMERS); orders are marked testPayment'
+        : 'ICICI gateway: UAT/test - only the approved UAT testers can pay (outside development)',
+    mixed: 'ICICI gateway: MIXED live/test URLs - treated as UAT (tester-only). Set both URLs to the same environment',
+    test: 'ICICI gateway: TEST URLs (not ICICI UAT or live, e.g. the local mock) - tester-only outside development',
+    'not-configured': 'ICICI gateway: not configured - online payment is unavailable',
+})[(0, exports.iciciMode)(c)];
+exports.iciciModeLine = iciciModeLine;
 // ICICI's reference code hashes msg.getBytes("ASCII"): every non-ASCII character becomes "?"
 const hmac = (msg, key) => crypto_1.default.createHmac('sha256', key).update(msg.replace(/[^\x00-\x7F]/gu, '?'), 'ascii').digest('hex');
 /**

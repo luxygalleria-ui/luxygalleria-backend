@@ -8,6 +8,7 @@ const db_1 = require("./config/db");
 const env_1 = require("./config/env");
 const seedAdmin_1 = require("./utils/seedAdmin");
 const checkoutSessions_1 = require("./utils/checkoutSessions");
+const iciciPg_1 = require("./utils/iciciPg");
 const startServer = async () => {
     try {
         // Connect to database
@@ -17,6 +18,8 @@ const startServer = async () => {
         // Start Express Server
         app_1.default.listen(env_1.ENV.PORT, () => {
             console.log(`🚀 Server running in ${env_1.ENV.NODE_ENV} mode on port ${env_1.ENV.PORT}`);
+            // Which payment environment is live, so a UAT -> LIVE switch can be confirmed without reading .env
+            ((0, iciciPg_1.iciciMode)() === 'mixed' ? console.warn : console.log)(`💳 ${(0, iciciPg_1.iciciModeLine)()}`);
         });
         // Return stock held by abandoned checkouts (also done before each new checkout)
         setInterval(() => {

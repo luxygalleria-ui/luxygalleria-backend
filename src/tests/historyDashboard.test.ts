@@ -143,7 +143,7 @@ const run = async () => {
       assert.deepStrictEqual(d.paymentsByStatus, { pending: 1, completed: 4, failed: 0, refunded: 0 });
       assert.strictEqual(d.revenueByDay.reduce((a: number, x: any) => a + x.revenue, 0), 139 + 338, '30-day chart excludes the 40-day-old order');
       assert.strictEqual(d.recentOrders.length, 5);
-      assert.deepStrictEqual(Object.keys(d.recentOrders[0]).sort(), ['_id', 'createdAt', 'orderStatus', 'paymentStatus', 'total', 'user']);
+      assert.deepStrictEqual(Object.keys(d.recentOrders[0]).sort(), ['_id', 'createdAt', 'orderStatus', 'paymentStatus', 'testPayment', 'total', 'user']);
       assert.ok(d.recentOrders.every((o: any) => o.user === null || Object.keys(o.user).join() === 'name'));
     }));
 

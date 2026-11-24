@@ -24,7 +24,9 @@ import { Product } from '../models/Product';
 import { Cart } from '../models/Cart';
 import Order from '../models/Order';
 import { CheckoutSession } from '../models/CheckoutSession';
-import { hashV1, hashV2, verifyV1, istTimestamp, saleTxnDate, assertGatewayAllowed, postForm, postJson, gatewayFailure, parseJsonKeepNumberText } from '../utils/iciciPg';
+import { hashV1, hashV2, verifyV1, istTimestamp, saleTxnDate, assertGatewayAllowed, postForm, postJson, gatewayFailure, parseJsonKeepNumberText, iciciMode, iciciModeLine, uatOpenToAll } from '../utils/iciciPg';
+import { afterOrderCancelled } from '../utils/orderCancellation';
+import { orderAndCustomerStats } from '../utils/dashboardStats';
 import { localMockDown } from '../controllers/iciciController';
 
 let passed = 0;
@@ -60,6 +62,43 @@ const run = async () => {
     assert.match(hashV1(req, 'k'), /^[0-9a-f]{64}$/);
     assert.ok(verifyV1(sign(req)) && !verifyV1({ ...sign(req), amount: '3.00' }) && !verifyV1({ ...req, secureHash: 'x' }));
     assert.ok(verifyV1({ ...sign(req), secureHash: sign(req).secureHash.toUpperCase() }), 'case-insensitive compare');
+  });
+
+  await test('iciciMode: live only with BOTH URLs on the live host; uat only with BOTH on ICICI UAT; mock/other hosts = test; missing settings = not configured; the line shows no values', async () => {
+    const LIVE_SALE = 'https://pgpay.icicibank.com/pg/api/v2/initiateSale', LIVE_CMD = 'https://pgpay.icicibank.com/pg/api/command';
+    const UAT_SALE = 'https://pgpayuat.icicibank.com/tsp/pg/api/v2/initiateSale', UAT_CMD = 'https://pgpayuat.icicibank.com/tsp/pg/api/command';
+    const base = { merchantId: 'MID-SECRET-1', secret: 'KEY-SECRET-2', aggregatorID: 'AGG-3', currencyCode: '356', returnURL: 'https://api.shop.test/cb' };
+    const cases: [string, any, string][] = [
+      ['both live', { ...base, initiateSaleUrl: LIVE_SALE, commandUrl: LIVE_CMD }, 'live'],
+      ['both UAT', { ...base, initiateSaleUrl: UAT_SALE, commandUrl: UAT_CMD }, 'uat'],
+      ['live sale, UAT command', { ...base, initiateSaleUrl: LIVE_SALE, commandUrl: UAT_CMD }, 'mixed'],
+      ['UAT sale, live command', { ...base, initiateSaleUrl: UAT_SALE, commandUrl: LIVE_CMD }, 'mixed'],
+      ['live host over http', { ...base, initiateSaleUrl: LIVE_SALE.replace('https', 'http'), commandUrl: LIVE_CMD }, 'mixed'],
+      ['local mock', { ...base, initiateSaleUrl: 'http://localhost:8442/x', commandUrl: 'http://localhost:8442/y' }, 'test'],
+      ['UAT sale, mock command', { ...base, initiateSaleUrl: UAT_SALE, commandUrl: 'http://localhost:8442/y' }, 'test'],
+      ['UAT host over http', { ...base, initiateSaleUrl: UAT_SALE.replace('https', 'http'), commandUrl: UAT_CMD }, 'test'],
+      ['look-alike UAT host', { ...base, initiateSaleUrl: 'https://pgpayuat.icicibank.com.evil.test/x', commandUrl: UAT_CMD }, 'test'],
+      ['no key', { ...base, secret: '', initiateSaleUrl: LIVE_SALE, commandUrl: LIVE_CMD }, 'not-configured'],
+      ['no return URL', { ...base, returnURL: '', initiateSaleUrl: LIVE_SALE, commandUrl: LIVE_CMD }, 'not-configured'],
+    ];
+    for (const [label, c, want] of cases) {
+      assert.strictEqual(iciciMode(c), want, label);
+      const lineText = iciciModeLine(c);
+      for (const secret of ['MID-SECRET-1', 'KEY-SECRET-2', 'AGG-3', 'pgpay', 'localhost']) assert.ok(!lineText.includes(secret), `${label}: no value in the line`);
+    }
+    assert.match(iciciModeLine(cases[0][1]), /LIVE - every signed-in customer can pay/);
+    assert.match(iciciModeLine(cases[2][1]), /MIXED .* treated as UAT/);
+    // ICICI_PG_UAT_ALL_CUSTOMERS: exactly "true", and only in real UAT
+    const saved = process.env.ICICI_PG_UAT_ALL_CUSTOMERS;
+    try {
+      for (const [v, uat, live, mock] of [['true', true, false, false], ['TRUE', false, false, false], [' true', false, false, false], ['1', false, false, false], ['false', false, false, false], [undefined, false, false, false]] as const) {
+        v === undefined ? delete process.env.ICICI_PG_UAT_ALL_CUSTOMERS : process.env.ICICI_PG_UAT_ALL_CUSTOMERS = v;
+        assert.deepStrictEqual([uatOpenToAll(cases[1][1]), uatOpenToAll(cases[0][1]), uatOpenToAll(cases[5][1])], [uat, live, mock], `ALL_CUSTOMERS=${v}`);
+      }
+      process.env.ICICI_PG_UAT_ALL_CUSTOMERS = 'true';
+      assert.match(iciciModeLine(cases[1][1]), /EVERY signed-in customer can make TEST payments/);
+      assert.match(iciciModeLine(cases[0][1]), /LIVE - every signed-in customer can pay online/);
+    } finally { saved === undefined ? delete process.env.ICICI_PG_UAT_ALL_CUSTOMERS : process.env.ICICI_PG_UAT_ALL_CUSTOMERS = saved; }
   });
 
   await test(`JSON numbers keep their exact sent text on any Node version (running ${process.version}): 600.00 is not 600`, async () => {
@@ -715,6 +754,187 @@ const run = async () => {
       assert.strictEqual(((await Order.findOne({ razorpayOrderId: txnNo }).lean()) as any).iciciSettlement.settlementID, 'A00121-20261120-010');
       const bad = await fetch(`${base}/payments/icici/settlement-advice`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...adv, settledAmount: '1.00' }) });
       assert.strictEqual(bad.status, 400);
+    });
+
+    console.log('All-customer UAT (ICICI_PG_UAT_ALL_CUSTOMERS) and UAT test orders');
+    await Product.updateOne({ _id: tea._id }, { $set: { 'variants.0.stock': 100, stock: 100 } }); // plenty for the holds below
+    const SALE_UAT = 'https://pgpayuat.icicibank.com/tsp/pg/api/v2/initiateSale', CMD_UAT = 'https://pgpayuat.icicibank.com/tsp/pg/api/command';
+    const SALE_LIVE = 'https://pgpay.icicibank.com/pg/api/v2/initiateSale', CMD_LIVE = 'https://pgpay.icicibank.com/pg/api/command';
+    const envKeys = ['NODE_ENV', 'ICICI_PG_INITIATE_SALE_URL', 'ICICI_PG_COMMAND_URL', 'ICICI_PG_UAT_TEST_USER_IDS', 'ICICI_PG_UAT_ALL_CUSTOMERS', 'ICICI_PG_ALLOW_REAL_GATEWAY_IN_DEV'];
+    const savedEnv = Object.fromEntries(envKeys.map((k) => [k, process.env[k]]));
+    const setEnv = (env: Record<string, string | undefined>) => { for (const k of envKeys) env[k] === undefined ? delete process.env[k] : process.env[k] = env[k]; };
+    const uatEnv = (all: string | undefined, sale = SALE_UAT, cmd = CMD_UAT) => setEnv({ NODE_ENV: 'production', ICICI_PG_INITIATE_SALE_URL: sale,
+      ICICI_PG_COMMAND_URL: cmd, ICICI_PG_UAT_TEST_USER_IDS: String(ann._id), ICICI_PG_UAT_ALL_CUSTOMERS: all, ICICI_PG_ALLOW_REAL_GATEWAY_IN_DEV: 'true' });
+    const quiet = async (fn: () => Promise<void>) => {
+      const w = console.warn, e = console.error; console.warn = () => {}; console.error = () => {};
+      try { await fn(); } finally { console.warn = w; console.error = e; }
+    };
+
+    await test('UAT vs LIVE access matrix: ALL_CUSTOMERS opens only real ICICI UAT, only when exactly "true"; LIVE unchanged; sign-in still required', async () => {
+      // label, ALL_CUSTOMERS, sale, command, caller (null = no token), expected status, expected session testPayment
+      type Row = [string, string | undefined, string, string, string | null, number, boolean | null];
+      const rows: Row[] = [
+        ['UAT + true, ordinary customer (Ben)', 'true', SALE_UAT, CMD_UAT, benT, 200, true],
+        ['UAT + true, tester (Ann)', 'true', SALE_UAT, CMD_UAT, annT, 200, true],
+        ['UAT + false, ordinary customer', 'false', SALE_UAT, CMD_UAT, benT, 403, null],
+        ['UAT + false, tester', 'false', SALE_UAT, CMD_UAT, annT, 200, true],
+        ['UAT + missing, ordinary customer', undefined, SALE_UAT, CMD_UAT, benT, 403, null],
+        ['UAT + missing, tester', undefined, SALE_UAT, CMD_UAT, annT, 200, true],
+        ['UAT + "TRUE" (invalid)', 'TRUE', SALE_UAT, CMD_UAT, benT, 403, null],
+        ['UAT + "1" (invalid)', '1', SALE_UAT, CMD_UAT, benT, 403, null],
+        ['UAT + " true" (invalid)', ' true', SALE_UAT, CMD_UAT, benT, 403, null],
+        ['UAT + "yes" (invalid)', 'yes', SALE_UAT, CMD_UAT, benT, 403, null],
+        ['LIVE + true, ordinary customer: live behaviour, not a test payment', 'true', SALE_LIVE, CMD_LIVE, benT, 200, false],
+        ['LIVE + missing, ordinary customer: unchanged', undefined, SALE_LIVE, CMD_LIVE, benT, 200, false],
+        ['MIXED + true: still tester-only', 'true', SALE_LIVE, CMD_UAT, benT, 403, null],
+        ['mock/other host + true: still tester-only', 'true', 'https://icici.test/initiateSale', 'https://icici.test/command', benT, 403, null],
+        ['UAT + true, not signed in', 'true', SALE_UAT, CMD_UAT, null, 401, null],
+      ];
+      try {
+        await quiet(async () => {
+          for (const [i, [label, all, sale, cmd, token, want, testPayment]] of rows.entries()) {
+            uatEnv(all, sale, cmd);
+            const sends = sent.length;
+            const r = token
+              ? await initiate(token, `10.8.0.${i + 1}`)
+              : await call('/payments/icici/initiate', { items, shippingAddress: address, fulfillment: { method: 'delivery' }, total }, undefined, { 'X-Forwarded-For': `10.8.0.${i + 1}` });
+            assert.strictEqual(r.status, want, `${label}: ${JSON.stringify(r.json)}`);
+            if (want !== 200) { assert.strictEqual(sent.length, sends, `${label}: nothing sent to ICICI`); continue; }
+            assert.strictEqual(sent.at(-1)!.url, sale, `${label}: sent to the configured sale URL`);
+            const s: any = await CheckoutSession.findOne({ razorpayOrderId: r.json.data.merchantTxnNo }).lean();
+            assert.strictEqual(s.testPayment, testPayment, `${label}: session testPayment`);
+          }
+          // The browser cannot choose: testPayment / mode / gateway values in the request body are ignored
+          uatEnv('true');
+          const forged = await call('/payments/icici/initiate', { items, shippingAddress: address, fulfillment: { method: 'delivery' }, total, testPayment: false, mode: 'live', iciciMode: 'live' }, benT, { 'X-Forwarded-For': '10.8.1.1' });
+          assert.strictEqual(forged.status, 200, JSON.stringify(forged.json));
+          assert.strictEqual(((await CheckoutSession.findOne({ razorpayOrderId: forged.json.data.merchantTxnNo }).lean()) as any).testPayment, true, 'client testPayment ignored');
+          uatEnv(undefined);
+          const forgedGate = await call('/payments/icici/initiate', { items, shippingAddress: address, fulfillment: { method: 'delivery' }, total, ICICI_PG_UAT_ALL_CUSTOMERS: 'true', allCustomers: true }, benT, { 'X-Forwarded-For': '10.8.1.2' });
+          assert.strictEqual(forgedGate.status, 403, 'a request value cannot open the gate');
+        });
+      } finally { setEnv(savedEnv); }
+    });
+
+    await test('UAT test payment: session -> order testPayment, success page warned, not revenue, no ICICI refund, cancel restocks without a refund flag', async () => {
+      const db = mongoose.connection.db!;
+      const before = await orderAndCustomerStats(db as any);
+      let txn = '';
+      try {
+        await quiet(async () => {
+          uatEnv('true');
+          const r = await initiate(benT, '10.8.2.1');
+          assert.strictEqual(r.status, 200, JSON.stringify(r.json));
+          txn = r.json.data.merchantTxnNo;
+          const q = await call('/payments/calculate-shipping', { items, shippingAddress: address, fulfillment: { method: 'delivery' } });
+          assert.strictEqual(q.json.data.testPayment, true, 'checkout quote tells the page to warn (UAT)');
+        });
+        const held = await stock();
+        const cb = await formPost('/payments/icici/callback', paid(txn));
+        assert.strictEqual(cb.location, 'https://shop.test/order-success?test=1', 'success page shows the UAT warning');
+        const replay = await formPost('/payments/icici/callback', paid(txn));
+        assert.strictEqual(replay.location, 'https://shop.test/order-success?test=1');
+        assert.strictEqual(await Order.countDocuments({ razorpayOrderId: txn }), 1, 'exactly one order on replay');
+        assert.strictEqual(await stock(), held, 'stock not taken again on finalize or replay');
+        const order: any = await Order.findOne({ razorpayOrderId: txn }).lean();
+        assert.deepStrictEqual([order.testPayment, order.paymentStatus, order.orderStatus], [true, 'completed', 'processing']);
+
+        const after = await orderAndCustomerStats(db as any);
+        assert.strictEqual(after.totalRevenue, before.totalRevenue, 'UAT order adds no revenue');
+        assert.strictEqual(after.paidOrders, before.paidOrders, 'UAT order is not a paid order in the stats');
+        assert.strictEqual(after.totalOrders, before.totalOrders + 1, 'it is still listed as an order');
+        assert.strictEqual(after.recentOrders.find((o: any) => o._id === String(order._id))?.testPayment, true, 'recent orders flag it');
+        const chart = (d: any[]) => d.reduce((n, x) => n + (x.revenue ?? 0), 0);
+        assert.strictEqual(chart(after.revenueByDay as any), chart(before.revenueByDay as any), 'not in the revenue chart');
+        // An order paid through a mock/test host (not ICICI UAT) is not marked: earlier in this file, testPayment false
+        assert.strictEqual(((await Order.findOne({ razorpayOrderId: txnNo }).lean()) as any).testPayment, false, 'mock/test-host order is not marked UAT');
+
+        const sends = sent.length;
+        const refund = await call('/payments/icici/refund', { orderId: String(order._id), reason: 'UAT test order' }, superT);
+        assert.deepStrictEqual([refund.status, refund.json.code], [400, 'TEST_PAYMENT'], JSON.stringify(refund.json));
+        assert.strictEqual(sent.length, sends, 'no REFUND sent to ICICI');
+        const my = await fetch(`${base}/payments/myorders`, { headers: { Authorization: `Bearer ${benT}` } }).then((x) => x.json()) as any;
+        assert.strictEqual(my.data.find((o: any) => o._id === String(order._id))?.testPayment, true, 'customer order view carries the flag');
+
+        await Order.updateOne({ _id: order._id }, { $set: { orderStatus: 'cancelled' } });
+        await afterOrderCancelled(order._id, 'processing');
+        const cancelled: any = await Order.findById(order._id).lean();
+        assert.ok(cancelled.stockRestoredAt, 'cancel restocks');
+        assert.strictEqual(cancelled.refund?.status ?? null, null, 'no "refund required" for a test order');
+        assert.strictEqual(await stock(), held + 2, 'units back in stock');
+        const stats = await orderAndCustomerStats(db as any);
+        assert.strictEqual(stats.cancelledPaidOrders, before.cancelledPaidOrders, 'not counted as a cancelled paid order (refund owed)');
+      } finally { setEnv(savedEnv); }
+    });
+
+    await test('signed success with the amount missing or empty or wrong is refused (no order, no stock change); the right amount creates exactly one order', async () => {
+      const r = await initiate(annT);
+      assert.strictEqual(r.status, 200, JSON.stringify(r.json));
+      const txn = r.json.data.merchantTxnNo;
+      const held = await stock();
+      const { secureHash: _h, amount: _a, ...noAmount } = paid(txn) as Record<string, any>;
+      const logs: string[] = [];
+      const e = console.error; console.error = (...a: unknown[]) => { logs.push(a.map(String).join(' ')); };
+      try {
+        for (const [label, post] of [['missing', sign(noAmount)], ['empty', sign({ ...noAmount, amount: '' })], ['wrong', paid(txn, { amount: (total + 1).toFixed(2) })]] as const) {
+          const cb = await formPost('/payments/icici/callback', post);
+          assert.strictEqual(cb.location, 'https://shop.test/order-failure?reason=unconfirmed', `${label}: not a success`);
+          const adv = await fetch(`${base}/payments/icici/payment-advice`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(post as any) });
+          assert.strictEqual(((await adv.json()) as any).outcome, 'mismatch', `${label}: advice refused too`);
+          assert.strictEqual(await Order.countDocuments({ razorpayOrderId: txn }), 0, `${label}: no order`);
+          assert.strictEqual(((await CheckoutSession.findOne({ razorpayOrderId: txn }).lean()) as any).status, 'pending', `${label}: session not paid`);
+          assert.strictEqual(await stock(), held, `${label}: stock unchanged`);
+        }
+      } finally { console.error = e; }
+      const s: any = await CheckoutSession.findOne({ razorpayOrderId: txn }).lean();
+      assert.deepStrictEqual(s.events.filter((x: any) => x.type === 'amount-mismatch').map((x: any) => x.detail).slice(0, 2), ['no amount', 'no amount']);
+      const diag = logs.filter((l) => l.includes(txn));
+      assert.ok(diag.some((l) => l.includes('no amount')), 'safe diagnostic logged');
+      assert.ok(diag.every((l) => !l.includes(KEY) && !l.includes('@') && !l.includes(String(ann._id))), 'no key, email or user id in the log');
+      const ok = await formPost('/payments/icici/callback', paid(txn));
+      assert.strictEqual(ok.location, 'https://shop.test/order-success', 'right amount: success (not a UAT config, so no warning)');
+      await formPost('/payments/icici/callback', paid(txn));
+      assert.strictEqual(await Order.countDocuments({ razorpayOrderId: txn }), 1, 'exactly one order');
+      assert.strictEqual(await stock(), held, 'stock taken once (at reservation)');
+    });
+
+    await test('UAT test orders can never be shipped or delivered (admin change, superadmin correction); a normal order still ships', async () => {
+      const mkOrder = (testPayment: boolean) => Order.create({
+        user: ben._id, items: [{ product: tea._id, variantId: tea.variants[0]._id, name: 'Tea', quantity: 1, price: 300, subtotal: 300 }],
+        shippingAddress: address, subtotal: 300, total: 380, shippingFee: 80, paymentMethod: 'icici', paymentStatus: 'completed',
+        orderStatus: 'processing', razorpayOrderId: `LGSHIP${testPayment ? 'T' : 'N'}${Date.now()}`, iciciTxnId: 'T1', testPayment,
+      });
+      const put = async (id: unknown, orderStatus: string) => {
+        const r = await fetch(`${base}/payments/admin/orders/${id}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${superT}` }, body: JSON.stringify({ orderStatus }) });
+        return { status: r.status, json: await r.json() as any };
+      };
+      const correct = (id: unknown, fromStatus: string, orderStatus: string) => call(`/payments/admin/orders/${id}/status-correction`, { fromStatus, orderStatus, reason: 'UAT ship check' }, superT);
+      const t = await mkOrder(true), n = await mkOrder(false);
+      const statusOf = async (id: unknown) => ((await Order.findById(id).lean()) as any).orderStatus;
+      const NOT_SHIPPABLE = ['TEST_PAYMENT_NOT_SHIPPABLE', 'UAT test order: no money was received, so it cannot be shipped or delivered'];
+
+      for (const to of ['shipped', 'delivered']) {
+        const r = await put(t._id, to);
+        assert.deepStrictEqual([r.status, r.json.code, r.json.message], [409, ...NOT_SHIPPABLE], `admin -> ${to}`);
+        assert.strictEqual(await statusOf(t._id), 'processing', `admin -> ${to}: unchanged`);
+      }
+      // Correction path: cancelled -> shipped / delivered would be a "correction"; refused for a test order
+      assert.strictEqual((await put(t._id, 'cancelled')).status, 200, 'a test order can be cancelled');
+      for (const to of ['shipped', 'delivered']) {
+        const r = await correct(t._id, 'cancelled', to);
+        assert.deepStrictEqual([r.status, r.json.code], [409, NOT_SHIPPABLE[0]], `correction -> ${to}: ${JSON.stringify(r.json)}`);
+        assert.strictEqual(await statusOf(t._id), 'cancelled', `correction -> ${to}: unchanged`);
+      }
+      const back = await correct(t._id, 'cancelled', 'processing');
+      assert.strictEqual(back.status, 200, `other corrections still work: ${JSON.stringify(back.json)}`);
+
+      // A normal paid order keeps the full workflow
+      assert.strictEqual((await put(n._id, 'shipped')).status, 200);
+      assert.strictEqual((await put(n._id, 'delivered')).status, 200);
+      assert.strictEqual(await statusOf(n._id), 'delivered');
+      const fix = await correct(n._id, 'delivered', 'shipped');
+      assert.strictEqual(fix.status, 200, 'normal correction still works');
+      await Order.deleteMany({ _id: { $in: [t._id, n._id] } });
     });
 
     console.log(`\n${passed} passed`);

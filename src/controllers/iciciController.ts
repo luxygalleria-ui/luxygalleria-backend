@@ -4,7 +4,7 @@ import { Cart } from '../models/Cart';
 import { User } from '../models/User';
 import { CheckoutSession } from '../models/CheckoutSession';
 import { finalizeSession, releaseStock } from '../utils/checkoutSessions';
-import { gatewayFailure, icici, iciciConfigured, iciciLive, isIciciSuccess, parseJsonKeepNumberText, saleTxnDate, newTxnNo, postForm, postJson, signed, verifyV1 } from '../utils/iciciPg';
+import { gatewayFailure, icici, iciciConfigured, iciciLive, iciciMode, isIciciSuccess, uatOpenToAll, parseJsonKeepNumberText, saleTxnDate, newTxnNo, postForm, postJson, signed, verifyV1 } from '../utils/iciciPg';
 import { openSession, priceCheckout, sendOrderConfirmationEmail } from './paymentController';
 
 /**
@@ -48,8 +48,9 @@ const releaseSession = async (sessionId: unknown, detail: string) => {
   if (before?.stockReserved) await releaseStock(before.items);
 };
 
+// ICICI echoes amount in every reply (spec: mandatory): a signed success without it is never turned into an order
 const amountMatches = (amount: unknown, paise: number) =>
-  amount === undefined || amount === null || amount === '' || Math.round(Number(amount) * 100) === paise;
+  amount !== undefined && amount !== null && String(amount).trim() !== '' && Math.round(Number(amount) * 100) === paise;
 
 type Outcome = 'created' | 'existing' | 'unfulfillable' | 'processing' | 'pending' | 'failed' | 'mismatch' | 'unknown';
 
@@ -70,8 +71,9 @@ const applyResult = async (
   }
   if (!amountMatches(amount, session.amountPaise)) {
     // Never turned into an order; money taken for the wrong amount is refunded manually
-    console.error(`ICICI ${source}: ${merchantTxnNo} paid ${amount}, expected ${session.amountPaise / 100}. Refund manually.`);
-    await CheckoutSession.updateOne({ _id: session._id }, { $push: { events: { at: new Date(), type: 'amount-mismatch', detail: `paid ${amount}` } } });
+    const got = amount === undefined || amount === null || String(amount).trim() === '' ? 'no amount' : `paid ${amount}`;
+    console.error(`ICICI ${source}: ${merchantTxnNo} ${got}, expected ${session.amountPaise / 100}. Not turned into an order; check and refund manually.`);
+    await CheckoutSession.updateOne({ _id: session._id }, { $push: { events: { at: new Date(), type: 'amount-mismatch', detail: got } } });
     return 'mismatch';
   }
   const { order, outcome } = await finalizeSession(session._id, txnID || merchantTxnNo, '', source);
@@ -147,7 +149,8 @@ export const iciciInitiate = async (req: Request, res: Response) => {
     // ICICI_PG_UAT_TEST_USER_IDS may pay. Fail-safe: NODE_ENV unset, "staging", "Production" etc. are all gated.
     // By _id, never email: registration does not prove email ownership and emails are stored case-sensitively, so
     // anyone could register a tester's address (or a case variant of it). req.user comes from the signed token's id.
-    if (!iciciLive() && process.env.NODE_ENV !== 'development') {
+    // ICICI_PG_UAT_ALL_CUSTOMERS=true opens real ICICI UAT (only) to every signed-in customer; their orders are testPayment.
+    if (!iciciLive() && process.env.NODE_ENV !== 'development' && !uatOpenToAll()) {
       const testers = uatTesterIds();
       if (!testers?.has(String(req.user!._id))) {
         if (!testers) console.error('ICICI UAT gate: ICICI_PG_UAT_TEST_USER_IDS has a malformed entry (each must be a 24-hex user _id): every customer is blocked');
@@ -166,7 +169,8 @@ export const iciciInitiate = async (req: Request, res: Response) => {
 
     const c = icici();
     const merchantTxnNo = newTxnNo();
-    const session = await openSession(req, res, priced, merchantTxnNo, 'icici');
+    // Test money: set by the server from its own ICICI configuration (never the request), copied to the order when paid
+    const session = await openSession(req, res, priced, merchantTxnNo, 'icici', false, iciciMode() === 'uat');
     if (!session) return;
 
     const user = req.user!;
@@ -224,8 +228,13 @@ export const iciciInitiate = async (req: Request, res: Response) => {
 export const iciciCallback = async (req: Request, res: Response) => {
   const to = (path: string) => res.redirect(302, `${frontend()}${path}`);
   try {
-    const outcome = await handleGatewayPost(gatewayParams(req), 'icici-callback');
-    if (outcome === 'created' || outcome === 'existing') return to('/order-success');
+    const p = gatewayParams(req);
+    const outcome = await handleGatewayPost(p, 'icici-callback');
+    if (outcome === 'created' || outcome === 'existing') {
+      // The page warns that a UAT test order is not a purchase; the flag comes from the stored session, not the post
+      const s = await CheckoutSession.findOne({ razorpayOrderId: String(p.merchantTxnNo), gateway: 'icici' }, { testPayment: 1 }).lean();
+      return to(s?.testPayment ? '/order-success?test=1' : '/order-success');
+    }
     if (outcome === 'unfulfillable') return to('/order-failure?reason=paid_out_of_stock');
     if (outcome === 'processing') return to('/order-failure?reason=processing');
     if (outcome === 'failed') return to('/order-failure'); // a verified decline or cancel: safe to try again
@@ -323,6 +332,8 @@ export const iciciRefund = async (req: Request, res: Response) => {
     const by = String(req.user?._id);
     const order: any = await Order.findById(req.body.orderId);
     if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+    // A UAT test order received no money: never send ICICI a refund for it
+    if (order.testPayment) return res.status(400).json({ success: false, code: 'TEST_PAYMENT', message: 'UAT test order: no money was received, so there is nothing to refund' });
     if (order.paymentMethod !== 'icici' || !order.iciciTxnId || order.paymentStatus !== 'completed') {
       return order.paymentStatus === 'refunded'
         ? res.status(200).json({ success: true, message: 'Refund already issued', data: order.refund })

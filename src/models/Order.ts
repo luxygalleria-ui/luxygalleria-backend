@@ -40,6 +40,8 @@ export interface IOrder extends Document {
   total: number;
   paymentMethod: string;
   paymentStatus: 'pending' | 'completed' | 'failed' | 'refunded';
+  /** Paid through ICICI UAT: no money was received. Never shipped, refunded, counted as revenue or sent to the ERP. */
+  testPayment?: boolean;
   orderStatus: 'processing' | 'shipped' | 'delivered' | 'cancelled';
   /** Gateway order reference: Razorpay order id, or the ICICI merchantTxnNo for paymentMethod "icici". */
   razorpayOrderId?: string;
@@ -127,6 +129,7 @@ const OrderSchema: Schema = new Schema(
       enum: ['pending', 'completed', 'failed', 'refunded'],
       default: 'pending',
     },
+    testPayment: { type: Boolean, default: false },
     orderStatus: {
       type: String,
       enum: ['processing', 'shipped', 'delivered', 'cancelled'],

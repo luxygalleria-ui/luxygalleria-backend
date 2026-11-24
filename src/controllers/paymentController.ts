@@ -12,12 +12,15 @@ import { CheckoutRuleError, Selection } from '../utils/orderPricing';
 import { CheckoutSettingsError } from '../utils/checkoutSettings';
 import { CheckoutSession, ICheckoutSession } from '../models/CheckoutSession';
 import { expireStaleSessions, finalizeSession, reserveStock, settingsFingerprint, snapshotFromQuote } from '../utils/checkoutSessions';
-import { ORDER_STATUSES, canMoveOrderStatus } from '../utils/orderStatus';
-import { iciciConfigured } from '../utils/iciciPg';
+import { ORDER_STATUSES, canMoveOrderStatus, shipBlocked, notShippableTestFilter, TEST_ORDER_NOT_SHIPPABLE } from '../utils/orderStatus';
+import { iciciConfigured, iciciMode } from '../utils/iciciPg';
 import { checkIciciStatus } from './iciciController';
 import { addressProblem } from '../utils/addressRules';
 import { afterOrderCancelled } from '../utils/orderCancellation';
 dotenv.config();
+
+/** Storefront base for links in emails, without trailing slashes (production's FRONTEND_URL ends with "/") */
+const frontendBase = () => (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
 
 export const razorpayInstance = new Razorpay({
   key_id: (process.env.RAZORPAY_KEY_ID || 'dummy_key_id').trim(),
@@ -100,6 +103,13 @@ const chargeRows = (o: any) => {
 };
 
 /** Order confirmation email. Never throws: a mail failure must not fail the order. */
+/** ICICI UAT test orders: said in every customer email, so no one takes one for a purchase. */
+export const TEST_ORDER_NOTICE = 'UAT TEST PAYMENT — NO REAL MONEY WAS RECEIVED. THIS ORDER WILL NOT BE DELIVERED.';
+const testBanner = (order: any) => order?.testPayment
+  ? `<p style="background:#fef2f2;border:2px solid #dc2626;color:#991b1b;font-weight:bold;padding:12px;border-radius:6px;text-align:center;margin:0 0 20px;">${TEST_ORDER_NOTICE}</p>`
+  : '';
+const testSubject = (order: any, subject: string) => (order?.testPayment ? `[UAT TEST - NOT A REAL ORDER] ${subject}` : subject);
+
 export const sendOrderConfirmationEmail = async (newOrder: any, user: { _id: unknown; name?: string; email?: string; role?: string }) => {
       try {
         if (user && user.email) {
@@ -126,6 +136,7 @@ export const sendOrderConfirmationEmail = async (newOrder: any, user: { _id: unk
                 <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 2px; text-transform: uppercase;">Luxy Galleria</h1>
               </div>
               <div style="padding: 40px 30px;">
+                ${testBanner(newOrder)}
                 <h2 style="color: #111827; font-size: 20px; margin-top: 0; margin-bottom: 20px;">Order Confirmation</h2>
                 <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
                   Dear <strong>${user.name}</strong>,<br><br>
@@ -167,7 +178,7 @@ export const sendOrderConfirmationEmail = async (newOrder: any, user: { _id: unk
                   We will send you another email once your order has been shipped. If you have any questions, feel free to reply to this email.
                 </p>
                 <div style="text-align: center;">
-                  <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/profile" style="background-color: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block;">View Order Details</a>
+                  <a href="${frontendBase()}/profile" style="background-color: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block;">View Order Details</a>
                 </div>
               </div>
               <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #eaeaea;">
@@ -177,7 +188,7 @@ export const sendOrderConfirmationEmail = async (newOrder: any, user: { _id: unk
           `;
           await sendEmail({
             email: user.email,
-            subject: 'Order Confirmation - Luxy Galleria',
+            subject: testSubject(newOrder, 'Order Confirmation - Luxy Galleria'),
             html: htmlMessage
           });
         }
@@ -214,7 +225,7 @@ export const customerOrderView = (doc: any) => {
   const product = (p: any) => (p && typeof p === 'object' && p.name !== undefined ? { _id: p._id, name: p.name, images: p.images } : null);
   return {
     _id: o._id, createdAt: o.createdAt, updatedAt: o.updatedAt,
-    orderStatus: o.orderStatus, paymentStatus: o.paymentStatus, paymentMethod: o.paymentMethod,
+    orderStatus: o.orderStatus, paymentStatus: o.paymentStatus, paymentMethod: o.paymentMethod, testPayment: o.testPayment === true,
     subtotal: o.subtotal, discount: o.discount, shippingFee: o.shippingFee, total: o.total,
     fulfillmentMethod: o.fulfillmentMethod, shippingMethod: o.shippingMethod, shippingAddress: o.shippingAddress,
     billingAddress: o.billingAddress, pickupDetails: o.pickupDetails, pickupFee: o.pickupFee, specialPackagingFee: o.specialPackagingFee, tax: o.tax,
@@ -319,16 +330,16 @@ export const priceCheckout = async (req: Request, res: Response) => {
  */
 export const openSession = async (
   req: Request, res: Response, priced: NonNullable<Awaited<ReturnType<typeof priceCheckout>>>,
-  gatewayOrderId: string, gateway: 'razorpay' | 'icici', isMock = false,
+  gatewayOrderId: string, gateway: 'razorpay' | 'icici', isMock = false, testPayment = false,
 ) => {
   // Saved as holding stock BEFORE the stock is taken, so an ERP stock update (erpController.updateStock) always either
   // counts this hold or sees the stock change and retries: it can never overwrite a reservation it did not count.
   // A failed reservation briefly under-counts, never over.
   const fp = await settingsFingerprint();
-  const session = await CheckoutSession.create(snapshotFromQuote(priced.totals, priced.items, {
+  const session = await CheckoutSession.create({ ...snapshotFromQuote(priced.totals, priced.items, {
     user: req.user!._id, razorpayOrderId: gatewayOrderId, gateway, isMock, shippingAddress: priced.shippingAddress,
     billingAddress: priced.billingAddress, settingsVersion: fp.version, settingsUpdatedAt: fp.updatedAt,
-  }));
+  }), testPayment });
 
   // Reserve stock now (atomic, all or nothing) so concurrent checkouts can never sell the same units
   const reserved = await reserveStock(priced.totals.lines);
@@ -475,7 +486,8 @@ export const calculateShipping = async (req: Request, res: Response) => {
   if (typeof selection === 'string') return res.status(400).json({ success: false, message: selection });
   try {
     const result = await calculateShippingForItems(items, selection);
-    return res.status(200).json({ success: true, data: result });
+    // testPayment: online payment goes to ICICI UAT (test money), so checkout warns that no real order results
+    return res.status(200).json({ success: true, data: { ...result, testPayment: iciciMode() === 'uat' } });
   } catch (error: any) {
     return pricingError(res, error);
   }
@@ -522,7 +534,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Invalid order status' });
     }
 
-    const current = await Order.findById(id, { orderStatus: 1 }).lean();
+    const current = await Order.findById(id, { orderStatus: 1, testPayment: 1 }).lean();
     if (!current) {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
@@ -532,6 +544,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
     if (current.orderStatus === orderStatus) {
       return res.status(200).json({ success: true, message: 'Order status unchanged', data: await populated(Order.findById(id)) });
     }
+    if (shipBlocked(current, orderStatus)) return res.status(409).json({ success: false, ...TEST_ORDER_NOT_SHIPPABLE });
     if (!canMoveOrderStatus(current.orderStatus, orderStatus)) {
       return res.status(409).json({ success: false, code: 'INVALID_TRANSITION', message: `Order cannot move from ${current.orderStatus} to ${orderStatus}` });
     }
@@ -539,7 +552,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
     // Conditional on the status checked above, so a concurrent ERP callback or second admin is never overwritten.
     // statusUpdatedAt makes an older ERP event arriving later count as stale, as it would against an ERP change.
     let order = await populated(Order.findOneAndUpdate(
-      { _id: id, orderStatus: current.orderStatus },
+      { _id: id, orderStatus: current.orderStatus, ...notShippableTestFilter(orderStatus) },
       { $set: { orderStatus, statusUpdatedAt: new Date() } },
       { new: true, runValidators: true }
     ));
@@ -583,9 +596,13 @@ export const correctOrderStatus = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, code: 'NOT_A_CORRECTION', message: `${fromStatus} -> ${orderStatus} is not a correction; use the normal status change` });
     }
 
+    if (shipBlocked(await Order.findById(req.params.id, { testPayment: 1 }).lean(), orderStatus)) {
+      return res.status(409).json({ success: false, ...TEST_ORDER_NOT_SHIPPABLE });
+    }
+
     const now = new Date();
     const order = await Order.findOneAndUpdate(
-      { _id: req.params.id, orderStatus: fromStatus },
+      { _id: req.params.id, orderStatus: fromStatus, ...notShippableTestFilter(orderStatus) },
       {
         $set: { orderStatus, statusUpdatedAt: now },
         $push: { statusCorrections: { at: now, by: String(req.user!._id), from: fromStatus, to: orderStatus, reason } },
@@ -654,6 +671,7 @@ export const sendOrderStatusEmail = async (order: any, orderStatus: string) => {
                 <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 2px; text-transform: uppercase;">Luxy Galleria</h1>
               </div>
               <div style="padding: 40px 30px;">
+                ${testBanner(order)}
                 <h2 style="color: #111827; font-size: 20px; margin-top: 0; margin-bottom: 20px;">Order Status Update</h2>
                 <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
                   Dear <strong>${user.name}</strong>,<br><br>
@@ -699,7 +717,7 @@ export const sendOrderStatusEmail = async (order: any, orderStatus: string) => {
                   Thank you for shopping with Luxy Galleria. If you have any questions, feel free to reply to this email.
                 </p>
                 <div style="text-align: center;">
-                  <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/profile" style="background-color: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block;">View Order History</a>
+                  <a href="${frontendBase()}/profile" style="background-color: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block;">View Order History</a>
                 </div>
               </div>
               <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #eaeaea;">
@@ -709,7 +727,7 @@ export const sendOrderStatusEmail = async (order: any, orderStatus: string) => {
         `;
         await sendEmail({
           email: user.email,
-          subject: subject,
+          subject: testSubject(order, subject),
           html: htmlMessage
         });
       } else {

@@ -11,7 +11,7 @@ import { User } from '../models/User';
 import Order from '../models/Order';
 import { ErpEvent } from '../models/ErpEvent';
 import { CheckoutSession } from '../models/CheckoutSession';
-import { ORDER_STATUSES, canMoveOrderStatus as canMove } from '../utils/orderStatus';
+import { ORDER_STATUSES, canMoveOrderStatus as canMove, shipBlocked, notShippableTestFilter, TEST_ORDER_NOT_SHIPPABLE } from '../utils/orderStatus';
 import { asyncHandler } from '../utils/asyncHandler';
 import { successResponse, errorResponse } from '../utils/responseHandler';
 import { parseWeightFromVolume } from '../utils/shippingCalculator';
@@ -478,7 +478,8 @@ export const listOrders = asyncHandler(async (req: Request, res: Response) => {
   if (!parsed.success) return invalid(res, parsed.error);
   const { page, limit, status, paymentStatus, updatedSince } = parsed.data;
 
-  const filter: Record<string, unknown> = {};
+  // ICICI UAT test orders (no money received) are never exported: the ERP must not fulfil or account for them
+  const filter: Record<string, unknown> = { testPayment: { $ne: true } };
   if (status) filter.orderStatus = status;
   if (paymentStatus) filter.paymentStatus = paymentStatus;
   if (updatedSince) filter.updatedAt = { $gte: new Date(updatedSince) };
@@ -500,7 +501,7 @@ export const listOrders = asyncHandler(async (req: Request, res: Response) => {
 // GET /erp/orders/:orderId
 export const getOrder = asyncHandler(async (req: Request, res: Response) => {
   if (!/^[a-f\d]{24}$/i.test(req.params.orderId)) return fail(res, 400, 'orderId must be a 24-character hex id', 'VALIDATION_ERROR', 'orderId');
-  const o: any = await Order.findById(req.params.orderId).lean();
+  const o: any = await Order.findOne({ _id: req.params.orderId, testPayment: { $ne: true } }).lean(); // UAT test orders: not exported
   if (!o) return fail(res, 404, 'Order not found', 'NOT_FOUND', 'orderId');
   const refs = await loadRefs([o]);
   const summary = orderSummary(o, refs);
@@ -547,6 +548,8 @@ export const orderStatusWebhook = asyncHandler(async (req: Request, res: Respons
     return fail(res, 409, 'erpOrderId does not match the ERP order already linked to this order', 'CONFLICT', 'erpOrderId');
   }
 
+  if (shipBlocked(order, e.status)) return fail(res, 409, TEST_ORDER_NOT_SHIPPABLE.message, TEST_ORDER_NOT_SHIPPABLE.code, 'status');
+
   const previousStatus = order.orderStatus;
   let outcome: 'applied' | 'unchanged' | 'stale';
   if (order.statusUpdatedAt && occurredAt <= order.statusUpdatedAt) outcome = 'stale';
@@ -564,7 +567,7 @@ export const orderStatusWebhook = asyncHandler(async (req: Request, res: Respons
   if (Object.keys(set).length) {
     // Conditional on what we decided from, so two racing events cannot both apply
     const r = await Order.updateOne(
-      { _id: order._id, orderStatus: previousStatus, statusUpdatedAt: order.statusUpdatedAt ?? { $exists: false } },
+      { _id: order._id, orderStatus: previousStatus, statusUpdatedAt: order.statusUpdatedAt ?? { $exists: false }, ...notShippableTestFilter(e.status) },
       { $set: set }
     );
     if (!r.matchedCount) return fail(res, 409, 'Order changed while processing this event; retry it', 'CONFLICT');

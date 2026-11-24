@@ -22,7 +22,9 @@ const afterOrderCancelled = async (orderId, previousStatus) => {
                 .map((i) => ({ product: i.product, variantId: i.variantId, quantity: i.quantity, name: i.name })));
         }
     }
-    await Order_1.default.updateOne({ _id: orderId, orderStatus: 'cancelled', paymentStatus: 'completed', $or: [{ 'refund.status': { $exists: false } }, { 'refund.status': null }] }, { $set: { 'refund.status': 'required' }, $push: { 'refund.events': { at: new Date(), by: 'system', action: 'required', detail: 'Paid order cancelled: refund the customer' } } });
+    await Order_1.default.updateOne(
+    // A UAT test order (testPayment) received no money: nothing to refund
+    { _id: orderId, orderStatus: 'cancelled', paymentStatus: 'completed', testPayment: { $ne: true }, $or: [{ 'refund.status': { $exists: false } }, { 'refund.status': null }] }, { $set: { 'refund.status': 'required' }, $push: { 'refund.events': { at: new Date(), by: 'system', action: 'required', detail: 'Paid order cancelled: refund the customer' } } });
 };
 exports.afterOrderCancelled = afterOrderCancelled;
 //# sourceMappingURL=orderCancellation.js.map
