@@ -49,6 +49,9 @@ const userSchema = new mongoose_1.Schema({
     isVerified: { type: Boolean, default: false },
     otp: { type: String },
     otpExpires: { type: Date },
+    passwordResetTokenHash: { type: String, select: false },
+    passwordResetExpires: { type: Date, select: false },
+    passwordChangedAt: { type: Date },
     googleId: { type: String },
     avatar: { type: String },
     addresses: [{

@@ -10,6 +10,8 @@ router.post('/customer-login', rateLimiter_1.authLimiter, authController_1.login
 router.post('/register', rateLimiter_1.authLimiter, authController_1.registerCustomer);
 router.post('/verify-otp', rateLimiter_1.otpLimiter, authController_1.verifyOtp);
 router.post('/resend-otp', rateLimiter_1.otpLimiter, authController_1.resendOtp);
+router.post('/forgot-password', rateLimiter_1.forgotPasswordLimiter, authController_1.forgotPassword);
+router.post('/reset-password', rateLimiter_1.resetPasswordLimiter, authController_1.resetPassword);
 router.post('/google', rateLimiter_1.authLimiter, authController_1.googleAuth);
 router.post('/google/link', rateLimiter_1.authLimiter, authMiddleware_1.protect, authController_1.linkGoogleAccount);
 // Removed: GET /debug-users, POST /fix-user-password and POST /setup-test-admin (unauthenticated; listed customers with

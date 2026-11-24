@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.uploadLimiter = exports.paymentLimiter = exports.otpLimiter = exports.authLimiter = exports.erpLimiter = exports.apiLimiter = void 0;
+exports.uploadLimiter = exports.paymentLimiter = exports.resetPasswordLimiter = exports.forgotPasswordLimiter = exports.otpLimiter = exports.authLimiter = exports.erpLimiter = exports.apiLimiter = void 0;
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 // General API rate limiter
 exports.apiLimiter = (0, express_rate_limit_1.default)({
@@ -39,6 +39,23 @@ exports.otpLimiter = (0, express_rate_limit_1.default)({
     windowMs: 60 * 60 * 1000, // 1 hour
     max: 3,
     message: 'Too many OTP requests. Please try again after 1 hour.',
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: () => process.env.NODE_ENV === 'development',
+});
+// Password reset: a reset request (sends an email) and the reset itself (guesses a token), per IP
+exports.forgotPasswordLimiter = (0, express_rate_limit_1.default)({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    message: { success: false, message: 'Too many password reset requests. Please try again in 15 minutes.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: () => process.env.NODE_ENV === 'development',
+});
+exports.resetPasswordLimiter = (0, express_rate_limit_1.default)({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: { success: false, message: 'Too many attempts. Please try again in 15 minutes.' },
     standardHeaders: true,
     legacyHeaders: false,
     skip: () => process.env.NODE_ENV === 'development',

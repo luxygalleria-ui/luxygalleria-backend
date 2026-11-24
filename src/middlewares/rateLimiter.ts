@@ -42,6 +42,25 @@ export const otpLimiter = rateLimit({
   skip: () => process.env.NODE_ENV === 'development',
 });
 
+// Password reset: a reset request (sends an email) and the reset itself (guesses a token), per IP
+export const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { success: false, message: 'Too many password reset requests. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'development',
+});
+
+export const resetPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { success: false, message: 'Too many attempts. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'development',
+});
+
 // Payment rate limiter
 export const paymentLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute

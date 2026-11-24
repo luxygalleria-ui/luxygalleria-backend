@@ -29,6 +29,10 @@ exports.protect = (0, asyncHandler_1.asyncHandler)(async (req, res, next) => {
         if (!user.isActive) {
             return (0, responseHandler_1.errorResponse)(res, 403, 'User account is deactivated');
         }
+        // A password reset signs every earlier session out (tokens issued before passwordChangedAt)
+        if (user.passwordChangedAt && (!decoded.iat || decoded.iat * 1000 < user.passwordChangedAt.getTime())) {
+            return (0, responseHandler_1.errorResponse)(res, 401, 'Your password was changed. Please sign in again.', { code: 'PASSWORD_CHANGED' });
+        }
         req.user = user;
         next();
     }

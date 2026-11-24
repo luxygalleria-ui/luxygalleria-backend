@@ -6,6 +6,8 @@ interface EmailOptions {
   subject: string;
   message?: string;
   html?: string;
+  /** Contains a secret (e.g. a password-reset link): the body is never written to any log, in any environment */
+  sensitive?: boolean;
 }
 
 // Initialize SendGrid
@@ -46,7 +48,7 @@ export const sendEmail = async (options: EmailOptions): Promise<any> => {
   // If SendGrid is not configured, log to console instead (for development)
   if (!process.env.SENDGRID_API_KEY) {
     // Outside local development the body (OTP codes, order details) and the full address never reach the log
-    if (process.env.NODE_ENV !== 'development') {
+    if (process.env.NODE_ENV !== 'development' || options.sensitive) {
       console.warn(`📧 Email not sent (SendGrid not configured): "${options.subject}" to ${maskEmail(options.email)}`);
       return { success: true, provider: 'console', note: 'Email not sent (SendGrid not configured)' };
     }

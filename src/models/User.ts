@@ -11,6 +11,11 @@ export interface IUser extends Document {
   isVerified: boolean;
   otp?: string;
   otpExpires?: Date;
+  /** sha256 of the single-use password-reset token (the token itself is never stored) */
+  passwordResetTokenHash?: string;
+  passwordResetExpires?: Date;
+  /** Sessions (JWTs) issued before this moment are refused: set when the password is reset */
+  passwordChangedAt?: Date;
   googleId?: string;
   avatar?: string;
   addresses?: {
@@ -36,6 +41,9 @@ const userSchema = new Schema<IUser>({
   isVerified: { type: Boolean, default: false },
   otp: { type: String },
   otpExpires: { type: Date },
+  passwordResetTokenHash: { type: String, select: false },
+  passwordResetExpires: { type: Date, select: false },
+  passwordChangedAt: { type: Date },
   googleId: { type: String },
   avatar: { type: String },
   addresses: [{

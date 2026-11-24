@@ -40,7 +40,7 @@ const sendEmail = async (options) => {
     // If SendGrid is not configured, log to console instead (for development)
     if (!process.env.SENDGRID_API_KEY) {
         // Outside local development the body (OTP codes, order details) and the full address never reach the log
-        if (process.env.NODE_ENV !== 'development') {
+        if (process.env.NODE_ENV !== 'development' || options.sensitive) {
             console.warn(`📧 Email not sent (SendGrid not configured): "${options.subject}" to ${(0, exports.maskEmail)(options.email)}`);
             return { success: true, provider: 'console', note: 'Email not sent (SendGrid not configured)' };
         }

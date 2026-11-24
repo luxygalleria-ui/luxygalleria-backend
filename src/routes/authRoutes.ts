@@ -6,10 +6,12 @@ import {
   verifyOtp,
   resendOtp,
   googleAuth,
-  linkGoogleAccount
+  linkGoogleAccount,
+  forgotPassword,
+  resetPassword
 } from '../controllers/authController';
 import { protect } from '../middlewares/authMiddleware';
-import { authLimiter, otpLimiter } from '../middlewares/rateLimiter';
+import { authLimiter, otpLimiter, forgotPasswordLimiter, resetPasswordLimiter } from '../middlewares/rateLimiter';
 
 const router = Router();
 
@@ -18,6 +20,8 @@ router.post('/customer-login', authLimiter, loginCustomer);
 router.post('/register', authLimiter, registerCustomer);
 router.post('/verify-otp', otpLimiter, verifyOtp);
 router.post('/resend-otp', otpLimiter, resendOtp);
+router.post('/forgot-password', forgotPasswordLimiter, forgotPassword);
+router.post('/reset-password', resetPasswordLimiter, resetPassword);
 router.post('/google', authLimiter, googleAuth);
 router.post('/google/link', authLimiter, protect, linkGoogleAccount);
 

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.linkGoogleAccount = exports.googleAuth = exports.loginCustomer = exports.resendOtp = exports.verifyOtp = exports.registerCustomer = exports.loginAdmin = exports.secureCookies = void 0;
+exports.resetPassword = exports.forgotPassword = exports.hashResetToken = exports.FORGOT_PASSWORD_REPLY = exports.PASSWORD_RESET_TTL_MS = exports.linkGoogleAccount = exports.googleAuth = exports.loginCustomer = exports.resendOtp = exports.verifyOtp = exports.registerCustomer = exports.loginAdmin = exports.secureCookies = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const User_1 = require("../models/User");
 const asyncHandler_1 = require("../utils/asyncHandler");
@@ -374,5 +374,76 @@ exports.linkGoogleAccount = (0, asyncHandler_1.asyncHandler)(async (req, res) =>
     }
     await User_1.User.updateOne({ _id: user._id, googleId: { $exists: false } }, { $set: { googleId } });
     (0, responseHandler_1.successResponse)(res, 200, 'Google account linked', { googleLinked: true });
+});
+// ---------------------------------------------------------------------------------------------------------------------
+// Forgot / reset password (customers). The reply never says whether an account exists; the emailed token is random,
+// single-use, valid for 30 minutes and stored only as a sha256 hash; a reset signs every earlier session out.
+// ---------------------------------------------------------------------------------------------------------------------
+const validation_1 = require("../middlewares/validation");
+exports.PASSWORD_RESET_TTL_MS = 30 * 60 * 1000;
+exports.FORGOT_PASSWORD_REPLY = 'If an account exists for that email address, we have sent a link to reset the password. The link expires in 30 minutes.';
+const INVALID_RESET_LINK = 'This reset link is invalid or has expired. Please request a new one.';
+const EMAIL_FORMAT = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** The same password rule as registration (8+ characters with upper and lower case, a number and a symbol) */
+const passwordRule = validation_1.schemas.register.shape.body.shape.password;
+const hashResetToken = (token) => crypto_1.default.createHash('sha256').update(token).digest('hex');
+exports.hashResetToken = hashResetToken;
+const frontendBase = () => (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
+exports.forgotPassword = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+    if (!EMAIL_FORMAT.test(email) || email.length > 254) {
+        return (0, responseHandler_1.errorResponse)(res, 400, 'Please enter a valid email address.');
+    }
+    // Customers only (staff use the admin portal); unknown, staff or deactivated accounts get the same reply
+    const user = await User_1.User.findOne({ email, role: 'customer', isActive: true }).select('+passwordResetExpires');
+    if (user) {
+        // Asked again within a minute: keep the link already sent instead of mailing a new one (no inbox flooding)
+        const justSent = user.passwordResetExpires && user.passwordResetExpires.getTime() - Date.now() > exports.PASSWORD_RESET_TTL_MS - 60_000;
+        if (!justSent) {
+            const token = crypto_1.default.randomBytes(32).toString('hex'); // 256-bit CSPRNG token, only its hash is stored
+            await User_1.User.updateOne({ _id: user._id }, {
+                $set: { passwordResetTokenHash: (0, exports.hashResetToken)(token), passwordResetExpires: new Date(Date.now() + exports.PASSWORD_RESET_TTL_MS) },
+            });
+            const link = `${frontendBase()}/reset-password?token=${token}`;
+            // Not awaited: the reply takes the same time whether or not the account exists. sensitive: the body (the link)
+            // is never written to any log
+            (0, sendEmail_1.sendEmail)({
+                email: user.email,
+                subject: 'Reset your Luxy Galleria password',
+                sensitive: true,
+                message: `We received a request to reset the password of your Luxy Galleria account.\n\nOpen this link within 30 minutes to choose a new password:\n${link}\n\nIf you did not ask for this, you can ignore this email; your password stays the same.`,
+                html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #0A192F;">Reset your password</h2>
+          <p>We received a request to reset the password of your Luxy Galleria account.</p>
+          <p><a href="${link}" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;">Choose a new password</a></p>
+          <p style="color:#6b7280;font-size:14px;">This link expires in 30 minutes and can be used once. If you did not ask for this, you can ignore this email; your password stays the same.</p>
+        </div>`,
+            }).catch((err) => console.error('Password reset email could not be sent:', err?.message));
+        }
+    }
+    return (0, responseHandler_1.successResponse)(res, 200, exports.FORGOT_PASSWORD_REPLY, null);
+});
+exports.resetPassword = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+    const { password, confirmPassword } = req.body ?? {};
+    if (!/^[a-f0-9]{64}$/.test(token))
+        return (0, responseHandler_1.errorResponse)(res, 400, INVALID_RESET_LINK);
+    if (typeof password !== 'string' || typeof confirmPassword !== 'string' || password !== confirmPassword) {
+        return (0, responseHandler_1.errorResponse)(res, 400, 'The two passwords do not match.');
+    }
+    // Checked before the token is used, so a weak first attempt does not spend the link
+    const strength = passwordRule.safeParse(password);
+    if (!strength.success)
+        return (0, responseHandler_1.errorResponse)(res, 400, strength.error.issues[0]?.message || 'Please choose a stronger password.');
+    // Claim the token atomically: it works once; a second or concurrent use finds nothing
+    const user = await User_1.User.findOneAndUpdate({ passwordResetTokenHash: (0, exports.hashResetToken)(token), passwordResetExpires: { $gt: new Date() } }, { $unset: { passwordResetTokenHash: 1, passwordResetExpires: 1 } }, { new: true });
+    if (!user)
+        return (0, responseHandler_1.errorResponse)(res, 400, INVALID_RESET_LINK);
+    user.password = password; // hashed by the model's pre-save hook (bcrypt), like registration
+    user.passwordChangedAt = new Date(Date.now() - 1000); // sessions issued before the reset are refused (1 s for clock granularity)
+    await user.save();
+    // Never logged in automatically: clear any session cookie on this browser too
+    res.clearCookie('jwt', { httpOnly: true, secure: (0, exports.secureCookies)(), sameSite: 'strict' });
+    return (0, responseHandler_1.successResponse)(res, 200, 'Your password has been reset. Please sign in with your new password.', null);
 });
 //# sourceMappingURL=authController.js.map
