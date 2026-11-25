@@ -230,6 +230,8 @@ export const iciciInitiate = async (req: Request, res: Response) => {
     }
 
     await CheckoutSession.updateOne({ _id: session._id }, { $push: { events: { at: new Date(), type: 'icici-initiated', detail: String(resp.tranCtx) } } });
+    // Host only (tranCtx is a payment token): the storefront accepts https pages on icicibank.com / icici.com
+    console.info(`ICICI initiateSale ${merchantTxnNo}: payment page host ${new URL(redirectUrl).host}`);
     return res.status(200).json({ success: true, data: { redirectUrl, merchantTxnNo } });
   } catch (error: any) {
     console.error('Error initiating ICICI payment:', error?.message);

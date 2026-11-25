@@ -233,6 +233,8 @@ const iciciInitiate = async (req, res) => {
             return res.status(502).json({ success: false, message: 'The ICICI payment gateway could not start this payment. You have not been charged. Please try again.' });
         }
         await CheckoutSession_1.CheckoutSession.updateOne({ _id: session._id }, { $push: { events: { at: new Date(), type: 'icici-initiated', detail: String(resp.tranCtx) } } });
+        // Host only (tranCtx is a payment token): the storefront accepts https pages on icicibank.com / icici.com
+        console.info(`ICICI initiateSale ${merchantTxnNo}: payment page host ${new URL(redirectUrl).host}`);
         return res.status(200).json({ success: true, data: { redirectUrl, merchantTxnNo } });
     }
     catch (error) {
