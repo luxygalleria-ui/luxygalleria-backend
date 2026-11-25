@@ -51,6 +51,15 @@ const run = async () => {
   await test('only a parseable https redirectURI with a tranCtx becomes a redirect; its own query is kept', () => {
     assert.strictEqual(paymentPageUrl({ redirectURI: 'https://pg.test/auth', tranCtx: 'AB12' }), 'https://pg.test/auth?tranCtx=AB12');
     assert.strictEqual(paymentPageUrl({ redirectURI: 'https://pg.test/auth?v=2', tranCtx: 'a b&c' }), 'https://pg.test/auth?v=2&tranCtx=a+b%26c');
+    // Local mock page over plain http: development + loopback only; never in production or test, never another host
+    const savedEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'development';
+      assert.strictEqual(paymentPageUrl({ redirectURI: 'http://localhost:8443/auth', tranCtx: 'T1' }), 'http://localhost:8443/auth?tranCtx=T1');
+      assert.strictEqual(paymentPageUrl({ redirectURI: 'http://127.0.0.1:8443/auth', tranCtx: 'T1' }), 'http://127.0.0.1:8443/auth?tranCtx=T1');
+      for (const u of ['http://pg.test/auth', 'http://localhost.evil.test/auth', 'http://u:p@localhost:8443/auth']) assert.strictEqual(paymentPageUrl({ redirectURI: u, tranCtx: 'T1' }), '', u);
+      for (const env of ['production', 'test']) { process.env.NODE_ENV = env; assert.strictEqual(paymentPageUrl({ redirectURI: 'http://localhost:8443/auth', tranCtx: 'T1' }), '', env); }
+    } finally { process.env.NODE_ENV = savedEnv; }
     for (const bad of [{ redirectURI: 'http://pg.test/auth', tranCtx: 'x' }, { redirectURI: 'javascript:alert(1)', tranCtx: 'x' },
       { redirectURI: 'not a url', tranCtx: 'x' }, { redirectURI: 'https://pg.test/auth' }, { tranCtx: 'x' }, null, undefined]) {
       assert.strictEqual(paymentPageUrl(bad), '', JSON.stringify(bad));

@@ -6,6 +6,7 @@ import { CheckoutSession } from '../models/CheckoutSession';
 import { finalizeSession, releaseStock } from '../utils/checkoutSessions';
 import { gatewayFailure, icici, iciciConfigured, iciciLive, iciciMode, isIciciSuccess, uatOpenToAll, parseJsonKeepNumberText, saleTxnDate, newTxnNo, postForm, postJson, signed, verifyV1 } from '../utils/iciciPg';
 import { openSession, priceCheckout, sendOrderConfirmationEmail } from './paymentController';
+import { localMock } from '../utils/iciciLocalMock';
 
 /**
  * ICICI Orange PG, standard redirection (payType 0). Uses the same quote snapshot, stock reservation and
@@ -123,7 +124,9 @@ const uatTesterIds = (): Set<string> | null => {
 export const paymentPageUrl = (resp: any) => {
   try {
     const u = new URL(String(resp?.redirectURI ?? ''));
-    if (u.protocol !== 'https:' || !resp?.tranCtx) return '';
+    // https always; plain http only for the local mock page (NODE_ENV exactly development, loopback host, no credentials)
+    const localMock = u.protocol === 'http:' && process.env.NODE_ENV === 'development' && ['localhost', '127.0.0.1'].includes(u.hostname) && !u.username && !u.password;
+    if ((u.protocol !== 'https:' && !localMock) || !resp?.tranCtx) return '';
     u.searchParams.set('tranCtx', String(resp.tranCtx));
     return u.toString();
   } catch {
@@ -138,6 +141,16 @@ export const localMockDown = (err: any, url: string) => {
   try { host = new URL(url).hostname; } catch { return false; }
   const code = [err?.cause?.code, err?.code].find((c) => typeof c === 'string');
   return ['localhost', '127.0.0.1', '[::1]', '::1'].includes(host) && code === 'ECONNREFUSED';
+};
+
+/** initiateSale; in local development a refused loopback mock is started once and the call retried (it never reached a gateway). */
+const initiateSale = async (url: string, request: Record<string, unknown>) => {
+  try {
+    return await postJson(url, request);
+  } catch (err) {
+    if (localMockDown(err, url) && await localMock.start(url)) return postJson(url, request);
+    throw err;
+  }
 };
 
 // POST /payments/icici/initiate (customer): quote, reserve stock, initiateSale, return the gateway URL to redirect to
@@ -191,7 +204,7 @@ export const iciciInitiate = async (req: Request, res: Response) => {
 
     let resp: any;
     try {
-      resp = await postJson(c.initiateSaleUrl, request);
+      resp = await initiateSale(c.initiateSaleUrl, request);
     } catch (err: any) {
       const failure = gatewayFailure(err, c.initiateSaleUrl);
       await releaseSession(session._id, `initiateSale error: ${failure}`);
@@ -202,7 +215,7 @@ export const iciciInitiate = async (req: Request, res: Response) => {
       // Local development only: a refused loopback gateway is the local mock not running (plain npm run dev). Say so in
       // the reply the browser shows. Every other environment and failure keeps the generic customer message.
       if (localMockDown(err, c.initiateSaleUrl)) {
-        return res.status(502).json({ success: false, code: 'ICICI_LOCAL_MOCK_DOWN', message: `Local ICICI mock is not running at ${new URL(c.initiateSaleUrl).host}. Start the whole local checkout with: npm run dev:icici-mock (in luxy-backend). You have not been charged.` });
+        return res.status(502).json({ success: false, code: 'ICICI_LOCAL_MOCK_DOWN', message: `Local ICICI mock is not running at ${new URL(c.initiateSaleUrl).host} and could not be started automatically. Start the whole local checkout with: npm run dev:icici-mock (in luxy-backend). You have not been charged.` });
       }
       return res.status(502).json({ success: false, message: 'Could not reach the ICICI payment gateway. You have not been charged. Please try again in a few minutes.' });
     }

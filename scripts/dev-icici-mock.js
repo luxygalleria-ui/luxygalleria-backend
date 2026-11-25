@@ -2,9 +2,9 @@
 /**
  * LOCAL checkout with the ICICI MOCK, in order: mock gateway -> backend -> storefront.   npm run dev:icici-mock
  *
- *   1. scripts/icici-local-mock.js   API http://127.0.0.1:8442, payment page https://localhost:8443, returnURL https://localhost:8444
+ *   1. scripts/icici-local-mock.js   API http://127.0.0.1:8442, payment page http://localhost:8443, returnURL http://localhost:8444
  *   2. backend (ts-node-dev)         http://localhost:5000, NODE_ENV=development (real *.icicibank.com hosts are refused)
- *   3. storefront (next dev)         http://localhost:3000, NEXT_PUBLIC_ICICI_MOCK_ORIGIN=https://localhost:8443, so the
+ *   3. storefront (next dev)         http://localhost:3000, NEXT_PUBLIC_ICICI_MOCK_ORIGIN=http://localhost:8443, so the
  *                                    checkout may redirect to the mock page (next dev only; production builds never do)
  *
  * Each step starts only after the previous one answers its health check. Busy ports, a mock that refuses its config
@@ -28,7 +28,7 @@ try { fileEnv = require(path.join(ROOT, 'node_modules/dotenv')).parse(fs.readFil
 const num = (k, d) => Number(process.env[k] || d);
 const API_PORT = num('MOCK_ICICI_API_PORT', 8442), PAGE_PORT = num('MOCK_ICICI_PAGE_PORT', 8443), PROXY_PORT = num('MOCK_ICICI_PROXY_PORT', 8444);
 const BACKEND_PORT = num('PORT', fileEnv.PORT || 5000), FRONTEND_PORT = num('FRONTEND_PORT', 3000);
-const MOCK_ORIGIN = `https://localhost:${PAGE_PORT}`;
+const MOCK_ORIGIN = `http://localhost:${PAGE_PORT}`;
 
 const say = (msg) => console.log(`[dev:icici-mock] ${msg}`);
 const children = [];
@@ -103,13 +103,13 @@ const waitFor = async (name, url, child, timeoutMs, anyStatus = false) => {
   say('    backend is up');
 
   say(`3/3 storefront on :${FRONTEND_PORT} (mock payment page ${MOCK_ORIGIN} allowed under next dev)`);
-  const web = start('web', path.join(FRONTEND_DIR, 'node_modules/.bin/next'), ['dev', '--port', String(FRONTEND_PORT), '--webpack'],
+  const web = start('web', path.join(FRONTEND_DIR, 'node_modules/.bin/next'), ['dev', '--port', String(FRONTEND_PORT)],
     { cwd: FRONTEND_DIR, env: { ...base, NODE_ENV: 'development', NEXT_PUBLIC_ICICI_MOCK_ORIGIN: MOCK_ORIGIN, NEXT_PUBLIC_API_URL: `http://localhost:${BACKEND_PORT}/api/v1` } });
   if (!await waitFor('storefront', `http://localhost:${FRONTEND_PORT}/`, web, 180_000, true)) return;
 
   say('READY');
   say(`  shop:        http://localhost:${FRONTEND_PORT}  (sign in, add to cart, checkout, pay)`);
-  say(`  mock page:   ${MOCK_ORIGIN}  (accept the self-signed certificate once for :${PAGE_PORT} and :${PROXY_PORT})`);
+  say(`  mock page:   ${MOCK_ORIGIN}  (plain http on localhost: no certificate warning)`);
   say(`  mock state:  http://127.0.0.1:${API_PORT}/__stats   outcome: /__mode?outcome=success|decline|pending`);
   say('  Ctrl+C stops all three.');
 })().catch((e) => fail(e?.message || String(e)));

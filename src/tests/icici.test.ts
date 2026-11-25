@@ -24,6 +24,7 @@ import { Product } from '../models/Product';
 import { Cart } from '../models/Cart';
 import Order from '../models/Order';
 import { CheckoutSession } from '../models/CheckoutSession';
+import { localMock } from '../utils/iciciLocalMock';
 import { hashV1, hashV2, verifyV1, istTimestamp, saleTxnDate, assertGatewayAllowed, postForm, postJson, gatewayFailure, parseJsonKeepNumberText, iciciMode, iciciModeLine, uatOpenToAll } from '../utils/iciciPg';
 import { afterOrderCancelled } from '../utils/orderCancellation';
 import { orderAndCustomerStats } from '../utils/dashboardStats';
@@ -477,7 +478,8 @@ const run = async () => {
     });
 
     await test('local development, loopback mock refused: 502 names the mock and the start command; production and other failures keep the generic message', async () => {
-      const keys = ['NODE_ENV', 'ICICI_PG_INITIATE_SALE_URL', 'ICICI_PG_UAT_TEST_USER_IDS'];
+      const keys = ['NODE_ENV', 'ICICI_PG_INITIATE_SALE_URL', 'ICICI_PG_UAT_TEST_USER_IDS', 'ICICI_LOCAL_MOCK_AUTOSTART'];
+      process.env.ICICI_LOCAL_MOCK_AUTOSTART = 'false'; // never spawn the real mock here; the auto-start test below stubs it
       const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
       const refused = () => { throw new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:8442'), { code: 'ECONNREFUSED' }) }); };
       const GENERIC = 'Could not reach the ICICI payment gateway. You have not been charged. Please try again in a few minutes.';
@@ -503,6 +505,25 @@ const run = async () => {
         assert.deepStrictEqual([prod.r.status, prod.r.json.message, prod.r.json.code], [502, GENERIC, undefined], 'production never mentions the mock');
         const timeout = await run({ NODE_ENV: 'development', ICICI_PG_INITIATE_SALE_URL: LOCAL }, () => { throw new DOMException('timed out', 'TimeoutError'); });
         assert.deepStrictEqual([timeout.r.status, timeout.r.json.message, timeout.r.json.code], [502, GENERIC, undefined], 'a timeout is not "mock not running"');
+        // Auto-start: the mock comes up, the same initiateSale is retried once and checkout continues to the payment page
+        const origStart = localMock.start;
+        let starts = 0;
+        localMock.start = async () => { starts++; nextReply = null; return true; };
+        try {
+          Object.assign(process.env, { NODE_ENV: 'development', ICICI_PG_INITIATE_SALE_URL: LOCAL });
+          nextReply = refused;
+          const r = await initiate();
+          assert.strictEqual(starts, 1, 'started once');
+          assert.strictEqual(r.status, 200, JSON.stringify(r.json));
+          assert.ok(r.json.data?.redirectUrl, 'redirect to the payment page');
+        } finally { localMock.start = origStart; nextReply = null; }
+        // Auto-start failed: the actionable message, still no charge
+        localMock.start = async () => false;
+        try {
+          const failed = await run({ NODE_ENV: 'development', ICICI_PG_INITIATE_SALE_URL: LOCAL }, refused);
+          assert.strictEqual(failed.r.json.code, 'ICICI_LOCAL_MOCK_DOWN');
+          assert.ok(failed.released && failed.noOrder);
+        } finally { localMock.start = origStart; }
       } finally {
         console.error = origError;
         for (const k of keys) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }

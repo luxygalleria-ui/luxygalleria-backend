@@ -4,13 +4,13 @@
  * talks to is this machine (127.0.0.1). Binds 127.0.0.1 only (never the LAN).
  *
  *   http://127.0.0.1:8442   gateway API  (backend -> mock): POST /tsp/pg/api/v2/initiateSale (JSON), POST /tsp/pg/api/command (form)
- *   https://localhost:8443  hosted payment page (browser), choose success / decline / pending UPI
- *   https://localhost:8444  the https returnURL: proxies to the backend http://127.0.0.1:<PORT> (ICICI posts the result here)
+ *   http://localhost:8443   hosted payment page (browser), choose success / decline / pending UPI
+ *   http://localhost:8444   the returnURL: proxies to the backend http://127.0.0.1:<PORT> (ICICI posts the result here)
  *
  * Config: ICICI_PG_* from luxy-backend/.env (process env wins). Signs and verifies with that FAKE key only, and refuses
  * to start if the key or merchant ID equals the real UAT values in .env.uat.local, or if .env is not pointed at it.
- * TLS: a self-signed localhost certificate in the OS temp folder (created with openssl on first run). The browser asks
- * once to accept it for localhost:8443 and localhost:8444.
+ * Plain http on 127.0.0.1 only (no TLS, so no "Your connection is not private" page). The backend accepts an http
+ * payment page only in NODE_ENV=development on a loopback host; production keeps requiring https ICICI hosts.
  *
  * Run:   node scripts/icici-local-mock.js            (with npm run dev and the frontend)
  * Then:  checkout -> Pay -> on the mock page click Success / Decline / Pending UPI.
@@ -19,12 +19,9 @@
  *   /__advice?txn=&o=success|decline  (sends the signed server-to-server payment advice to the local backend)
  */
 const http = require('http');
-const https = require('https');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const parseEnv = (file) => {
@@ -53,17 +50,6 @@ for (const k of ['ICICI_PG_INITIATE_SALE_URL', 'ICICI_PG_COMMAND_URL']) {
   if (!['localhost', '127.0.0.1'].includes(u.hostname) || Number(u.port) !== API_PORT) refuse(`${k} does not point at this mock (http://localhost:${API_PORT})`);
 }
 
-// ---- TLS for the browser-facing servers
-const tlsDir = path.join(os.tmpdir(), 'luxy-icici-mock-tls');
-const keyPem = path.join(tlsDir, 'key.pem'), certPem = path.join(tlsDir, 'cert.pem');
-if (!fs.existsSync(keyPem) || !fs.existsSync(certPem)) {
-  fs.mkdirSync(tlsDir, { recursive: true, mode: 0o700 });
-  try {
-    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyPem, '-out', certPem, '-days', '30',
-      '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], { stdio: 'ignore' });
-  } catch { refuse('could not create a local TLS certificate (openssl is required)'); }
-}
-const tls = { key: fs.readFileSync(keyPem), cert: fs.readFileSync(certPem) };
 
 // ---- ICICI hash V1 (same rule as src/utils/iciciPg.ts): non-empty values by sorted key, HMAC-SHA256, lowercase hex
 const hashV1 = (p) => crypto.createHmac('sha256', KEY).update(Object.keys(p)
@@ -144,7 +130,7 @@ const api = http.createServer(async (req, res) => {
     txns.set(p.merchantTxnNo, { amount: p.amount, returnURL: p.returnURL, outcome: null, bankStatus: null, txnID: `MOCKTXN${++n}`, request: p });
     log(`initiateSale ${p.merchantTxnNo} amount ${p.amount} -> R1000`);
     return json(res, 200, sign({ responseCode: 'R1000', merchantId: MID, aggregatorID: null, merchantTxnNo: p.merchantTxnNo,
-      redirectURI: `https://localhost:${PAGE_PORT}/tsp/pg/api/v2/authRedirect`, showOTPCapturePage: 'N', generateOTPURI: null,
+      redirectURI: `http://localhost:${PAGE_PORT}/tsp/pg/api/v2/authRedirect`, showOTPCapturePage: 'N', generateOTPURI: null,
       verifyOTPURI: null, authorizeURI: null, tranCtx: `CTX-${p.merchantTxnNo}` }));
   }
   if (url.pathname === '/tsp/pg/api/command' && req.method === 'POST') {
@@ -175,7 +161,7 @@ const api = http.createServer(async (req, res) => {
 const paymentPageHtml = (txnNo, t) => {
   const choose = (o) => esc(`/choose?txn=${encodeURIComponent(txnNo)}&o=${o}`);
   const amount = esc(t.amount);
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" href="data:,">
 <title>Luxy Galleria · Local mock payment</title>
 <style>
 :root{--navy:#0b1f3a;--navy2:#1b3458;--ink:#22324a;--muted:#6b7a90;--line:#e3e8ef;--soft:#f6f8fb;--orange:#e8772e;--orange2:#fff3ea;--ok:#1f8a4c;--bad:#c0392b;--warn:#b7791f}
@@ -292,9 +278,9 @@ input:focus,select:focus{border-color:var(--navy2);box-shadow:0 0 0 3px rgba(27,
 </body></html>`;
 };
 
-// ---- hosted payment page (browser), https
-const page = https.createServer(tls, async (req, res) => {
-  const url = new URL(req.url, `https://localhost:${PAGE_PORT}`);
+// ---- hosted payment page (browser), plain http on loopback (no self-signed certificate warning)
+const page = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://localhost:${PAGE_PORT}`);
   if (url.pathname === '/tsp/pg/api/v2/authRedirect') {
     stats.pages++;
     const txnNo = String(url.searchParams.get('tranCtx') || '').replace(/^CTX-/, '');
@@ -311,22 +297,22 @@ const page = https.createServer(tls, async (req, res) => {
     t.outcome = o; const fields = resultFor(t, txnNo, o); t.lastResult = fields;
     log(`customer chose ${o} for ${txnNo} -> posting to returnURL`);
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    return res.end(`<!doctype html><html><body onload="document.forms[0].submit()"><p>Returning to the shop…</p><form method="POST" action="${esc(t.returnURL)}">${
+    return res.end(`<!doctype html><html><head><link rel="icon" href="data:,"></head><body onload="document.forms[0].submit()"><p>Returning to the shop…</p><form method="POST" action="${esc(t.returnURL)}">${
       Object.entries(fields).map(([k, v]) => `<input type="hidden" name="${esc(k)}" value="${esc(v)}">`).join('')}<noscript><button>Continue</button></noscript></form></body></html>`);
   }
   if (await control(url, res) === null) { stats.unknownPaths.push(`${req.method} ${url.pathname}`); res.writeHead(404); res.end(); }
 });
 
-// ---- https returnURL -> local backend (http://127.0.0.1:<PORT>)
-const proxy = https.createServer(tls, (req, res) => {
+// ---- returnURL -> local backend (http://127.0.0.1:<PORT>)
+const proxy = http.createServer((req, res) => {
   const up = http.request({ host: HOST, port: BACKEND_PORT, method: req.method, path: req.url,
-    headers: { ...req.headers, host: `localhost:${BACKEND_PORT}`, 'x-forwarded-proto': 'https' } }, (r) => { res.writeHead(r.statusCode, r.headers); r.pipe(res); });
+    headers: { ...req.headers, host: `localhost:${BACKEND_PORT}`, 'x-forwarded-proto': 'http' } }, (r) => { res.writeHead(r.statusCode, r.headers); r.pipe(res); });
   up.on('error', (e) => { res.writeHead(502, { 'Content-Type': 'text/plain' }); res.end(`Local backend on port ${BACKEND_PORT} not reachable: ${e.code || e.message}`); });
   req.pipe(up);
 });
 
 let up = 0;
-const ready = () => { if (++up === 3) log(`ready: API http://${HOST}:${API_PORT}  page https://localhost:${PAGE_PORT}  returnURL proxy https://localhost:${PROXY_PORT} -> backend :${BACKEND_PORT}`); };
+const ready = () => { if (++up === 3) log(`ready: API http://${HOST}:${API_PORT}  page http://localhost:${PAGE_PORT}  returnURL proxy http://localhost:${PROXY_PORT} -> backend :${BACKEND_PORT}`); };
 for (const [srv, port] of [[api, API_PORT], [page, PAGE_PORT], [proxy, PROXY_PORT]]) {
   srv.on('error', (e) => refuse(`port ${port}: ${e.code || e.message}`));
   srv.listen(port, HOST, ready);

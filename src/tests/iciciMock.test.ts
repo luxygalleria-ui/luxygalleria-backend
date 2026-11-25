@@ -92,11 +92,11 @@ const run = async () => {
 
     console.log('Gateway API (backend formats)');
     const sale = (txn: string, amount = '640.00') => signed({ merchantId: MID, aggregatorID: AGG, merchantTxnNo: txn, amount, currencyCode: '356', payType: '0',
-      customerEmailID: 'buyer@example.test', transactionType: 'SALE', txnDate: '20261121235959', returnURL: `https://localhost:${PROXY}/api/v1/payments/icici/callback` });
-    await test('initiateSale: signed request -> signed R1000 with an https redirectURI and tranCtx', async () => {
+      customerEmailID: 'buyer@example.test', transactionType: 'SALE', txnDate: '20261121235959', returnURL: `http://localhost:${PROXY}/api/v1/payments/icici/callback` });
+    await test('initiateSale: signed request -> signed R1000 with an http loopback redirectURI and tranCtx', async () => {
       const r = await apiJson('/tsp/pg/api/v2/initiateSale', sale('LGT1'));
       assert.strictEqual(r.responseCode, 'R1000'); assert.ok(verifyV1(r), 'response signed with the fake key');
-      assert.strictEqual(r.redirectURI, `https://localhost:${PAGE}/tsp/pg/api/v2/authRedirect`); assert.strictEqual(r.tranCtx, 'CTX-LGT1');
+      assert.strictEqual(r.redirectURI, `http://localhost:${PAGE}/tsp/pg/api/v2/authRedirect`); assert.strictEqual(r.tranCtx, 'CTX-LGT1');
     });
     await test('initiateSale: bad hash, wrong merchant or wrong aggregator refused (P1006), nothing registered', async () => {
       const before = (await ctl('/__stats')).initiateBadHash;
@@ -112,23 +112,23 @@ const run = async () => {
     const status = (txn: string) => apiForm('/tsp/pg/api/command', signed({ merchantId: MID, aggregatorID: AGG, merchantTxnNo: txn, originalTxnNo: txn, transactionType: 'STATUS' }) as Record<string, string>);
     await test('success: hosted page -> signed result form-posted to returnURL; STATUS SUC', async () => {
       assert.strictEqual((await status('LGT1')).txnStatus, 'REQ', 'before the customer acts');
-      const pg = await req('https', PAGE, 'GET', '/tsp/pg/api/v2/authRedirect?tranCtx=CTX-LGT1');
+      const pg = await req('http', PAGE, 'GET', '/tsp/pg/api/v2/authRedirect?tranCtx=CTX-LGT1');
       assert.strictEqual(pg.status, 200); for (const id of ['pay-success', 'pay-decline', 'pay-pending']) assert.ok(pg.text.includes(`id="${id}"`));
-      const ch = await req('https', PAGE, 'GET', '/choose?txn=LGT1&o=success');
-      assert.ok(ch.text.includes(`action="https://localhost:${PROXY}/api/v1/payments/icici/callback"`));
+      const ch = await req('http', PAGE, 'GET', '/choose?txn=LGT1&o=success');
+      assert.ok(ch.text.includes(`action="http://localhost:${PROXY}/api/v1/payments/icici/callback"`));
       const f = formFields(ch.text);
       assert.ok(verifyV1(f)); assert.deepStrictEqual([f.responseCode, f.merchantId, f.aggregatorID, f.merchantTxnNo, f.amount], ['0000', MID, AGG, 'LGT1', '640.00']);
       const s = await status('LGT1'); assert.ok(verifyV1(s)); assert.deepStrictEqual([s.responseCode, s.txnStatus, s.txnResponseCode, s.amount], ['000', 'SUC', '0000', '640.00']);
     });
     await test('decline: E005 result; STATUS REJ', async () => {
       await apiJson('/tsp/pg/api/v2/initiateSale', sale('LGT2'));
-      const f = formFields((await req('https', PAGE, 'GET', '/choose?txn=LGT2&o=decline')).text);
+      const f = formFields((await req('http', PAGE, 'GET', '/choose?txn=LGT2&o=decline')).text);
       assert.ok(verifyV1(f)); assert.strictEqual(f.responseCode, 'E005');
       assert.strictEqual((await status('LGT2')).txnStatus, 'REJ');
     });
     await test('pending UPI: R1000 result, STATUS REQ; bank confirms (/__bank) -> SUC; signed advice reaches the local backend', async () => {
       await apiJson('/tsp/pg/api/v2/initiateSale', sale('LGT3'));
-      const f = formFields((await req('https', PAGE, 'GET', '/choose?txn=LGT3&o=pending')).text);
+      const f = formFields((await req('http', PAGE, 'GET', '/choose?txn=LGT3&o=pending')).text);
       assert.ok(verifyV1(f)); assert.deepStrictEqual([f.responseCode, f.paymentMode], ['R1000', 'UPI']);
       assert.strictEqual((await status('LGT3')).txnStatus, 'REQ');
       await ctl('/__bank?txn=LGT3&status=SUC');
@@ -141,7 +141,7 @@ const run = async () => {
     await test('auto outcome mode skips the choice page (deterministic runs)', async () => {
       await ctl('/__mode?outcome=decline');
       await apiJson('/tsp/pg/api/v2/initiateSale', sale('LGT4'));
-      const r = await req('https', PAGE, 'GET', '/tsp/pg/api/v2/authRedirect?tranCtx=CTX-LGT4');
+      const r = await req('http', PAGE, 'GET', '/tsp/pg/api/v2/authRedirect?tranCtx=CTX-LGT4');
       assert.deepStrictEqual([r.status, r.headers.location], [302, '/choose?txn=LGT4&o=decline']);
       await ctl('/__mode?outcome=');
     });
@@ -160,7 +160,7 @@ const run = async () => {
     });
     await test('returnURL proxy forwards the browser post to the local backend unchanged; redirect passes through', async () => {
       const body = new URLSearchParams({ a: '1', b: 'x y' }).toString();
-      const r = await req('https', PROXY, 'POST', '/api/v1/payments/icici/callback', body, { 'Content-Type': 'application/x-www-form-urlencoded' });
+      const r = await req('http', PROXY, 'POST', '/api/v1/payments/icici/callback', body, { 'Content-Type': 'application/x-www-form-urlencoded' });
       assert.deepStrictEqual([r.status, r.headers.location], [302, 'http://localhost:3000/order-success']);
       assert.ok(got.some((g) => g.path === '/api/v1/payments/icici/callback' && g.body === body));
     });
