@@ -12,6 +12,8 @@ import { orderAndCustomerStats, REVENUE_RULE } from '../utils/dashboardStats';
 import { historyOrderStats, historyOrders, historyCustomers, historyStatus, HistoryUnavailableError, Page } from '../config/historyDb';
 
 export const getDashboardStats = asyncHandler(async (req: Request, res: Response) => {
+  // Live figures: never served from a browser or proxy cache (an order deleted a second ago must not linger)
+  res.set('Cache-Control', 'no-store');
   // Orders, revenue and customers: the read-only history when enabled for local development, otherwise the app database.
   // When history is enabled but unavailable, say so: never substitute local figures that look like history.
   let orderStats;

@@ -16,6 +16,8 @@ const responseHandler_1 = require("../utils/responseHandler");
 const dashboardStats_1 = require("../utils/dashboardStats");
 const historyDb_1 = require("../config/historyDb");
 exports.getDashboardStats = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    // Live figures: never served from a browser or proxy cache (an order deleted a second ago must not linger)
+    res.set('Cache-Control', 'no-store');
     // Orders, revenue and customers: the read-only history when enabled for local development, otherwise the app database.
     // When history is enabled but unavailable, say so: never substitute local figures that look like history.
     let orderStats;

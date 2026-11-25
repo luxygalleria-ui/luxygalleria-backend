@@ -70,11 +70,25 @@ const run = async () => {
   assert.strictEqual(d.revenueByDay.reduce((s: number, x: any) => s + x.orders, 0), 2);
   assert.ok(d.revenueByDay.every((x: any, i: number, a: any[]) => i === 0 || a[i - 1].date < x.date), 'oldest first');
   assert.strictEqual(d.total_revenue, d.totalRevenue, 'snake_case alias kept');
+  assert.strictEqual((await fetch(`${base}/dashboard/stats`, { headers: { Authorization: `Bearer ${tok(admin)}` } })).headers.get('cache-control'), 'no-store');
+
+  // Deleting orders in the admin: the very next stats request reflects it (no cached figures)
+  const ids = (await Order.find({}, { total: 1, paymentStatus: 1 }).lean()).reduce((m: any, o: any) => ({ ...m, [o.total]: String(o._id) }), {});
+  const del = (id: string) => fetch(`${base}/payments/admin/orders/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${tok(admin)}` } });
+  assert.strictEqual((await del(ids[500])).status, 200, 'unpaid order deleted');
+  assert.strictEqual((await del(ids[700])).status, 200, 'failed order deleted');
+  assert.strictEqual((await del(ids[100])).status, 409, 'a paid order is never deleted');
+  const after = (await get(tok(admin))).json.data;
+  assert.strictEqual(after.totalOrders, 5, 'total orders drops at once');
+  assert.deepStrictEqual(after.paymentsByStatus, { pending: 0, completed: 4, failed: 0, refunded: 1 });
+  assert.deepStrictEqual(after.ordersByStatus, { processing: 1, shipped: 1, delivered: 1, cancelled: 2 });
+  assert.strictEqual(after.totalRevenue, 600, 'revenue unchanged: only unpaid orders can be deleted');
+  assert.strictEqual(after.revenueByDay.reduce((s: number, x: any) => s + x.revenue, 0), 300);
 
   await mongoose.connection.db!.dropDatabase();
   await mongoose.disconnect();
   server.close();
-  console.log('✅ dashboard stats: revenue rule, status tallies, 30-day chart, auth (401/403/200)');
+  console.log('✅ dashboard stats: revenue rule, status tallies, 30-day chart, auth (401/403/200), no-store, live after order deletion');
 };
 
 run().catch(async (e) => { console.error('❌', e.message); process.exitCode = 1; await mongoose.disconnect(); process.exit(1); });
