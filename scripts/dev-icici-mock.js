@@ -3,7 +3,7 @@
  * LOCAL checkout with the ICICI MOCK, in order: mock gateway -> backend -> storefront.   npm run dev:icici-mock
  *
  *   1. scripts/icici-local-mock.js   API http://127.0.0.1:8442, payment page http://localhost:8443, returnURL http://localhost:8444
- *   2. backend (ts-node-dev)         http://localhost:5000, NODE_ENV=development (real *.icicibank.com hosts are refused)
+ *   2. backend (ts-node-dev)         http://localhost:5000, NODE_ENV=development (real *.icicibank.com / *.icici.bank.in hosts are refused)
  *   3. storefront (next dev)         http://localhost:3000; open on localhost, so the checkout may redirect to the
  *                                    loopback mock page (a deployed site never does)
  *

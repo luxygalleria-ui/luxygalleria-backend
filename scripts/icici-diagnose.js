@@ -11,7 +11,7 @@
  * - The backend runs `node dist/server.js`; dotenv loads `.env` from the process CWD and never overrides a variable
  *   already in the process environment. Effective value = process env if present, else .env.
  * - .env changes only apply after a restart; /proc/<pid>/environ and PM2 do not show dotenv-loaded values.
- * - UAT gate (iciciController.ts): unless BOTH sale and command URLs are https://pgpay.icicibank.com (live), only the
+ * - UAT gate (iciciController.ts): unless BOTH sale and command URLs are on ICICI's live host (pgpay.icicibank.com / pgpay.icici.bank.in), only the
  *   user _ids in ICICI_PG_UAT_TEST_USER_IDS may pay, on every server except NODE_ENV exactly "development".
  * - ICICI messages are console.* -> PM2's out/err log files, not logs/*.log. logs/combined.log holds morgan lines.
  */
@@ -168,11 +168,11 @@ for (const a of candidates) {
     console.log('          config/env.ts defaults it to "development" for logging (morgan dev + console logger) and other ENV.NODE_ENV checks.');
   } else console.log(`NODE_ENV: ${show('NODE_ENV', eff.NODE_ENV)}${eff.NODE_ENV === 'development' ? '  <-- development: UAT gate, rate limiters and production logging are OFF' : ''}`);
 
-  const liveHost = (u) => { try { const x = new URL(u); return x.protocol === 'https:' && x.hostname === 'pgpay.icicibank.com'; } catch { return false; } };
+  const liveHost = (u) => { try { const x = new URL(u); return x.protocol === 'https:' && ['pgpay.icicibank.com', 'pgpay.icici.bank.in'].includes(x.hostname); } catch { return false; } };
   const live = liveHost(sale) && liveHost(cmd);
   const gated = !live && eff.NODE_ENV !== 'development'; // raw value: unset is gated
   const t = testerIds(eff.ICICI_PG_UAT_TEST_USER_IDS);
-  console.log(`gateway config: ${live ? 'LIVE (both URLs https://pgpay.icicibank.com)' : 'TEST (UAT, mixed or unknown host)'}`);
+  console.log(`gateway config: ${live ? 'LIVE (both URLs on https://pgpay.icicibank.com or pgpay.icici.bank.in)' : 'TEST (UAT, mixed or unknown host)'}`);
   if (!live) {
     console.log(`UAT tester gate: ${!gated ? 'INACTIVE: NODE_ENV is exactly "development", ANY customer can pay with test config'
       : t.malformed ? 'ACTIVE, tester list INVALID: every customer gets 403'

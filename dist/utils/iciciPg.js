@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isIciciSuccess = exports.gatewayFailure = exports.postForm = exports.postJson = exports.parseJsonKeepNumberText = exports.assertGatewayAllowed = exports.signed = exports.saleTxnDate = exports.istTimestamp = exports.newTxnNo = exports.verifyV1 = exports.hashV2 = exports.hashV1 = exports.iciciModeLine = exports.uatOpenToAll = exports.iciciMode = exports.iciciLive = exports.iciciConfigured = exports.icici = void 0;
+exports.isIciciSuccess = exports.gatewayFailure = exports.postForm = exports.postJson = exports.parseJsonKeepNumberText = exports.assertGatewayAllowed = exports.signed = exports.saleTxnDate = exports.istTimestamp = exports.newTxnNo = exports.verifyV1 = exports.hashV2 = exports.hashV1 = exports.iciciModeLine = exports.uatOpenToAll = exports.iciciMode = exports.iciciLive = exports.ICICI_UAT_HOSTS = exports.ICICI_LIVE_HOSTS = exports.iciciConfigured = exports.icici = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 /**
  * ICICI Orange PG (Gateway_Interface_Specifiation_V0.4_Orange_PG.pdf). Server-side only: the secret key never leaves
@@ -24,10 +24,15 @@ const iciciConfigured = () => {
     return !!(c.merchantId && c.secret && c.initiateSaleUrl && c.commandUrl && c.returnURL);
 };
 exports.iciciConfigured = iciciConfigured;
+/** ICICI's payment gateway hosts (exact): the original icicibank.com names and ICICI's icici.bank.in domain. */
+exports.ICICI_LIVE_HOSTS = new Set(['pgpay.icicibank.com', 'pgpay.icici.bank.in']);
+exports.ICICI_UAT_HOSTS = new Set(['pgpayuat.icicibank.com', 'pgpayuat.icici.bank.in']);
+/** Domains whose hosts are real ICICI (blocked from local development unless explicitly allowed). */
+const ICICI_DOMAINS = ['icicibank.com', 'icici.bank.in'];
 const isLiveUrl = (u) => {
     try {
         const x = new URL(u);
-        return x.protocol === 'https:' && x.hostname === 'pgpay.icicibank.com';
+        return x.protocol === 'https:' && exports.ICICI_LIVE_HOSTS.has(x.hostname);
     }
     catch {
         return false;
@@ -42,7 +47,7 @@ exports.iciciLive = iciciLive;
 const isUatUrl = (u) => {
     try {
         const x = new URL(u);
-        return x.protocol === 'https:' && x.hostname === 'pgpayuat.icicibank.com';
+        return x.protocol === 'https:' && exports.ICICI_UAT_HOSTS.has(x.hostname);
     }
     catch {
         return false;
@@ -125,7 +130,7 @@ const signed = (params) => {
 exports.signed = signed;
 /**
  * Local-development safety: with NODE_ENV exactly "development", no request may reach a real ICICI host
- * (*.icicibank.com) unless ICICI_PG_ALLOW_REAL_GATEWAY_IN_DEV is exactly "true" (set only by `npm run dev:icici-uat`).
+ * (*.icicibank.com, *.icici.bank.in) unless ICICI_PG_ALLOW_REAL_GATEWAY_IN_DEV is exactly "true" (set only by `npm run dev:icici-uat`).
  * Every other environment is unaffected. Throws before any network call.
  */
 const assertGatewayAllowed = (url) => {
@@ -138,7 +143,7 @@ const assertGatewayAllowed = (url) => {
     catch {
         return;
     } // fetch rejects it anyway
-    if (host === 'icicibank.com' || host.endsWith('.icicibank.com')) {
+    if (ICICI_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`))) {
         throw new Error(`Real ICICI gateway (${host}) blocked in development: use the local mock, or start with npm run dev:icici-uat`);
     }
 };

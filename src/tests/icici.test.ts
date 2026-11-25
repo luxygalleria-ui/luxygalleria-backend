@@ -81,6 +81,11 @@ const run = async () => {
       ['look-alike UAT host', { ...base, initiateSaleUrl: 'https://pgpayuat.icicibank.com.evil.test/x', commandUrl: UAT_CMD }, 'test'],
       ['no key', { ...base, secret: '', initiateSaleUrl: LIVE_SALE, commandUrl: LIVE_CMD }, 'not-configured'],
       ['no return URL', { ...base, returnURL: '', initiateSaleUrl: LIVE_SALE, commandUrl: LIVE_CMD }, 'not-configured'],
+      // ICICI's icici.bank.in hosts (appended: the checks below index the cases above)
+      ['both live on icici.bank.in', { ...base, initiateSaleUrl: 'https://pgpay.icici.bank.in/pg/api/v2/initiateSale', commandUrl: 'https://pgpay.icici.bank.in/pg/api/command' }, 'live'],
+      ['live across both domains', { ...base, initiateSaleUrl: LIVE_SALE, commandUrl: 'https://pgpay.icici.bank.in/pg/api/command' }, 'live'],
+      ['both UAT on icici.bank.in', { ...base, initiateSaleUrl: 'https://pgpayuat.icici.bank.in/tsp/pg/api/v2/initiateSale', commandUrl: 'https://pgpayuat.icici.bank.in/tsp/pg/api/command' }, 'uat'],
+      ['lookalike bank.in host is not live', { ...base, initiateSaleUrl: 'https://pgpay.icici.bank.in.evil.test/x', commandUrl: 'https://pgpay.icici.bank.in.evil.test/y' }, 'test'],
     ];
     for (const [label, c, want] of cases) {
       assert.strictEqual(iciciMode(c), want, label);
@@ -244,11 +249,12 @@ const run = async () => {
         assert.strictEqual(sent.at(-1)!.url, UAT.ICICI_PG_INITIATE_SALE_URL);
         // Every outbound path is covered, and only real ICICI hosts are blocked
         setEnv({ NODE_ENV: 'development', ...UAT, ICICI_PG_ALLOW_REAL_GATEWAY_IN_DEV: undefined });
-        for (const u of ['https://pgpayuat.icicibank.com/tsp/pg/api/command', 'https://PGPAY.ICICIBANK.COM/pg/api/command', 'https://pgpay.icicibank.com./pg/api/command', 'https://icicibank.com/x']) {
+        for (const u of ['https://pgpayuat.icicibank.com/tsp/pg/api/command', 'https://PGPAY.ICICIBANK.COM/pg/api/command', 'https://pgpay.icicibank.com./pg/api/command', 'https://icicibank.com/x', 'https://pgpayuat.icici.bank.in/tsp/pg/api/command', 'https://PGPAY.ICICI.BANK.IN/pg/api/command']) {
           await assert.rejects(postForm(u, {}), /Real ICICI gateway .* blocked in development/, u);
           await assert.rejects(postJson(u, {}), /Real ICICI gateway .* blocked in development/, u);
         }
         assert.doesNotThrow(() => assertGatewayAllowed('https://icicibank.com.evil.test/x')); // not ICICI: not this guard's job
+        assert.doesNotThrow(() => assertGatewayAllowed('https://icici.bank.in.evil.test/x'));
         assert.doesNotThrow(() => assertGatewayAllowed('https://localhost:8443/tsp/pg/api/v2/initiateSale')); // local mock
         // Other environments are never affected by the dev guard
         for (const NODE_ENV of ['production', 'staging', undefined]) {

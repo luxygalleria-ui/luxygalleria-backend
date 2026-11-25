@@ -19,8 +19,14 @@ export const iciciConfigured = () => {
   return !!(c.merchantId && c.secret && c.initiateSaleUrl && c.commandUrl && c.returnURL);
 };
 
+/** ICICI's payment gateway hosts (exact): the original icicibank.com names and ICICI's icici.bank.in domain. */
+export const ICICI_LIVE_HOSTS = new Set(['pgpay.icicibank.com', 'pgpay.icici.bank.in']);
+export const ICICI_UAT_HOSTS = new Set(['pgpayuat.icicibank.com', 'pgpayuat.icici.bank.in']);
+/** Domains whose hosts are real ICICI (blocked from local development unless explicitly allowed). */
+const ICICI_DOMAINS = ['icicibank.com', 'icici.bank.in'];
+
 const isLiveUrl = (u: string) => {
-  try { const x = new URL(u); return x.protocol === 'https:' && x.hostname === 'pgpay.icicibank.com'; } catch { return false; }
+  try { const x = new URL(u); return x.protocol === 'https:' && ICICI_LIVE_HOSTS.has(x.hostname); } catch { return false; }
 };
 /**
  * Live only when BOTH the sale and command URLs are https on ICICI's live host. UAT, mixed UAT/live, or any other
@@ -29,7 +35,7 @@ const isLiveUrl = (u: string) => {
 export const iciciLive = (c = icici()) => isLiveUrl(c.initiateSaleUrl) && isLiveUrl(c.commandUrl);
 
 const isUatUrl = (u: string) => {
-  try { const x = new URL(u); return x.protocol === 'https:' && x.hostname === 'pgpayuat.icicibank.com'; } catch { return false; }
+  try { const x = new URL(u); return x.protocol === 'https:' && ICICI_UAT_HOSTS.has(x.hostname); } catch { return false; }
 };
 
 /**
@@ -109,14 +115,14 @@ export const signed = (params: Record<string, string | undefined>) => {
 
 /**
  * Local-development safety: with NODE_ENV exactly "development", no request may reach a real ICICI host
- * (*.icicibank.com) unless ICICI_PG_ALLOW_REAL_GATEWAY_IN_DEV is exactly "true" (set only by `npm run dev:icici-uat`).
+ * (*.icicibank.com, *.icici.bank.in) unless ICICI_PG_ALLOW_REAL_GATEWAY_IN_DEV is exactly "true" (set only by `npm run dev:icici-uat`).
  * Every other environment is unaffected. Throws before any network call.
  */
 export const assertGatewayAllowed = (url: string) => {
   if (process.env.NODE_ENV !== 'development' || process.env.ICICI_PG_ALLOW_REAL_GATEWAY_IN_DEV === 'true') return;
   let host = '';
   try { host = new URL(url).hostname.toLowerCase().replace(/\.$/, ''); } catch { return; } // fetch rejects it anyway
-  if (host === 'icicibank.com' || host.endsWith('.icicibank.com')) {
+  if (ICICI_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`))) {
     throw new Error(`Real ICICI gateway (${host}) blocked in development: use the local mock, or start with npm run dev:icici-uat`);
   }
 };
