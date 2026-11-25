@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.reconcilePayments = exports.refundOrder = exports.razorpayWebhook = exports.isValidWebhookSignature = exports.deleteOrder = exports.sendOrderStatusEmail = exports.correctOrderStatus = exports.updateOrderStatus = exports.getAllOrders = exports.getMyOrders = exports.calculateShipping = exports.verifyPayment = exports.createOrder = exports.openSession = exports.priceCheckout = exports.paymentMatchesSession = exports.customerOrderView = exports.customerRefundView = exports.sendOrderConfirmationEmail = exports.TEST_ORDER_NOTICE = exports.isValidRazorpaySignature = exports.isMockPaymentMode = exports.razorpayInstance = void 0;
+const mongoose_1 = __importDefault(require("mongoose"));
 const razorpay_1 = __importDefault(require("razorpay"));
 const crypto_1 = __importDefault(require("crypto"));
 const Order_1 = __importDefault(require("../models/Order"));
@@ -734,23 +735,32 @@ const sendOrderStatusEmail = async (order, orderStatus) => {
 };
 exports.sendOrderStatusEmail = sendOrderStatusEmail;
 // Delete Order (Admin only)
+/**
+ * DELETE /payments/admin/orders/:id (admin/superadmin): removes any order (pending, failed, paid, test, refunded) from
+ * the orders list and the dashboard figures. A full copy goes to the "deletedorders" collection first (with who and
+ * when), so payment and refund records stay recoverable. A paid order deleted before shipping returns its stock once.
+ */
 const deleteOrder = async (req, res) => {
     try {
         const { id } = req.params;
-        const order = await Order_1.default.findById(id);
-        if (!order) {
+        if (!mongoose_1.default.Types.ObjectId.isValid(String(id)))
+            return res.status(400).json({ success: false, message: 'Invalid order id' });
+        const order = await Order_1.default.findById(id).lean();
+        if (!order)
+            return res.status(404).json({ success: false, message: 'Order not found' });
+        const archive = mongoose_1.default.connection.collection('deletedorders');
+        const { insertedId } = await archive.insertOne({ ...order, _id: new mongoose_1.default.Types.ObjectId(), orderId: order._id, deletedAt: new Date(), deletedBy: req.user?._id });
+        const deleted = await Order_1.default.findOneAndDelete({ _id: id }).lean();
+        if (!deleted) {
+            await archive.deleteOne({ _id: insertedId });
             return res.status(404).json({ success: false, message: 'Order not found' });
         }
-        // Payment and refund records are never destroyed: only an unpaid or failed order may be deleted (superadmin route)
-        if (!['pending', 'failed'].includes(order.paymentStatus)) {
-            return res.status(409).json({ success: false, code: 'ORDER_NOT_DELETABLE', message: `A ${order.paymentStatus === 'refunded' ? 'refunded' : 'paid'} order cannot be deleted. Cancel it instead; payment and refund records are kept.` });
+        if (deleted.paymentStatus === 'completed' && deleted.orderStatus === 'processing' && !deleted.stockRestoredAt) {
+            await (0, checkoutSessions_1.releaseStock)((deleted.items || []).filter((i) => i.variantId)
+                .map((i) => ({ product: i.product, variantId: i.variantId, quantity: i.quantity, name: i.name })));
         }
-        // Deleted only if still unpaid at this instant (a payment landing meanwhile keeps the order)
-        const deleted = await Order_1.default.findOneAndDelete({ _id: id, paymentStatus: { $in: ['pending', 'failed'] } });
-        if (!deleted)
-            return res.status(409).json({ success: false, code: 'ORDER_NOT_DELETABLE', message: 'The order changed while deleting; reload and check it.' });
-        console.warn(`Order ${id} (payment ${order.paymentStatus}) deleted by superadmin ${String(req.user?._id)}`);
-        res.status(200).json({ success: true, message: 'Order deleted successfully', data: null });
+        console.warn(`Order ${id} (payment ${deleted.paymentStatus}, status ${deleted.orderStatus}) deleted by ${String(req.user?._id)}; copy kept in deletedorders`);
+        res.status(200).json({ success: true, message: 'Order deleted', data: { _id: id } });
     }
     catch (error) {
         console.error('Error deleting order:', error);

@@ -4,8 +4,8 @@
  *
  *   1. scripts/icici-local-mock.js   API http://127.0.0.1:8442, payment page http://localhost:8443, returnURL http://localhost:8444
  *   2. backend (ts-node-dev)         http://localhost:5000, NODE_ENV=development (real *.icicibank.com hosts are refused)
- *   3. storefront (next dev)         http://localhost:3000, NEXT_PUBLIC_ICICI_MOCK_ORIGIN=http://localhost:8443, so the
- *                                    checkout may redirect to the mock page (next dev only; production builds never do)
+ *   3. storefront (next dev)         http://localhost:3000; open on localhost, so the checkout may redirect to the
+ *                                    loopback mock page (a deployed site never does)
  *
  * Each step starts only after the previous one answers its health check. Busy ports, a mock that refuses its config
  * (e.g. real UAT keys) or any service that exits stop everything with a clear message. Ctrl+C stops all three.
@@ -102,9 +102,9 @@ const waitFor = async (name, url, child, timeoutMs, anyStatus = false) => {
   if (!await waitFor('backend', `http://127.0.0.1:${BACKEND_PORT}/api/v1/health`, backend, 90_000)) return;
   say('    backend is up');
 
-  say(`3/3 storefront on :${FRONTEND_PORT} (mock payment page ${MOCK_ORIGIN} allowed under next dev)`);
+  say(`3/3 storefront on :${FRONTEND_PORT} (mock payment page ${MOCK_ORIGIN} allowed while the storefront is on localhost)`);
   const web = start('web', path.join(FRONTEND_DIR, 'node_modules/.bin/next'), ['dev', '--port', String(FRONTEND_PORT)],
-    { cwd: FRONTEND_DIR, env: { ...base, NODE_ENV: 'development', NEXT_PUBLIC_ICICI_MOCK_ORIGIN: MOCK_ORIGIN, NEXT_PUBLIC_API_URL: `http://localhost:${BACKEND_PORT}/api/v1` } });
+    { cwd: FRONTEND_DIR, env: { ...base, NODE_ENV: 'development', NEXT_PUBLIC_API_URL: `http://localhost:${BACKEND_PORT}/api/v1` } });
   if (!await waitFor('storefront', `http://localhost:${FRONTEND_PORT}/`, web, 180_000, true)) return;
 
   say('READY');

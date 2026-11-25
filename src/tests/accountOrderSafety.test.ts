@@ -96,21 +96,27 @@ const run = async () => {
     });
     const setStatus = (id: unknown, orderStatus: string) => call('PUT', `/payments/admin/orders/${id}/status`, { orderStatus }, aT);
 
-    await test('delete: a plain admin is refused (403); superadmin cannot delete paid or refunded orders (409, kept)', async () => {
-      const paid = await mkOrder('completed'); const refunded = await mkOrder('refunded');
-      assert.strictEqual((await call('DELETE', `/payments/admin/orders/${paid._id}`, undefined, aT)).status, 403);
-      for (const o of [paid, refunded]) {
-        const r = await call('DELETE', `/payments/admin/orders/${o._id}`, undefined, sT);
-        assert.deepStrictEqual([r.status, r.json.code], [409, 'ORDER_NOT_DELETABLE']);
-        assert.ok(await Order.exists({ _id: o._id }), 'record kept');
-      }
-    });
-    await test('delete: superadmin may delete an unpaid or a failed order', async () => {
-      for (const ps of ['pending', 'failed']) {
-        const o = await mkOrder(ps);
-        assert.strictEqual((await call('DELETE', `/payments/admin/orders/${o._id}`, undefined, sT)).status, 200, ps);
+    await test('delete: admins may delete any order (pending, failed, paid, test, refunded); each is archived first', async () => {
+      const archived = () => mongoose.connection.collection('deletedorders').countDocuments();
+      const a0 = await archived();
+      for (const [ps, token] of [['pending', aT], ['failed', sT], ['completed', aT], ['refunded', sT]] as const) {
+        const o = await mkOrder(ps, ps === 'completed' ? 'shipped' : 'processing');
+        const r = await call('DELETE', `/payments/admin/orders/${o._id}`, undefined, token);
+        assert.strictEqual(r.status, 200, `${ps}: ${JSON.stringify(r.json)}`);
         assert.strictEqual(await Order.exists({ _id: o._id }), null, `${ps} deleted`);
       }
+      assert.strictEqual(await archived(), a0 + 4, 'a copy of each deleted order is kept');
+      const uat = await mkOrder('completed'); await Order.updateOne({ _id: uat._id }, { $set: { testPayment: true } });
+      assert.strictEqual((await call('DELETE', `/payments/admin/orders/${uat._id}`, undefined, aT)).status, 200, 'test order');
+    });
+    await test('delete: a paid order not yet shipped returns its stock once; a shipped one does not', async () => {
+      const s0 = await stock();
+      const o = await mkOrder('completed');
+      assert.strictEqual((await call('DELETE', `/payments/admin/orders/${o._id}`, undefined, sT)).status, 200);
+      assert.strictEqual(await stock(), s0 + 2, 'restocked');
+      const shipped = await mkOrder('completed', 'shipped');
+      assert.strictEqual((await call('DELETE', `/payments/admin/orders/${shipped._id}`, undefined, sT)).status, 200);
+      assert.strictEqual(await stock(), s0 + 2, 'shipped: not restocked');
     });
     await test('cancel before shipping: stock restored exactly once (a repeated cancel changes nothing); paid order flagged refund "required"', async () => {
       const o = await mkOrder('completed'); const s0 = await stock();

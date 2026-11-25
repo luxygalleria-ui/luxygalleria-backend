@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import Order from '../models/Order';
@@ -11,7 +12,7 @@ import { calculateShippingForItems } from '../utils/shippingCalculator';
 import { CheckoutRuleError, Selection } from '../utils/orderPricing';
 import { CheckoutSettingsError } from '../utils/checkoutSettings';
 import { CheckoutSession, ICheckoutSession } from '../models/CheckoutSession';
-import { expireStaleSessions, finalizeSession, reserveStock, settingsFingerprint, snapshotFromQuote } from '../utils/checkoutSessions';
+import { expireStaleSessions, finalizeSession, releaseStock, reserveStock, settingsFingerprint, snapshotFromQuote } from '../utils/checkoutSessions';
 import { ORDER_STATUSES, canMoveOrderStatus, shipBlocked, notShippableTestFilter, TEST_ORDER_NOT_SHIPPABLE } from '../utils/orderStatus';
 import { iciciConfigured, iciciMode } from '../utils/iciciPg';
 import { checkIciciStatus } from './iciciController';
@@ -740,24 +741,31 @@ export const sendOrderStatusEmail = async (order: any, orderStatus: string) => {
 
 
 // Delete Order (Admin only)
+/**
+ * DELETE /payments/admin/orders/:id (admin/superadmin): removes any order (pending, failed, paid, test, refunded) from
+ * the orders list and the dashboard figures. A full copy goes to the "deletedorders" collection first (with who and
+ * when), so payment and refund records stay recoverable. A paid order deleted before shipping returns its stock once.
+ */
 export const deleteOrder = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(String(id))) return res.status(400).json({ success: false, message: 'Invalid order id' });
+    const order = await Order.findById(id).lean();
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
 
-    const order = await Order.findById(id);
-    if (!order) {
+    const archive = mongoose.connection.collection('deletedorders');
+    const { insertedId } = await archive.insertOne({ ...order, _id: new mongoose.Types.ObjectId(), orderId: order._id, deletedAt: new Date(), deletedBy: req.user?._id });
+    const deleted = await Order.findOneAndDelete({ _id: id }).lean();
+    if (!deleted) {
+      await archive.deleteOne({ _id: insertedId });
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
-    // Payment and refund records are never destroyed: only an unpaid or failed order may be deleted (superadmin route)
-    if (!['pending', 'failed'].includes(order.paymentStatus)) {
-      return res.status(409).json({ success: false, code: 'ORDER_NOT_DELETABLE', message: `A ${order.paymentStatus === 'refunded' ? 'refunded' : 'paid'} order cannot be deleted. Cancel it instead; payment and refund records are kept.` });
+    if (deleted.paymentStatus === 'completed' && deleted.orderStatus === 'processing' && !deleted.stockRestoredAt) {
+      await releaseStock((deleted.items || []).filter((i: any) => i.variantId)
+        .map((i: any) => ({ product: i.product, variantId: i.variantId, quantity: i.quantity, name: i.name })));
     }
-
-    // Deleted only if still unpaid at this instant (a payment landing meanwhile keeps the order)
-    const deleted = await Order.findOneAndDelete({ _id: id, paymentStatus: { $in: ['pending', 'failed'] } });
-    if (!deleted) return res.status(409).json({ success: false, code: 'ORDER_NOT_DELETABLE', message: 'The order changed while deleting; reload and check it.' });
-    console.warn(`Order ${id} (payment ${order.paymentStatus}) deleted by superadmin ${String(req.user?._id)}`);
-    res.status(200).json({ success: true, message: 'Order deleted successfully', data: null });
+    console.warn(`Order ${id} (payment ${deleted.paymentStatus}, status ${deleted.orderStatus}) deleted by ${String(req.user?._id)}; copy kept in deletedorders`);
+    res.status(200).json({ success: true, message: 'Order deleted', data: { _id: id } });
   } catch (error: any) {
     console.error('Error deleting order:', error);
     res.status(500).json({ success: false, message: 'Error deleting order' });

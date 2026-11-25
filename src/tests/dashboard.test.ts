@@ -77,13 +77,23 @@ const run = async () => {
   const del = (id: string) => fetch(`${base}/payments/admin/orders/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${tok(admin)}` } });
   assert.strictEqual((await del(ids[500])).status, 200, 'unpaid order deleted');
   assert.strictEqual((await del(ids[700])).status, 200, 'failed order deleted');
-  assert.strictEqual((await del(ids[100])).status, 409, 'a paid order is never deleted');
   const after = (await get(tok(admin))).json.data;
   assert.strictEqual(after.totalOrders, 5, 'total orders drops at once');
   assert.deepStrictEqual(after.paymentsByStatus, { pending: 0, completed: 4, failed: 0, refunded: 1 });
   assert.deepStrictEqual(after.ordersByStatus, { processing: 1, shipped: 1, delivered: 1, cancelled: 2 });
-  assert.strictEqual(after.totalRevenue, 600, 'revenue unchanged: only unpaid orders can be deleted');
-  assert.strictEqual(after.revenueByDay.reduce((s: number, x: any) => s + x.revenue, 0), 300);
+  assert.strictEqual(after.totalRevenue, 600, 'unpaid deletions leave revenue alone');
+  // A paid order can be deleted too: revenue, paid count and the chart drop on the next request; a copy is archived
+  const r = await del(ids[100]);
+  assert.strictEqual(r.status, 200, 'paid order deleted');
+  assert.deepStrictEqual((await r.json()).data, { _id: ids[100] }, 'JSON reply');
+  const after2 = (await get(tok(admin))).json.data;
+  assert.strictEqual(after2.totalOrders, 4);
+  assert.strictEqual(after2.totalRevenue, 500, 'revenue drops by the deleted paid order');
+  assert.strictEqual(after2.paymentsByStatus.completed, 3);
+  assert.strictEqual(after2.revenueByDay.reduce((s: number, x: any) => s + x.revenue, 0), 200, 'chart drops too');
+  assert.strictEqual(await mongoose.connection.collection('deletedorders').countDocuments(), 3, 'every deleted order archived');
+  assert.strictEqual((await del(ids[100])).status, 404, 'deleting twice: 404');
+  assert.strictEqual((await del('not-an-id')).status, 400, 'invalid id: 400');
 
   await mongoose.connection.db!.dropDatabase();
   await mongoose.disconnect();
